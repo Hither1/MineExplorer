@@ -1,0 +1,128 @@
+{
+  "id": "0516",
+  "sample_idx": 516,
+  "mode": "multi",
+  "selected_tasks": [
+    "find white_wall_banner",
+    "trade for Any color blank banner"
+  ],
+  "selection_reasoning": "These two tasks form a coherent multi-hop sequence. The player must first locate a white wall banner in the environment (find white_wall_banner), which establishes awareness of banner items and their location. Then, the player must trade with a villager to obtain a blank banner of any color (trade for Any color blank banner). The dependency is logical: finding the white wall banner first helps the player identify where banners/villagers are located in the scene, and the white wall banner can serve as a visual cue or landmark near a villager trading post. More importantly, the find task ensures the player is oriented in the environment before attempting the more complex trading interaction. The trading task requires the player to have emeralds and interact with a shepherd villager, which builds on the exploration done in the first task.",
+  "reasoning_graph": {
+    "nodes": [
+      "find white_wall_banner",
+      "trade for Any color blank banner"
+    ],
+    "edges": [
+      {
+        "from": "find white_wall_banner",
+        "to": "trade for Any color blank banner",
+        "reason": "Finding the white wall banner leads the player to the trading area where a shepherd villager is stationed nearby, enabling the trade interaction"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find white_wall_banner",
+        "milestone_id": "find_white_wall_banner",
+        "description": "Uses position_near_with_facing because this is a find/locate/observe task. The player must navigate near the white wall banners on the south exterior wall of the building and face toward them to confirm visual discovery. Three banners are placed at spawn-relative (4,2,5), (6,2,5), and (5,3,5) — target is set to (5,2,5) as the cluster center. max_distance=16 allows detection from a reasonable viewing range along the cobblestone path, and facing_tolerance=60 ensures the player is genuinely looking at the banners rather than passing by accidentally.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                5,
+                2,
+                5
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "trade for Any color blank banner",
+        "milestone_id": "trade_for_blank_banner",
+        "description": "Uses inventory_has because trading with the shepherd villager produces a white_banner item that ends up in the player's inventory. The player starts with 16 emeralds and 0 banners, so detecting at least 1 white_banner in inventory confirms a successful trade. A white_banner is a blank banner (no patterns applied) which satisfies 'Any color blank banner'. There are no other banner sources in the scene — wall banners are blocks that cannot be picked up without tools the player doesn't have.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "white_banner",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "shepherd_banner_shop",
+  "scene_description": "A small oak plank building decorated with white wall banners on its south-facing exterior wall, with a shepherd villager inside offering banner trades. A cobblestone path leads from the player spawn to the building entrance. The player is given emeralds to facilitate trading.",
+  "task_text": "Find the white wall banners decorating the building, then enter the building and trade with the shepherd villager to obtain a blank banner.",
+  "atomic_tasks_ordered": [
+    "find white_wall_banner",
+    "trade for Any color blank banner"
+  ],
+  "commands": [
+    "/fill ~-8 ~-1 ~-8 ~8 ~-1 ~8 minecraft:grass_block",
+    "/fill ~-8 ~0 ~-8 ~8 ~4 ~8 minecraft:air",
+    "/fill ~3 ~0 ~5 ~7 ~3 ~8 minecraft:oak_planks",
+    "/fill ~4 ~0 ~6 ~6 ~3 ~7 minecraft:air",
+    "/fill ~4 ~0 ~6 ~6 ~0 ~7 minecraft:oak_planks",
+    "/setblock ~5 ~0 ~5 minecraft:oak_door[facing=south,half=lower,open=true]",
+    "/setblock ~5 ~1 ~5 minecraft:oak_door[facing=south,half=upper,open=true]",
+    "/setblock ~4 ~2 ~5 minecraft:white_wall_banner[facing=south]",
+    "/setblock ~6 ~2 ~5 minecraft:white_wall_banner[facing=south]",
+    "/setblock ~5 ~3 ~5 minecraft:white_wall_banner[facing=south]",
+    "/summon minecraft:villager ~5 ~1 ~6 {VillagerData:{profession:shepherd,level:2,type:plains},Offers:{Recipes:[{buy:{id:emerald,Count:3},sell:{id:white_banner,Count:1},maxUses:999}]},NoAI:1b}",
+    "/give @p minecraft:emerald 16",
+    "/setblock ~7 ~2 ~7 minecraft:wall_torch[facing=west]",
+    "/setblock ~3 ~2 ~7 minecraft:wall_torch[facing=east]",
+    "/fill ~0 ~0 ~2 ~3 ~0 ~5 minecraft:cobblestone"
+  ],
+  "design_notes": "Building is 5x4x4 blocks (oak planks) located at ~(3-7, 0-3, 5-8). Three white wall banners decorate the south exterior wall flanking and above the door. A shepherd villager (NoAI, level 2) inside sells white_banner for 3 emeralds. Player spawns at origin with 16 emeralds and a cobblestone path guiding them to the building. The open door ensures no interaction barrier to entering.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find white_wall_banner\", \"trade for Any color blank banner\"],\n  \"selection_reasoning\": \"These two tasks form a coherent multi-hop sequence. The player must first locate a white wall banner in the environment (find white_wall_banner), which establishes awareness of banner items and their location. Then, the player must trade with a villager to obtain a blank banner of any color (trade for Any color blank banner). The dependency is logical: finding the white wall ba",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## Sandbox Observations - Revision 3\n\nExamining all 21 frames from the third preview:\n\n**Initial Frame:** Player spawns on cobblestone path, emeralds in hand (16). The oak plank building is visible ahead-right. The building has a clear structure with an open door.\n\n**Step 000-003:** The agent turns to face the building. I can now see **white wall banners** on the south-facing wall of the building! There appear to be banners flanking the door at eye level and one above. The banners are visible as",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's sandbox report, I have all the information needed to design the milestone rules. Here are the milestones:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find white_wall_banner\",\n      \"milestone_id\": \"find_white_wall_banner\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate/observe task. The player must navigate near the white wall banners on the south wall of the building (placed at approximately spawn-relative coords (4,2,5",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "## CommonSenseAgent Review\n\nBased on my analysis of the scene and Minecraft mechanics, here is my feedback:\n\n### ✅ Things That Work Well\n1. **White wall banners** are correctly placed on the building's south exterior wall using `minecraft:white_wall_banner[facing=south]` — this is the proper block state for wall banners facing south (attached to a solid block behind them).\n2. **Shepherd villager** with custom trades is inside the building with `NoAI:1b` so it won't wander away.\n3. **Player has 1",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations - Revision 3 (Detailed Analysis)\n\nAfter examining all frames from this latest preview, here's what I can confirm:\n\n**Initial Frame:** Player spawns on a cobblestone path, holding emeralds (visible in hotbar). The oak plank building is visible to the left with an open door. Command feedback shows successful execution: \"Summoned new Shepherd\", \"Gave 16 [Emerald] to MinecraftAgent0\", block changes confirmed. The building is at the expected location.\n\n**Step 000:** Agent has ",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "\n\n## MilestoneAgent — Final Milestone Rules\n\nBased on SceneDesignerAgent's thorough sandbox verification and CommonSenseAgent's review, I have all the information needed. Here are the final milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find white_wall_banner\",\n      \"milestone_id\": \"find_white_wall_banner\",\n      \"description\": \"The player must locate the white wall banners on the south exterior wall of the oak plank building. Three banners are placed at spawn-relative coord",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's sandbox report and CommonSenseAgent's review, I have all the information needed to design the milestone rules. Here are my final milestones:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find white_wall_banner\",\n      \"milestone_id\": \"find_white_wall_banner\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate/observe task. The player must navigate near the white wall banners on the south exterior wall of the building and face ",
+      "timestamp": ""
+    }
+  ]
+}

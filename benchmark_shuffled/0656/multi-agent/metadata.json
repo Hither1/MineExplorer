@@ -1,0 +1,187 @@
+{
+  "id": "1008",
+  "sample_idx": 1008,
+  "mode": "multi",
+  "selected_tasks": [
+    "find coal_ore",
+    "mine black_bed",
+    "craft to leather_helmet",
+    "Build a wall"
+  ],
+  "selection_reasoning": "These 4 tasks form a coherent multi-hop sequence. The player first needs to find coal_ore to orient themselves in a mining area, then mine a black_bed (which requires being in the correct location and having tools). Crafting a leather_helmet requires finding leather and using a crafting table, which can be set up near the mining area. Finally, building a wall requires collected blocks (from mining) and the crafted items establish the player's resource base. The dependency chain: finding coal_ore leads to the mining area where the black_bed is located; mining the black_bed yields wool/resources; crafting leather_helmet is an independent prerequisite for the wall-building task (helmet provides protection context); and building a wall is the culminating task that requires blocks obtained from mining activities.",
+  "reasoning_graph": {
+    "nodes": [
+      "find coal_ore",
+      "mine black_bed",
+      "craft to leather_helmet",
+      "Build a wall"
+    ],
+    "edges": [
+      {
+        "from": "find coal_ore",
+        "to": "mine black_bed",
+        "reason": "Finding coal_ore guides player to the underground/mining area where the black_bed is placed nearby"
+      },
+      {
+        "from": "mine black_bed",
+        "to": "Build a wall",
+        "reason": "Mining the black_bed yields wool and planks that serve as building materials for the wall"
+      },
+      {
+        "from": "craft to leather_helmet",
+        "to": "Build a wall",
+        "reason": "Leather helmet provides head protection needed before the exposed wall-building task in a hostile area"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find coal_ore",
+        "milestone_id": "find_coal_ore",
+        "description": "Uses position_near_with_facing because this is a find/locate/observe task. The player must navigate near the coal_ore blocks embedded in the stone wall at spawn-relative (8, 1, 6) and face toward them. max_distance=16 allows detection from a reasonable distance, and facing_tolerance=60 ensures the player is actually looking at the coal ore.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                8,
+                1,
+                6
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine black_bed",
+        "milestone_id": "mine_black_bed",
+        "description": "Uses inventory_has because mining a bed drops it as an item (black_bed) into the player's inventory. The player starts without a black_bed in inventory, so having at least 1 confirms they mined it successfully.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "black_bed",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to leather_helmet",
+        "milestone_id": "craft_leather_helmet",
+        "description": "Uses inventory_has because crafting a leather helmet (minecraft:leather_helmet) places it in the player's inventory. The player starts with 5 leather and no helmet, so having at least 1 leather_helmet confirms successful crafting.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "leather_helmet",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "Build a wall",
+        "milestone_id": "build_wall",
+        "description": "Uses count_in_box_at_least (kind='block') because building a wall means placing cobblestone blocks in the designated area marked by red concrete. The box is generous (±3 around the red concrete markers at spawn-relative -8, 0~3, -5 to -2) to allow for slight placement variations. Checking for at least 4 cobblestone blocks confirms a meaningful wall structure was built (e.g., 4 blocks long × 1 high, or 2×2, etc.).",
+        "rules": [
+          {
+            "type": "count_in_box_at_least",
+            "params": {
+              "kind": "block",
+              "object": "cobblestone",
+              "min": [
+                -11,
+                0,
+                -8
+              ],
+              "max": [
+                -5,
+                4,
+                1
+              ],
+              "min_count": 4,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "mining_camp_with_tasks",
+  "scene_description": "A flat stone platform serves as a mining camp. To the east, a stone wall contains visible coal_ore blocks with a black bed at its base. A crafting table sits centrally for leather helmet crafting. Red concrete markers to the west define the wall-building area. The player spawns with leather, cobblestone, and an iron pickaxe.",
+  "task_text": "Find the coal ore in the stone wall, mine the black bed nearby, craft a leather helmet at the crafting table, then build a 3-block-high cobblestone wall at the red concrete markers.",
+  "atomic_tasks_ordered": [
+    "find coal_ore",
+    "mine black_bed",
+    "craft to leather_helmet",
+    "Build a wall"
+  ],
+  "commands": [
+    "/fill ~-12 ~-1 ~-12 ~12 ~-1 ~12 minecraft:stone",
+    "/fill ~-12 ~0 ~-12 ~12 ~4 ~12 minecraft:air",
+    "/fill ~8 ~0 ~3 ~8 ~3 ~8 minecraft:stone",
+    "/fill ~9 ~0 ~3 ~10 ~3 ~8 minecraft:stone",
+    "/setblock ~8 ~1 ~5 minecraft:coal_ore",
+    "/setblock ~8 ~2 ~5 minecraft:coal_ore",
+    "/setblock ~8 ~1 ~6 minecraft:coal_ore",
+    "/setblock ~8 ~2 ~6 minecraft:coal_ore",
+    "/setblock ~8 ~1 ~7 minecraft:coal_ore",
+    "/setblock ~6 ~0 ~7 minecraft:black_bed[part=foot,facing=west]",
+    "/setblock ~5 ~0 ~7 minecraft:black_bed[part=head,facing=west]",
+    "/setblock ~-3 ~0 ~2 minecraft:crafting_table",
+    "/fill ~-8 ~0 ~-5 ~-8 ~0 ~-2 minecraft:red_concrete",
+    "/fill ~-7 ~0 ~-5 ~-7 ~0 ~-5 minecraft:red_concrete",
+    "/fill ~-7 ~0 ~-2 ~-7 ~0 ~-2 minecraft:red_concrete",
+    "/give @p minecraft:leather 5",
+    "/give @p minecraft:cobblestone 32",
+    "/give @p minecraft:iron_pickaxe 1"
+  ],
+  "design_notes": "Stone wall (east, ~8 x-coord) contains 5 coal_ore blocks at y=1-2. Black bed placed at ~5-6,0,7 facing west — clear of coal_ore. Crafting table at ~-3,0,2 (central). Red concrete L-shape at ~-8,0,-5 to -2 marks wall foundation — player places cobblestone on top. Player has 5 leather (needs 5 for helmet), 32 cobblestone for wall, and iron pickaxe for mining the bed.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 4 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find coal_ore\", \"mine black_bed\", \"craft to leather_helmet\", \"Build a wall\"],\n  \"selection_reasoning\": \"These 4 tasks form a coherent multi-hop sequence. The player first needs to find coal_ore to orient themselves in a mining area, then mine a black_bed (which requires being in the correct location and having tools). Crafting a leather_helmet requires finding leather and using a crafting table, which can be set up near the mining area. Finally, building a wall re",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations — Second Preview\n\nThis is much better! I can clearly see all the key elements:\n\n1. **Initial frame**: Player spawns on the stone floor, looking forward. The chat confirms all commands executed successfully — leather given, cobblestone given, iron pickaxe given. Advancements \"Stone Age\" and \"Isn't It Iron Pick\" triggered.\n\n2. **Step 000**: The agent turns slightly and I can see **red concrete blocks** (wall-building markers) on the left side, and what appears to be a **che",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## CommonSenseAgent — Minecraft Knowledge Review\n\nBased on my research, here are the critical Minecraft mechanics issues I've identified:\n\n### ⚠️ CRITICAL ISSUE: Leather Helmet Naming\n\nIn Minecraft, the leather helmet is actually called **\"Leather Cap\"** (wiki name) and its internal item ID is `minecraft:leather_helmet`. The crafting recipe requires **5 leather** arranged in a helmet pattern on a crafting table. The scene correctly provides 5 leather — this is the exact amount needed. ✅\n\n### ⚠️ ",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Dependency reasoning is factually incorrect: mining a black_bed drops the bed item itself, NOT wool + planks. Since Java 1.12+, beds drop as a single bed item. The stated dependency 'mine black_bed → Build a wall' (claiming wool/planks are used for wall) is logically flawed. The player already has 32 cobblestone for wall building, so the bed drops are irrelevant to wall construction.\",\n      \"severity\": \"high\",\n      \"target_agent\": \"TaskSelectorAgen",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "I can see from the chat log that the player's spawn position is at approximately (0.5, 87, 0.5) based on the teleport commands. The scene was built relative to this position. Let me verify the key coordinates by checking the scene elements.\n\nBased on all the information gathered from SceneDesignerAgent's sandbox report and my own verification, I can now confirm the scene layout and design the milestones. The spawn point appears to be around (0, 87, 0), and all scene elements are placed relative ",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Thank you for the milestone design. Now let me provide my final CommonSense review incorporating all the information gathered so far.\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Dependency reasoning is factually incorrect: mining a black_bed drops the bed item itself, NOT wool + planks. Since Java 1.12+, beds drop as a single bed item. The stated dependency 'mine black_bed → Build a wall' (claiming wool/planks are used for wall) is logically flawed. The player already has 32 cobblestone for w",
+      "timestamp": ""
+    }
+  ]
+}

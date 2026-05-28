@@ -1,0 +1,163 @@
+{
+  "id": "0637",
+  "sample_idx": 637,
+  "mode": "multi",
+  "selected_tasks": [
+    "find light_gray_wool",
+    "craft to yellow_dye",
+    "sell Wheat"
+  ],
+  "selection_reasoning": "These three tasks form a coherent multi-hop sequence. First, the player must find light_gray_wool in the environment (an exploration/navigation task). The light_gray_wool's location is near a crafting table needed for the next task. Second, the player must craft yellow_dye (using a dandelion or sunflower at a crafting table). Third, the player must sell Wheat to a villager/merchant. The dependency chain works as follows: finding the light_gray_wool guides the player to an area containing the crafting table needed for crafting yellow_dye. The crafting table area is also near the villager who buys wheat, and completing the craft task ensures the player is positioned near the merchant for selling. This creates a natural exploration → crafting → trading progression.",
+  "reasoning_graph": {
+    "nodes": [
+      "find light_gray_wool",
+      "craft to yellow_dye",
+      "sell Wheat"
+    ],
+    "edges": [
+      {
+        "from": "find light_gray_wool",
+        "to": "craft to yellow_dye",
+        "reason": "Finding light_gray_wool leads player to the workshop area containing the crafting table needed to craft yellow_dye"
+      },
+      {
+        "from": "craft to yellow_dye",
+        "to": "sell Wheat",
+        "reason": "Crafting yellow_dye at the workshop positions player near the villager merchant needed to sell Wheat"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find light_gray_wool",
+        "milestone_id": "find_light_gray_wool",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The player must face toward the light_gray_wool cluster (centered at spawn-relative [-2, 0, 2]) within 30° tolerance. The wool is ~3 blocks from spawn so the player is already within distance, but the tight 30° facing_tolerance ensures they must actively turn to look at the wool rather than triggering accidentally from their default spawn facing direction.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                -2,
+                0,
+                2
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 30,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to yellow_dye",
+        "milestone_id": "craft_yellow_dye",
+        "description": "Uses inventory_has because crafting yellow_dye from a dandelion results in the item appearing in the player's inventory. The player starts with 2 dandelions but no yellow_dye, so having at least 1 yellow_dye confirms the craft was completed. This is the standard rule for craft tasks.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "yellow_dye",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "sell Wheat",
+        "milestone_id": "sell_wheat",
+        "description": "Uses inventory_has to check for emerald because selling wheat to the farmer villager (20 wheat → 1 emerald) results in an emerald appearing in the player's inventory. The player starts with no emeralds, so having at least 1 emerald confirms the trade was completed successfully. This is more reliable than checking wheat count decrease.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "emerald",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "wool_market_workshop",
+  "scene_description": "A compact outdoor scene with a light_gray_wool cluster to the player's left, and a market stall with crafting table and farmer villager to the player's right. The player spawns in the middle with dandelions and wheat in their inventory, enabling all three tasks: finding the wool, crafting yellow_dye from dandelions, and selling wheat to the farmer.",
+  "task_text": "Find the light gray wool blocks nearby, then craft yellow dye using the dandelion in your inventory at the crafting table, and finally sell your wheat to the farmer villager at the market stall.",
+  "atomic_tasks_ordered": [
+    "find light_gray_wool",
+    "craft to yellow_dye",
+    "sell Wheat"
+  ],
+  "commands": [
+    "/fill ~-3 ~-1 ~-3 ~10 ~-1 ~10 minecraft:grass_block",
+    "/fill ~-3 ~0 ~-3 ~10 ~5 ~10 minecraft:air",
+    "/setblock ~-2 ~0 ~2 minecraft:light_gray_wool",
+    "/setblock ~-2 ~1 ~2 minecraft:light_gray_wool",
+    "/setblock ~-2 ~0 ~3 minecraft:light_gray_wool",
+    "/setblock ~-3 ~0 ~2 minecraft:light_gray_wool",
+    "/setblock ~-2 ~0 ~1 minecraft:light_gray_wool",
+    "/setblock ~-2 ~1 ~3 minecraft:torch",
+    "/setblock ~5 ~0 ~2 minecraft:crafting_table",
+    "/setblock ~5 ~0 ~3 minecraft:oak_planks",
+    "/setblock ~6 ~0 ~3 minecraft:oak_planks",
+    "/setblock ~6 ~0 ~2 minecraft:oak_planks",
+    "/setblock ~7 ~0 ~2 minecraft:oak_planks",
+    "/setblock ~7 ~0 ~3 minecraft:oak_planks",
+    "/setblock ~5 ~0 ~4 minecraft:oak_planks",
+    "/setblock ~6 ~0 ~4 minecraft:oak_planks",
+    "/setblock ~7 ~0 ~4 minecraft:oak_planks",
+    "/setblock ~5 ~1 ~4 minecraft:oak_planks",
+    "/setblock ~6 ~1 ~4 minecraft:oak_planks",
+    "/setblock ~7 ~1 ~4 minecraft:oak_planks",
+    "/setblock ~5 ~2 ~4 minecraft:oak_planks",
+    "/setblock ~6 ~2 ~4 minecraft:oak_planks",
+    "/setblock ~7 ~2 ~4 minecraft:oak_planks",
+    "/setblock ~5 ~1 ~2 minecraft:oak_fence",
+    "/setblock ~7 ~1 ~2 minecraft:oak_fence",
+    "/give @p minecraft:dandelion 2",
+    "/give @p minecraft:wheat 22",
+    "/summon minecraft:villager ~6 ~1 ~3 {VillagerData:{profession:farmer,level:2,type:plains},Offers:{Recipes:[{buy:{id:\"minecraft:wheat\",Count:20},sell:{id:\"minecraft:emerald\",Count:1},maxUses:999,uses:0}]}}"
+  ],
+  "design_notes": "Compact scene ~10 blocks across. Wool cluster at (-2,0,2) with torch marker. Market stall at (5-7,0,2-4) with crafting table at front (5,0,2), farmer villager at (6,1,3). Player spawns at origin with 2 dandelions and 22 wheat. Yellow dye can be crafted in 2x2 inventory grid (1 dandelion → 1 yellow_dye) or at the crafting table. Farmer trade: 20 wheat → 1 emerald.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 3 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find light_gray_wool\", \"craft to yellow_dye\", \"sell Wheat\"],\n  \"selection_reasoning\": \"These three tasks form a coherent multi-hop sequence. First, the player must find light_gray_wool in the environment (an exploration/navigation task). The light_gray_wool's location is near a crafting table needed for the next task. Second, the player must craft yellow_dye (using a dandelion or sunflower at a crafting table). Third, the player must sell Wheat to a villager/merch",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Good. Now I have all the information needed. Let me summarize the key Minecraft mechanics:\n\n1. **Yellow Dye**: Crafted from a dandelion (1 dandelion → 1 yellow_dye in crafting grid). No crafting table needed — it's a shapeless recipe that works in the 2x2 inventory grid too. But having a crafting table available is fine.\n\n2. **Wheat selling**: The farmer villager has a trade of 20 wheat → 1 emerald. Player has 22 wheat, so they can complete this trade.\n\n3. **Light gray wool**: The blocks are pla",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observation Report — Revision 3 (Final Verification)\n\n### Frame-by-Frame Analysis:\n\n- **Initial frame**: Player spawns on grass. On the left side, I can see oak planks (part of the market stall structure). The hotbar clearly shows **dandelion** (slot 1) and **wheat x22** (slot 2). Command log confirms all blocks placed successfully, \"Gave 2 [Dandelion] to MineRLAgent0\", \"Gave 22 [Wheat] to MineRLAgent0\", \"Summoned new Farmer\". ✅\n\n- **Step 000**: Agent turned right and found the **farm",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## CommonSenseAgent Review\n\nBased on the sandbox observations and Minecraft mechanics research, here's my common-sense assessment:\n\n### ✅ No Major Knowledge Bottlenecks\n\n1. **find light_gray_wool**: The wool is clearly visible (pale gray blocks with torch marker) and only ~3 blocks from spawn. No special knowledge needed — just look around. ✅\n\n2. **craft to yellow_dye**: \n   - Recipe: 1 dandelion → 1 yellow_dye (shapeless, works in 2×2 inventory grid)\n   - Player has 2 dandelions in hotbar\n   - ",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the ValidatorAgent's feedback, I'll revise the milestones to address the concerns about the \"find light_gray_wool\" milestone potentially triggering too easily at spawn.\n\n```json\n{\n  \"revised_milestones\": {\n    \"milestones\": [\n      {\n        \"task\": \"find light_gray_wool\",\n        \"milestone_id\": \"find_light_gray_wool\",\n        \"description\": \"Uses position_near_with_facing because this is a find/locate task. The player must face toward the light_gray_wool cluster (centered at spawn-rel",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "\n\nNow let me provide my comprehensive CommonSense review based on all the information gathered so far.\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Villager may wander away from the market stall before the player reaches it. The summon command lacks NoAI:1b, so the farmer villager will pathfind away from the stall, potentially making the 'sell Wheat' task much harder or impossible if it walks off the grass platform edge.\",\n      \"severity\": \"high\",\n      \"target_agent\": \"SceneDesignerAgent\"\n  ",
+      "timestamp": ""
+    }
+  ]
+}

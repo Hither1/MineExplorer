@@ -1,0 +1,162 @@
+{
+  "id": "0671",
+  "sample_idx": 671,
+  "mode": "multi",
+  "selected_tasks": [
+    "find black_bed",
+    "mine birch_planks",
+    "craft to ladder"
+  ],
+  "selection_reasoning": "These three tasks form a coherent multi-hop dependency chain. First, the agent must find a black_bed which serves as a landmark/navigation task to locate a specific area. Near the black_bed, birch_planks blocks are placed that the agent must mine. Mining birch_planks yields birch plank items, and with enough birch planks (+ sticks crafted from them), the agent can craft a ladder. This creates a natural progression: navigate → gather materials → craft item. The tasks are observable, verifiable, and don't require deep Minecraft expertise beyond basic navigation, mining, and crafting.",
+  "reasoning_graph": {
+    "nodes": [
+      "find black_bed",
+      "mine birch_planks",
+      "craft to ladder"
+    ],
+    "edges": [
+      {
+        "from": "find black_bed",
+        "to": "mine birch_planks",
+        "reason": "Birch planks blocks are placed near the black_bed; agent must find the bed first to locate the planks"
+      },
+      {
+        "from": "mine birch_planks",
+        "to": "craft to ladder",
+        "reason": "Crafting a ladder requires sticks made from birch planks obtained by mining the birch_planks blocks"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find black_bed",
+        "milestone_id": "find_black_bed",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The black bed is at spawn-relative (6, 0, 7) inside the open-front oak building. The player must navigate near it and face it to demonstrate they've found it. max_distance=5 ensures the player actually approaches the bed (it's inside the building, so they need to enter or stand at the open north face). facing_tolerance=60 ensures the player is looking toward the bed.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                6,
+                0,
+                7
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine birch_planks",
+        "milestone_id": "mine_birch_planks",
+        "description": "Uses inventory_has because mining birch_planks blocks drops birch_planks items into the player's inventory. The player starts with zero birch_planks in inventory, so having at least 1 confirms they successfully mined a birch_planks block from the cluster at spawn-relative (-2 to 0, 0-2, 4-7). This is the preferred rule type for mine tasks.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "birch_planks",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to ladder",
+        "milestone_id": "craft_ladder",
+        "description": "Uses inventory_has because crafting a ladder places it into the player's inventory. The player starts with no ladders, so having at least 1 confirms successful crafting. The crafting chain requires: mine birch_planks → craft planks into sticks (2 planks → 4 sticks, done twice) → craft 7 sticks into 3 ladders using the H-pattern on a crafting table. This is the preferred rule type for craft tasks.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "ladder",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "bed_planks_ladder_workshop",
+  "scene_description": "A flat grass clearing with a 3-walled oak building (open north face) containing a black bed and crafting table, with birch planks columns placed nearby to the west. The player spawns facing the building and birch planks, equipped with a wooden axe and a backup crafting table. Task flow: find the black bed inside the building → mine birch planks from the nearby columns → craft planks into sticks then into a ladder using the crafting table.",
+  "task_text": "Find the black bed inside the nearby building, then mine the birch planks blocks outside, and use the materials to craft a ladder.",
+  "atomic_tasks_ordered": [
+    "find black_bed",
+    "mine birch_planks",
+    "craft to ladder"
+  ],
+  "commands": [
+    "/fill ~-15 ~-1 ~-15 ~15 ~10 ~15 minecraft:air",
+    "/fill ~-15 ~-1 ~-15 ~15 ~-1 ~15 minecraft:grass_block",
+    "/fill ~-15 ~-2 ~-15 ~15 ~-2 ~15 minecraft:dirt",
+    "/fill ~3 ~0 ~3 ~9 ~0 ~9 minecraft:oak_planks",
+    "/fill ~3 ~3 ~3 ~9 ~3 ~9 minecraft:oak_planks",
+    "/fill ~3 ~1 ~3 ~3 ~2 ~9 minecraft:oak_planks",
+    "/fill ~9 ~1 ~3 ~9 ~2 ~9 minecraft:oak_planks",
+    "/fill ~3 ~1 ~9 ~9 ~2 ~9 minecraft:oak_planks",
+    "/fill ~3 ~1 ~3 ~9 ~2 ~3 minecraft:air",
+    "/fill ~4 ~0 ~4 ~8 ~2 ~8 minecraft:air",
+    "/setblock ~6 ~0 ~7 minecraft:black_bed[facing=north,part=foot]",
+    "/setblock ~6 ~0 ~6 minecraft:black_bed[facing=north,part=head]",
+    "/setblock ~8 ~0 ~5 minecraft:crafting_table",
+    "/setblock ~6 ~3 ~6 minecraft:torch",
+    "/fill ~-2 ~0 ~5 ~-2 ~2 ~5 minecraft:birch_planks",
+    "/fill ~-1 ~0 ~6 ~-1 ~2 ~6 minecraft:birch_planks",
+    "/fill ~-2 ~0 ~7 ~-1 ~0 ~7 minecraft:birch_planks",
+    "/setblock ~0 ~0 ~5 minecraft:birch_planks",
+    "/setblock ~0 ~0 ~6 minecraft:birch_planks",
+    "/setblock ~-2 ~0 ~4 minecraft:birch_planks",
+    "/give @p minecraft:wooden_axe 1",
+    "/give @p minecraft:crafting_table 1"
+  ],
+  "design_notes": "Building at ~3-9 X/Z with open north face. Black bed at (~6,~0,~6-7). Crafting table at (~8,~0,~5). Torch at ceiling (~6,~3,~6). Birch planks cluster at (~-2 to ~0, ~0-2, ~4-7) = 12 blocks total. Player needs 4 planks minimum for ladder (4 planks → 8 sticks, need 7 for ladder recipe). Wooden axe provided for efficient mining.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 3 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find black_bed\", \"mine birch_planks\", \"craft to ladder\"],\n  \"selection_reasoning\": \"These three tasks form a coherent multi-hop dependency chain. First, the agent must find a black_bed which serves as a landmark/navigation task to locate a specific area. Near the black_bed, birch_planks blocks are placed that the agent must mine. Mining birch_planks yields birch plank items, and with enough birch planks (+ sticks crafted from them), the agent can craft a ladder. T",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## Final Sandbox Observation Report - Revision 3\n\nLooking at the frames from this final revision:\n\n1. **Initial frame**: The player spawns on a flat grass area. Looking slightly right, we can see the open-front oak building (north wall removed) with the interior visible. The birch planks cluster is to the left of the building.\n\n2. **Steps 1-5**: The agent turns and walks toward the building. The open front clearly shows the interior - the black bed and crafting table are visible inside.\n\n3. **St",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nBased on the SceneDesignerAgent's detailed sandbox report, I have all the spatial information needed to design the milestones. Here are the milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find black_bed\",\n      \"milestone_id\": \"find_black_bed\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate task. The black bed is at spawn-relative (~6, ~0, ~6.5) inside the open-front oak building. The player must navigate near it and face it to demonstrate",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observation Report - Revision 4 (Final)\n\nExamining the actual frames from this latest preview:\n\n1. **Initial frame**: Player spawns looking at the oak building wall (left side, large oak planks surface) and the birch planks columns (center-right, lighter colored). The wooden axe is equipped in hand, and the hotbar shows wooden_axe and crafting_table items. Command messages confirm all 22 commands executed successfully - no torch error this time (using floor torch at ceiling level ~3).",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## CommonSenseAgent Review\n\nBased on the sandbox observations and my wiki research, here's my analysis of the benchmark:\n\n### Crafting Chain Verification\n\n**Ladder Recipe:** A ladder requires **7 sticks** arranged in an H-pattern in a 3×3 crafting grid. The recipe yields **3 ladders**.\n\n**Sticks from Planks:** 2 planks → 4 sticks. So to get 7 sticks, the player needs at minimum 2 crafting operations (2 planks → 4 sticks, then 2 more planks → 4 sticks = 8 sticks total, which covers the 7 needed).",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nBased on the SceneDesignerAgent's detailed sandbox report and CommonSenseAgent's analysis, I have all the information needed. Here are my milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find black_bed\",\n      \"milestone_id\": \"find_black_bed\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate task. The black bed is at spawn-relative (6, 0, 7) inside the open-front oak building. The player must navigate near it and face it to demonstrate they'v",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Now let me verify the key concern — the crafting recipe for ladders and whether birch planks specifically can be used:\n\n**Key Minecraft Knowledge Points to Verify:**\n\n1. **Ladder recipe**: 7 sticks in an H-pattern → 3 ladders. This is correct.\n2. **Sticks from planks**: 2 planks (any type, vertically) → 4 sticks. This works with birch planks.\n3. **Material math**: Need 7 sticks minimum. 2 planks → 4 sticks. So 4 planks → 8 sticks (enough for 7). Scene has 12 birch plank blocks — more than suffic",
+      "timestamp": ""
+    }
+  ]
+}

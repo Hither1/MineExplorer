@@ -1,0 +1,118 @@
+{
+  "id": "0570",
+  "sample_idx": 570,
+  "mode": "multi",
+  "selected_tasks": [
+    "find packed_ice",
+    "mine sandstone_wall"
+  ],
+  "selection_reasoning": "These two tasks form a coherent multi-hop sequence where the agent must first locate packed_ice (which serves as a navigational landmark/waypoint) and then proceed to mine a sandstone_wall block. The dependency is spatial: the packed_ice structure is placed as a visible landmark that guides the agent toward the area where the sandstone_wall is located. Without first finding the packed_ice landmark, the agent would have difficulty locating the sandstone_wall in the environment. Both tasks are observable (packed_ice has a distinctive blue-white appearance, sandstone_wall is a recognizable block), verifiable (proximity check for finding, block removal for mining), and don't require deep Minecraft domain knowledge beyond basic navigation and block breaking.",
+  "reasoning_graph": {
+    "nodes": [
+      "find packed_ice",
+      "mine sandstone_wall"
+    ],
+    "edges": [
+      {
+        "from": "find packed_ice",
+        "to": "mine sandstone_wall",
+        "reason": "Packed ice structure serves as a landmark guiding the agent to the nearby sandstone_wall mining location"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find packed_ice",
+        "milestone_id": "find_packed_ice",
+        "description": "Uses position_near_with_facing because this is a find/locate/observe task. The player must navigate near the packed_ice tower (centered at spawn-relative 9, 2, 9) and face toward it, confirming they have visually located the landmark. max_distance=16 allows detection from a reasonable viewing distance, and facing_tolerance=60 ensures the player is actually looking at the structure.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                9,
+                2,
+                9
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine sandstone_wall",
+        "milestone_id": "mine_sandstone_wall",
+        "description": "Uses inventory_has because when a sandstone_wall block is mined with a pickaxe, it drops as an item into the player's inventory. The player starts with a wooden pickaxe (sufficient for sandstone-tier blocks) and no sandstone_wall in inventory, so having at least 1 sandstone_wall item confirms successful mining.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "sandstone_wall",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "ice_landmark_sandstone_mine",
+  "scene_description": "A flat grass clearing with two structures: a packed_ice stepped tower (landmark) and an adjacent sandstone_wall structure on a sand base. The packed_ice tower is visible from spawn and guides the player to the nearby sandstone_wall blocks. Player is given a wooden pickaxe to mine the wall.",
+  "task_text": "Find the packed_ice tower landmark, then locate and mine the sandstone_wall blocks next to it.",
+  "atomic_tasks_ordered": [
+    "find packed_ice",
+    "mine sandstone_wall"
+  ],
+  "commands": [
+    "/fill ~-3 ~-1 ~-3 ~20 ~10 ~20 minecraft:air",
+    "/fill ~-3 ~-1 ~-3 ~20 ~-1 ~20 minecraft:grass_block",
+    "/fill ~7 ~0 ~7 ~11 ~0 ~11 minecraft:packed_ice",
+    "/fill ~8 ~1 ~8 ~10 ~3 ~10 minecraft:packed_ice",
+    "/setblock ~9 ~4 ~9 minecraft:packed_ice",
+    "/fill ~13 ~0 ~7 ~16 ~0 ~11 minecraft:sand",
+    "/fill ~13 ~1 ~8 ~15 ~1 ~10 minecraft:sandstone_wall",
+    "/fill ~13 ~2 ~8 ~15 ~2 ~10 minecraft:sandstone_wall",
+    "/fill ~14 ~3 ~9 ~14 ~3 ~9 minecraft:sandstone_wall",
+    "/give @p minecraft:wooden_pickaxe 1"
+  ],
+  "design_notes": "The packed_ice tower (5-block tall stepped pyramid) is at ~7-11 on X/Z axes. The sandstone_wall structure (3-block tall, 3x3 footprint on a sand base) is placed immediately adjacent at ~13-16 on X. Both are clearly visible from spawn on flat grass. The /fill air command clears any trees/terrain that might obstruct the view. The wooden pickaxe allows mining sandstone_wall (any pickaxe works). The spatial relationship is: spawn → packed_ice landmark → sandstone_wall just beyond it.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find packed_ice\", \"mine sandstone_wall\"],\n  \"selection_reasoning\": \"These two tasks form a coherent multi-hop sequence where the agent must first locate packed_ice (which serves as a navigational landmark/waypoint) and then proceed to mine a sandstone_wall block. The dependency is spatial: the packed_ice structure is placed as a visible landmark that guides the agent toward the area where the sandstone_wall is located. Without first finding the packed_ice landmark",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observation Report — Revision 2\n\n### What I Saw in Each Frame:\n\n- **[initial]**: Player spawns on a flat grass area. The packed_ice structure is visible on the LEFT side of the frame — a large blue-white ice block tower. The area has been cleared of trees (the `/fill air` command worked). Trees remain at the periphery. The wooden pickaxe is in the hotbar. Command confirmations visible.\n\n- **[step_000]**: Agent turned slightly to face the packed_ice structure more directly. Now we can ",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## CommonSenseAgent Feedback\n\nHere are my findings after reviewing the scene design and Minecraft mechanics:\n\n### ✅ Confirmed Correct\n1. **Packed ice visibility**: Packed ice is opaque (unlike regular ice), so it will render as a solid blue-white block — excellent choice for a landmark.\n2. **Sandstone wall is a valid block**: It's a decorative wall variant of sandstone. The `/fill` command with `minecraft:sandstone_wall` is correct.\n3. **Both structures are clearly visible from spawn** per the s",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Sandstone wall is a stone-tier block requiring a pickaxe to mine. The scene correctly provides a wooden pickaxe, but a general-purpose AI agent may not know it needs to equip/use the pickaxe rather than just punching the block. Without a pickaxe, sandstone_wall drops nothing when broken by hand.\",\n      \"severity\": \"medium\",\n      \"target_agent\": \"SceneDesignerAgent\"\n    },\n    {\n      \"issue\": \"The task dependency (find packed_ice → mine sandstone",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on my observations, the key insight is that **milestones use `coordinate_frame=\"spawn_relative\"`**, meaning the evaluator automatically converts spawn-relative offsets to absolute coords. So I don't need to know the absolute coordinates — I just need to know the offsets from spawn.\n\nSince the commands use `~` (relative to player position at execution time), and the evaluator spawns the player at the same position where commands are executed, the spawn-relative coordinates ARE the `~` offse",
+      "timestamp": ""
+    }
+  ]
+}

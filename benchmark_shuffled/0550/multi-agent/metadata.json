@@ -1,0 +1,127 @@
+{
+  "id": "0370",
+  "sample_idx": 370,
+  "mode": "multi",
+  "selected_tasks": [
+    "find carrots",
+    "sell Pumpkin"
+  ],
+  "selection_reasoning": "These two tasks form a coherent multi-hop sequence in a village/trading context. The player must first 'find carrots' which establishes locating a farmer villager's crop area or a village farm. Once the player has found the carrots (and thus located the farming area/village), they can then navigate to a farmer villager to 'sell Pumpkin'. The dependency is spatial and contextual: finding the carrots helps the player locate the village farming infrastructure and the farmer villager needed to complete the pumpkin trade. The scene will include a village-like setup with a farmer villager, carrot crops, and the player will need a pumpkin in inventory to sell. Both tasks are observable and verifiable without deep Minecraft expertise.",
+  "reasoning_graph": {
+    "nodes": [
+      "find carrots",
+      "sell Pumpkin"
+    ],
+    "edges": [
+      {
+        "from": "find carrots",
+        "to": "sell Pumpkin",
+        "reason": "Finding carrots leads player to the farm area where the farmer villager is located, enabling the pumpkin trade"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find carrots",
+        "milestone_id": "find_carrots",
+        "description": "Uses position_near_with_facing because 'find carrots' is a locate/observe task. The player must navigate near the carrot farm (centered at relative [5, 0, 5]) and face toward it. The carrot crops are placed at offsets +3 to +7 on X and Z, so center is [5, 0, 5]. max_distance=16 is generous for viewing, and facing_tolerance=60 ensures the player is actually looking at the farm.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                5,
+                0,
+                5
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "sell Pumpkin",
+        "milestone_id": "sell_pumpkin",
+        "description": "Uses inventory_has to detect a successful pumpkin trade. The player starts with 5 emeralds and the farmer's trade gives 1 emerald for 6 pumpkins. After a successful trade, the player will have at least 6 emeralds. Checking for min_count=6 emeralds confirms the trade was completed since the player only starts with 5.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "emerald",
+              "min_count": 6
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "village_farm_trading_post",
+  "scene_description": "A compact village scene with a 5x5 carrot farm on farmland (at relative +3 to +7 on X and Z) and a small oak planks farmer's hut (at -6 to -2 on X and Z) containing a level-5 farmer villager who buys pumpkins for emeralds. The player spawns between the two structures with pumpkins in inventory ready to trade.",
+  "task_text": "Find the carrot farm in the area, then locate the farmer villager and sell pumpkins to him.",
+  "atomic_tasks_ordered": [
+    "find carrots",
+    "sell Pumpkin"
+  ],
+  "commands": [
+    "/fill ~-10 ~-1 ~-10 ~10 ~-1 ~10 minecraft:grass_block",
+    "/fill ~-10 ~0 ~-10 ~10 ~5 ~10 minecraft:air",
+    "/fill ~3 ~-1 ~3 ~7 ~-1 ~7 minecraft:farmland",
+    "/fill ~3 ~0 ~3 ~7 ~0 ~7 minecraft:carrots[age=7]",
+    "/fill ~-6 ~-1 ~-6 ~-2 ~-1 ~-2 minecraft:cobblestone",
+    "/fill ~-6 ~0 ~-6 ~-2 ~2 ~-2 minecraft:air",
+    "/fill ~-6 ~0 ~-6 ~-6 ~2 ~-2 minecraft:oak_planks",
+    "/fill ~-2 ~0 ~-6 ~-2 ~2 ~-2 minecraft:oak_planks",
+    "/fill ~-6 ~0 ~-6 ~-2 ~2 ~-6 minecraft:oak_planks",
+    "/fill ~-6 ~0 ~-2 ~-2 ~2 ~-2 minecraft:oak_planks",
+    "/fill ~-5 ~0 ~-2 ~-3 ~1 ~-2 minecraft:air",
+    "/fill ~-6 ~3 ~-6 ~-2 ~3 ~-2 minecraft:oak_slab",
+    "/summon minecraft:villager ~-4 ~0 ~-4 {VillagerData:{profession:farmer,level:5,type:plains},Offers:{Recipes:[{buy:{id:pumpkin,Count:6},sell:{id:emerald,Count:1},maxUses:999}]}}",
+    "/give @p minecraft:pumpkin 10",
+    "/give @p minecraft:emerald 5",
+    "/setblock ~5 ~-1 ~0 minecraft:oak_fence",
+    "/setblock ~5 ~0 ~0 minecraft:torch",
+    "/setblock ~-1 ~0 ~5 minecraft:oak_fence",
+    "/setblock ~-1 ~1 ~5 minecraft:torch"
+  ],
+  "design_notes": "The carrot farm is at +3 to +7 on both X and Z axes from spawn, making it visible from spawn. The farmer's hut is at -6 to -2 on both axes with an opening on the +Z wall (facing spawn). The farmer villager is a level-5 farmer with a pumpkin trade offer (6 pumpkins → 1 emerald). Player starts with 10 pumpkins (enough for at least one trade) and 5 emeralds. Torches on fence posts serve as landmarks. The scene is compact (~20 block diameter) and both objectives are reachable within a few steps.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find carrots\", \"sell Pumpkin\"],\n  \"selection_reasoning\": \"These two tasks form a coherent multi-hop sequence in a village/trading context. The player must first 'find carrots' which establishes locating a farmer villager's crop area or a village farm. Once the player has found the carrots (and thus located the farming area/village), they can then navigate to a farmer villager to 'sell Pumpkin'. The dependency is spatial and contextual: finding the carrots helps th",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations\n\nAfter examining all 21 frames from the preview, here's what I observed:\n\n**Initial frame:** The player spawns on grass, holding pumpkins (visible in hotbar with 10 pumpkins and 5 emeralds). A torch on a fence post is visible ahead. Trees in background. The command confirmations show all commands executed successfully.\n\n**Step 000:** The agent turned right and we can see the oak planks building (the farmer's hut) on the right side. A villager (purple-robed farmer) is visi",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## CommonSenseAgent Response\n\nThe scene looks well-designed overall. Here are my observations and common-sense checks:\n\n### ✅ What Works Well\n1. **Carrot farm visibility**: The 5x5 carrot farm is clearly visible and identifiable from the exploration frames. Fully grown carrots (age=7) are the correct choice since they're visually distinct.\n2. **Farmer villager placement**: The villager is inside a building with an opening, making it accessible.\n3. **Inventory setup**: 10 pumpkins is appropriate ",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Now I have enough information to provide my milestone design. Based on the scene report from SceneDesignerAgent:\n\n- **Carrot farm location**: Relative offsets +3 to +7 on X and Z from spawn, at Y=0\n- **Farmer villager location**: At approximately (-4, 0, -4) relative to spawn\n- **Player starts with**: 10 pumpkins, 5 emeralds\n- **Trade**: 6 pumpkins → 1 emerald\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find carrots\",\n      \"milestone_id\": \"find_carrots\",\n      \"description\": \"Uses positio",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Now let me think through the potential issues:\n\n1. **Villager trading mechanics**: To \"sell Pumpkin\" to a villager, the player needs to right-click (use action) on the villager to open the trade GUI, then select the pumpkin trade and click to complete it. This requires knowledge of how villager trading works.\n\n2. **Farmland hydration**: The scene places farmland without any water source nearby. Unhydrated farmland will eventually revert to dirt if jumped on, but since the carrots are already ful",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    }
+  ]
+}

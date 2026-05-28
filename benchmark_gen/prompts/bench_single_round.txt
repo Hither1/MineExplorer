@@ -1,0 +1,164 @@
+I want you to design a complete multi-hop Minecraft benchmark scenario in a single response.
+
+I will give you {candidate_num} candidate atomic tasks. You must select exactly {k} of them, design a Minecraft scene, and produce milestones — all in one JSON object.
+
+## Candidate atomic tasks ({candidate_num} total)
+
+{candidate_list}
+
+---
+
+## Step 1 — Task Selection
+
+Select exactly {k} tasks from the list that:
+1. Can be naturally chained together (completing one makes the next necessary)
+2. Form a coherent sequential or dependency graph
+3. Create a challenging yet fair scenario for an AI agent when combined
+
+---
+
+## Step 2 — Scene Design
+
+Design a concrete Minecraft environment that requires the agent to complete the selected tasks in order.
+
+Requirements:
+1. **Scene Setup**: Design a specific environment that makes all tasks necessary and naturally ordered.
+2. **Task Ordering**: The scenario environment should ENFORCE task ordering naturally (e.g., an enemy blocks the path, resources must be gathered first).
+3. **Hidden Complexity**: The `task_text` given to the agent shows ONLY the final goal — it must figure out the prerequisites from the environment.
+4. **Minecraft Commands**: Provide exact Minecraft Java Edition commands to set up the scene. Use ~ notation for relative coordinates.
+5. **Judge-Friendly Layout**: Prefer clear spatial regions, explicit barriers, and localized mobs/structures.
+6. **Keep it compact**: Place ALL task-relevant objects within ~15 blocks of spawn. Do NOT place anything unrelated to the task chain.
+
+Standard environment setup commands (always include these first):
+- /gamemode survival @s
+- /time set day
+- /weather clear
+- /kill @e[type=!player]
+- /kill @e[type=item]
+- /effect clear @s
+- /clear @s
+- /fill ~-30 ~0 ~-20 ~30 ~20 ~20 minecraft:air
+- /fill ~-30 ~-1 ~-20 ~30 ~-1 ~20 minecraft:grass_block
+
+Available command types:
+- /setblock ~X ~Y ~Z <block>
+- /fill ~X1 ~Y1 ~Z1 ~X2 ~Y2 ~Z2 <block>
+- /give @s <item> <count>
+- /replaceitem entity @s weapon.mainhand <item>
+- /summon minecraft:<mob> ~X ~Y ~Z {NoAI:1b,PersistenceRequired:1b,Silent:1b}
+- /tp @s ~X ~Y ~Z facing <direction or entity>
+
+---
+
+## Step 3 — Reasoning / Dependency Graph
+
+Provide the dependency graph for the selected atomic tasks.
+- Each edge means "task A must be completed before task B".
+- nodes: all task names in completion order.
+- edges: list of {from, to, reason} objects.
+
+---
+
+## Step 4 — Rule-Based Milestones
+
+For each atomic task in order, define exactly one milestone for online judging.
+
+The evaluator receives after every env.step() an `info` dict with:
+```
+info = {
+  "player_pos":    {"x": float, "y": float, "z": float, "pitch": float, "yaw": float},
+  "inventory":     [{"slot_id": int, "type": str, "quantity": int}, ...],
+  "craft_item":    {"iron_sword": 2, ...},   # cumulative since reset
+  "mine_block":    {"stone": 10, ...},       # cumulative since reset
+  "kill_entity":   {"zombie": 1, ...},       # cumulative since reset
+  "use_item":      {"bow": 5, ...},          # cumulative since reset
+  "pickup":        {"diamond": 1, ...},      # cumulative since reset
+  "voxels":        [{"type": "minecraft:stone", "x": int, "y": int, "z": int}, ...],
+  "mobs":          [{"type": "minecraft:zombie", "x": float, "y": float, "z": float, "health": float}, ...]
+}
+```
+
+### Allowed rule types (use ONLY these)
+
+1. **inventory_has** — item is in inventory >= min_count
+   params: `{"item": "iron_sword", "min_count": 1}`
+
+2. **position_near_with_facing** — player is within max_distance of target AND facing it
+   params: `{"target": [x, y, z], "max_distance": 16, "facing_tolerance": 60, "coordinate_frame": "spawn_relative"}`
+   Use for find/locate/observe tasks. target is spawn-relative (same as ~ offsets).
+
+3. **position_inside_box** — player is inside a spawn-relative box
+   params: `{"min": [x1,y1,z1], "max": [x2,y2,z2], "coordinate_frame": "spawn_relative"}`
+   Use ONLY for movement/arrival/traversal tasks.
+
+4. **count_in_box_at_least** — >= min_count blocks or mobs of type inside box
+   params: `{"kind": "block"|"mob", "object": "crafting_table", "min": [x1,y1,z1], "max": [x2,y2,z2], "min_count": 1, "coordinate_frame": "spawn_relative"}`
+   Use for place/build tasks. Box must extend ±3~±5 in XZ, ±3 in Y around the build site.
+
+5. **count_in_box_at_most** — <= max_count blocks or mobs of type inside box
+   params: `{"kind": "block"|"mob", "object": "spider", "min": [x1,y1,z1], "max": [x2,y2,z2], "max_count": 0, "coordinate_frame": "spawn_relative"}`
+   Use for kill tasks. Box must be VERY GENEROUS (±15~±20 or the entire arena).
+
+### Preference order
+1. inventory_has — craft/mine/pickup/obtain
+2. count_in_box_at_most — kill/combat (kind="mob", max_count=0, generous ±15~±20)
+3. count_in_box_at_least — place/build (kind="block", generous ±3~±5)
+4. position_near_with_facing — find/locate/observe
+5. position_inside_box — movement/arrival only
+### Forbidden mistakes
+- Do NOT invent new rule types.
+- Do NOT use absolute world coordinates — always spawn_relative.
+- Do NOT write "minecraft:" prefix in "item" or "object" params.
+- Do NOT create a milestone already true at scene initialization.
+- Do NOT reuse the same milestone_id.
+- Do NOT set min_count to 0.
+- Do NOT leave rules as an empty array [] — every milestone must have at least one rule.
+- count_in_box for blocks: min box ±3 XZ; for mobs: min box ±15.
+
+---
+
+## STRICT OUTPUT RULES
+
+Output ONLY a single raw JSON object. No markdown, no explanation, no code fences.
+The very first character must be { and the very last character must be }.
+
+The JSON object must have EXACTLY these top-level keys:
+
+```
+{
+  "selected_tasks": ["task1", "task2", ...],          // exactly {k} task name strings
+  "selection_reasoning": "...",                        // 2-3 sentence explanation
+  "scene_name": "short_snake_case_id",
+  "scene_description": "1-3 sentence description",
+  "task_text": "final goal shown to the agent only",
+  "atomic_tasks_ordered": ["task1", "task2", ...],
+  "commands": ["/cmd1", "/cmd2", ...],
+  "design_notes": "...",
+  "reasoning_graph": {
+    "nodes": ["task1", "task2", ...],
+    "edges": [{"from": "task1", "to": "task2", "reason": "..."}]
+  },
+  "milestones": [
+    {
+      "task": "<exact atomic task name>",
+      "milestone_id": "<short_snake_case_id>",
+      "description": "<why this rule was chosen>",
+      "rules": [
+        {"type": "inventory_has", "params": {"item": "iron_sword", "min_count": 1}}
+      ]
+    }
+  ]
+}
+```
+
+Self-check before answering:
+- selected_tasks length exactly equals {k}.
+- atomic_tasks_ordered length exactly equals {k}.
+- milestones length exactly equals {k}.
+- milestone[i].task exactly equals atomic_tasks_ordered[i].
+- Every milestone_id is unique short snake_case.
+- Every spatial rule uses coordinate_frame="spawn_relative".
+- count_in_box boxes are generous (±3~±5 for blocks, ±15~±20 for mobs).
+- No rule uses min_count=0.
+- No milestone is already true at scene initialization.
+- position_inside_box is NOT used for non-navigation tasks.

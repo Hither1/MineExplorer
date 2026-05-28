@@ -1,0 +1,78 @@
+{
+  "milestones": [
+    {
+      "task": "find lily_of_the_valley",
+      "milestone_id": "find_lily_of_the_valley",
+      "description": "Uses position_near_with_facing because this is a find/locate task. The player must navigate near the lily_of_the_valley flower patch at (8, 0, 3) east of spawn and face toward it, confirming they can see it. max_distance=16 gives generous approach range, facing_tolerance=60 ensures they're looking at the flowers.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              8,
+              0,
+              3
+            ],
+            "max_distance": 16,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "find a mushroom cow",
+      "milestone_id": "find_mushroom_cow",
+      "description": "Uses position_near_with_facing because this is a find/locate task. The player must navigate near the mooshroom cows on the mycelium patch at (-7, 0, -4) west of spawn and face toward them. max_distance=16 allows detection from a reasonable distance, facing_tolerance=60 ensures the player is looking at the mooshrooms.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              -7,
+              0,
+              -4
+            ],
+            "max_distance": 16,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "feed sheep",
+      "milestone_id": "feed_sheep",
+      "description": "Uses inventory_has because feeding wheat to a sheep consumes wheat from inventory. The player starts with 8 wheat, so after feeding at least one sheep they should have at most 7. Since inventory_has only supports min_count (not max_count), we use use_item tracking instead. Actually, the evaluator's use_item counter tracks right-click usage. When the player feeds wheat to a sheep, it registers as use_item:wheat. We check use_item wheat >= 1 via the event. However, use_item is not a supported rule type. The best available check is inventory_has for light_gray_wool (but that's the next task). Re-evaluating: the most reliable programmatic check is inventory_has with wheat having decreased. But inventory_has only checks min_count >= N. Since we cannot check 'less than', we use the pickup or use_item approach. Actually, looking at the rules again, there's no use_item rule type. The safest approach is to check that the player is near the sheep location, which indicates they went to feed. But position rules don't confirm feeding. Given the constraints, I'll use count_in_box_at_least for the sheep area - if the player is near sheep and has used wheat, the sheep enters love mode. The most practical check: inventory_has for wheat with min_count=1 confirms they still have wheat (not useful). Let me reconsider - the best available rule is inventory_has for light_gray_wool min_count 0... No. After careful analysis, I'll use position_near_with_facing toward the sheep location as a proxy - the player must approach and face the sheep to feed them.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              4,
+              0,
+              8
+            ],
+            "max_distance": 3,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "mine light_gray_wool",
+      "milestone_id": "mine_light_gray_wool",
+      "description": "Uses inventory_has because shearing a light gray sheep (Color:8) with shears drops light_gray_wool items that end up in the player's inventory. The player starts with no wool, so having at least 1 light_gray_wool confirms successful shearing/mining. This is the most reliable check since the wool item must appear in inventory regardless of how it was obtained.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "light_gray_wool",
+            "min_count": 1
+          }
+        }
+      ]
+    }
+  ]
+}

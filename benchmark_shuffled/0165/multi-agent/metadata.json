@@ -1,0 +1,145 @@
+{
+  "id": "0391",
+  "sample_idx": 391,
+  "mode": "multi",
+  "selected_tasks": [
+    "find spruce_door",
+    "craft to spruce_sign"
+  ],
+  "selection_reasoning": "These two tasks form a coherent multi-hop dependency chain. The agent must first find a spruce_door in the environment, which serves as both a navigation/exploration task and a source of spruce planks. A spruce_door can be broken to yield spruce planks (or the agent can find spruce planks nearby as part of the scene). The spruce_sign recipe requires spruce planks and a stick. By placing spruce planks and sticks in the scene near or behind the spruce_door, the agent must first locate the door (establishing spatial awareness), then gather the materials to craft the spruce_sign. The 'find spruce_door' task naturally precedes the crafting task because the door marks the location where crafting materials are accessible, creating a logical exploration-then-craft dependency.",
+  "reasoning_graph": {
+    "nodes": [
+      "find spruce_door",
+      "craft to spruce_sign"
+    ],
+    "edges": [
+      {
+        "from": "find spruce_door",
+        "to": "craft to spruce_sign",
+        "reason": "The spruce_door marks the location where spruce planks and sticks needed for crafting the spruce_sign are stored behind/near it"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find spruce_door",
+        "milestone_id": "find_spruce_door",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The spruce door is at spawn-relative (5, 0, 5) on the south face of the cabin. The player must navigate close enough to see it and face toward it. Max distance of 8 blocks ensures the player has actually approached the building rather than just spawning nearby, and facing_tolerance of 60° confirms they are looking at the door. The player spawns ~7.07 blocks away at the origin, so they must walk toward the building.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                5,
+                0,
+                5
+              ],
+              "max_distance": 8,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to spruce_sign",
+        "milestone_id": "craft_spruce_sign",
+        "description": "Uses inventory_has because crafting a spruce sign places the result into the player's inventory. The player starts with 6 spruce planks and 1 stick (no spruce_sign), so this rule cannot be pre-satisfied. The recipe produces 3 spruce signs, but we only require min_count=1 since the task says 'craft to spruce_sign' (singular). This is the standard and most reliable way to verify a crafting task was completed.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "spruce_sign",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "spruce_cabin_with_crafting",
+  "scene_description": "A small spruce plank cabin on a grass platform with a south-facing spruce door. A crafting table is placed just outside the front of the cabin (2 blocks south of the door) for easy access. The player spawns with 6 spruce planks and 1 stick in their inventory — the exact materials needed to craft a spruce sign.",
+  "task_text": "Find the spruce door on the cabin, then use the crafting table nearby to craft a spruce sign from the materials in your inventory.",
+  "atomic_tasks_ordered": [
+    "find spruce_door",
+    "craft to spruce_sign"
+  ],
+  "commands": [
+    "/fill ~-8 ~-1 ~-8 ~8 ~-1 ~8 minecraft:grass_block",
+    "/fill ~-8 ~0 ~-8 ~8 ~4 ~8 minecraft:air",
+    "/fill ~3 ~0 ~5 ~7 ~3 ~9 minecraft:spruce_planks",
+    "/fill ~4 ~0 ~6 ~6 ~3 ~8 minecraft:air",
+    "/setblock ~5 ~0 ~5 minecraft:spruce_door[facing=south,half=lower]",
+    "/setblock ~5 ~1 ~5 minecraft:spruce_door[facing=south,half=upper]",
+    "/setblock ~5 ~0 ~3 minecraft:crafting_table",
+    "/setblock ~4 ~0 ~7 minecraft:chest[facing=south]",
+    "/fill ~-8 ~-1 ~-8 ~8 ~-1 ~-8 minecraft:dirt",
+    "/fill ~-8 ~-1 ~8 ~8 ~-1 ~8 minecraft:dirt",
+    "/give @p minecraft:spruce_planks 6",
+    "/give @p minecraft:stick 1"
+  ],
+  "design_notes": "",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find spruce_door\", \"craft to spruce_sign\"],\n  \"selection_reasoning\": \"These two tasks form a coherent multi-hop dependency chain. The agent must first find a spruce_door in the environment, which serves as both a navigation/exploration task and a source of spruce planks. A spruce_door can be broken to yield spruce planks (or the agent can find spruce planks nearby as part of the scene). The spruce_sign recipe requires spruce planks and a stick. By placing spruce p",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "\n\n## Sandbox Observation Report — Revised Scene (Preview #2)\n\n### Frame-by-Frame Analysis\n\n**Initial Frame:**\n- Player spawns on grass, looking slightly right. The **spruce plank building** is clearly visible to the left — a solid rectangular structure. The hotbar shows **Spruce Planks (6)** and **Stick (1)** successfully given. Trees and sky in background.\n\n**Step 000:**\n- Agent turned right toward the building. The **spruce door** is now clearly visible on the south face of the building (the d",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on my Minecraft knowledge and the scene information provided by SceneDesignerAgent, here's my common-sense assessment:\n\n## CommonSenseAgent Feedback\n\n### Recipe Verification ✅\nThe **spruce sign** recipe in Minecraft requires:\n- **6 spruce planks** (top 2 rows of 3x3 crafting grid)\n- **1 stick** (bottom-middle slot)\n- This produces **3 spruce signs**\n\nThe scene gives the player exactly **6 spruce planks + 1 stick**, which is correct for crafting spruce signs. The crafting table is placed ou",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## CommonSenseAgent — Final Assessment\n\nBased on my wiki research, the sandbox previews, and the screenshots I just captured, here is my final evaluation:\n\n### Visual Confirmation from Screenshots\n\n1. **First-person view**: The spruce plank building is clearly visible to the left. The hotbar shows \"Spruce Planks\" in the player's inventory. The building has the characteristic dark spruce wood texture.\n\n2. **North/South views**: The building structure is visible from elevated angles, confirming th",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "Now let me design the milestone completion criteria based on all the information gathered.\n\n## MilestoneAgent — Milestone Rules\n\nBased on the scene layout, task requirements, and common-sense feedback, here are the milestone rules:\n\nThe scene uses relative coordinates. From the chat logs, the player spawns near absolute coordinates around (-3005, 71, -5568). The commands use `~` relative offsets, so:\n- **Spruce door**: at relative (~5, ~0, ~5) from spawn → approximately (-3000, 71, -5563)\n- **Cr",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "Based on the scene design, the relative coordinates work as follows:\n- **Player spawn**: (~0, ~0, ~0) which maps to absolute origin\n- **Spruce door**: (~5, ~0, ~5) = 5 blocks east, 5 blocks south\n- **Euclidean distance**: √(5² + 5²) ≈ 7.07 blocks\n\nThis confirms that at spawn, the player is ~7 blocks from the door, which exceeds the `max_distance: 5` threshold. **Milestone 1 is NOT already satisfied.** ✅\n\n### Final Validation Summary\n\n```json\n{\n  \"validation_result\": \"PASS\",\n  \"issues\": [],\n  \"wa",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## SceneDesignerAgent — Final Scene Summary\n\nThank you all for the thorough review. Based on the sandbox verification, CommonSenseAgent's recipe confirmation, and ValidatorAgent's approval, I'm finalizing the scene design. Everything has been confirmed working:\n\n```json\n{\n  \"scene_name\": \"spruce_cabin_with_crafting\",\n  \"scene_description\": \"A small spruce plank cabin on a grass platform with a south-facing spruce door. A crafting table is placed just outside the front of the cabin (2 blocks sout",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Final Benchmark Sample — Complete Export\n\nBased on all agents' contributions, validations, and sandbox verification, here is the complete benchmark sample:\n\n```json\n{\n  \"benchmark_id\": \"spruce_cabin_find_and_craft\",\n  \"scene_name\": \"spruce_cabin_with_crafting\",\n  \"scene_description\": \"A small spruce plank cabin on a grass platform with a south-facing spruce door. A crafting table is placed just outside the front of the cabin (2 blocks south of the door) for easy access. The player spawns with",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the scene design, sandbox observations, and all agent feedback, here are my milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find spruce_door\",\n      \"milestone_id\": \"find_spruce_door\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate task. The spruce door is at spawn-relative (5, 0, 5) on the south face of the cabin. The player must navigate close enough to see it and face toward it. Max distance of 8 blocks ensures the player has act",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## CommonSenseAgent — Final Review (Debate Round)\n\nI've reviewed the complete benchmark export and the MilestoneAgent's final milestone rules. Let me provide my final assessment after considering all the information.\n\n### Re-verification of Key Points\n\n1. **Recipe correctness** ✅ — 6 spruce planks + 1 stick = 3 spruce signs. The player has exactly these materials.\n\n2. **Item ID correctness** ✅ — `spruce_sign` is the correct Minecraft Java Edition item ID (not `spruce_wall_sign` or `oak_sign`).\n\n",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "## ValidatorAgent — Final Validation\n\nI've now reviewed the complete benchmark including the dependency graph, milestones, scene design, and sandbox verification results. Let me provide my comprehensive validation.\n\n### Graph Validation\n\n```json\n{\n  \"approved\": true,\n  \"structural_issues\": [],\n  \"semantic_issues\": [\n    \"Minor: The dependency is spatial (crafting table near door) rather than material-based. The player could theoretically craft without finding the door first, but the co-location ",
+      "timestamp": ""
+    }
+  ]
+}

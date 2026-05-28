@@ -1,0 +1,145 @@
+{
+  "id": "0559",
+  "sample_idx": 559,
+  "mode": "multi",
+  "selected_tasks": [
+    "find a pig",
+    "find gold_ore"
+  ],
+  "selection_reasoning": "I selected 'find a pig' and 'find gold_ore' as a two-task dependency chain. The scenario is: the player must first find a pig (which serves as a landmark/guide to a nearby cave or area), and then find gold_ore in that same vicinity. This creates a natural multi-hop structure where locating the pig helps orient the player toward the gold_ore location. Both tasks are observable (pig is a visible mob, gold_ore is a visible block), verifiable, and don't require deep Minecraft crafting knowledge — just navigation and visual recognition. The pig acts as a waypoint that the player must locate first before proceeding to find the gold_ore, which is placed in a nearby but less immediately visible location (e.g., partially hidden in a cave wall near the pig).",
+  "reasoning_graph": {
+    "nodes": [
+      "find a pig",
+      "find gold_ore"
+    ],
+    "edges": [
+      {
+        "from": "find a pig",
+        "to": "find gold_ore",
+        "reason": "The pig is positioned as a landmark near the gold_ore cave entrance; finding the pig orients the player toward the hidden gold_ore deposit"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find a pig",
+        "milestone_id": "find_pig",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task — the player must navigate toward the fenced pig pen and visually observe the pigs. Target is the center of the pig pen at spawn-relative (5, 0, 5). With max_distance=8, the player (spawning ~7.07 blocks away) must walk a few steps toward the pen and face it. facing_tolerance=60 ensures the player is actually looking at the pigs, not just passing nearby. This rule type was chosen over position_inside_box because 'find' tasks model visual observation, not just proximity.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                5,
+                0,
+                5
+              ],
+              "max_distance": 8,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "find gold_ore",
+        "milestone_id": "find_gold_ore",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task — the player must enter or approach the cave interior and visually identify the gold_ore blocks on the walls. Target is the center of the gold_ore cluster at spawn-relative (11, 1, 13). With max_distance=10, the player must walk past the pig pen and into or near the cave entrance (~17 blocks from spawn, requiring ~7+ blocks of travel). facing_tolerance=60 ensures the player is looking toward the gold_ore deposits. This rule type correctly models 'player can see the target' without requiring them to stand on top of it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                11,
+                1,
+                13
+              ],
+              "max_distance": 10,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "pig_landmark_gold_cave",
+  "scene_description": "A flat grass clearing with a fenced pig pen containing two pigs, positioned between the player spawn and a stone cave structure. The cave has a wide-open entrance with torches inside illuminating gold_ore blocks on the back walls. The player must first find the pigs (visible landmark near spawn), then proceed past them into the cave to find the gold_ore deposits.",
+  "task_text": "Find the pigs in the fenced pen nearby, then explore the stone cave behind them to find gold ore blocks inside.",
+  "atomic_tasks_ordered": [
+    "find a pig",
+    "find gold_ore"
+  ],
+  "commands": [
+    "/fill ~-15 ~0 ~-15 ~15 ~10 ~15 minecraft:air",
+    "/fill ~-15 ~-1 ~-15 ~15 ~-1 ~15 minecraft:grass_block",
+    "/fill ~-15 ~-2 ~-15 ~15 ~-4 ~15 minecraft:stone",
+    "/fill ~8 ~0 ~6 ~14 ~5 ~14 minecraft:stone",
+    "/fill ~9 ~0 ~7 ~13 ~4 ~13 minecraft:air",
+    "/fill ~8 ~0 ~6 ~14 ~0 ~6 minecraft:air",
+    "/fill ~8 ~1 ~6 ~14 ~3 ~6 minecraft:air",
+    "/fill ~8 ~0 ~7 ~8 ~3 ~7 minecraft:air",
+    "/fill ~14 ~0 ~7 ~14 ~3 ~7 minecraft:air",
+    "/setblock ~10 ~1 ~13 minecraft:gold_ore",
+    "/setblock ~11 ~1 ~13 minecraft:gold_ore",
+    "/setblock ~12 ~2 ~13 minecraft:gold_ore",
+    "/setblock ~11 ~2 ~12 minecraft:gold_ore",
+    "/setblock ~9 ~1 ~12 minecraft:gold_ore",
+    "/setblock ~11 ~1 ~10 minecraft:torch",
+    "/setblock ~10 ~1 ~8 minecraft:torch",
+    "/fill ~3 ~0 ~3 ~7 ~0 ~6 minecraft:oak_fence",
+    "/fill ~4 ~0 ~4 ~6 ~0 ~5 minecraft:air",
+    "/setblock ~3 ~0 ~4 minecraft:oak_fence_gate[facing=west,open=false]",
+    "/summon minecraft:pig ~5 ~0 ~4",
+    "/summon minecraft:pig ~5 ~0 ~5"
+  ],
+  "design_notes": "Scene uses relative coordinates from player spawn at origin. A 30x30 block area is cleared of trees/vegetation. The pig pen (fences at ~3-7,0,~3-6 with interior air at ~4-6,0,~4-5) contains two pigs. The stone cave (~8-14,0-5,~6-14 with interior air ~9-13,0-4,~7-13) has a wide-open front entrance and side openings. Five gold_ore blocks are placed on the back and side walls at eye level (~9-12,1-2,~12-13). Two torches illuminate the interior. The spatial flow is: spawn → pig pen (~5-7 blocks away) → cave entrance (~8-10 blocks away) → gold_ore (~13-17 blocks away).",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find a pig\", \"find gold_ore\"],\n  \"selection_reasoning\": \"I selected 'find a pig' and 'find gold_ore' as a two-task dependency chain. The scenario is: the player must first find a pig (which serves as a landmark/guide to a nearby cave or area), and then find gold_ore in that same vicinity. This creates a natural multi-hop structure where locating the pig helps orient the player toward the gold_ore location. Both tasks are observable (pig is a visible mob, gold_ore ",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## CommonSenseAgent Assessment\n\n### Minecraft Knowledge Verification:\n1. **Pig** ✅ — Passive mob, easily recognizable (pink), stays in fenced areas. Pigs cannot jump over fences, so the pen will contain them.\n2. **Gold Ore** ✅ — Distinctive gold-speckled texture on stone. Easily identifiable visually. Normally found underground but can be placed anywhere.\n3. **Oak Fence** ✅ — Standard fence block, 1.5 blocks tall effectively, prevents pig escape.\n4. **Torch** ✅ — Provides light, helps illuminate",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "### CommonSenseAgent Final Assessment\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Pig mobility within the pen: While fences contain pigs, the pigs can still move around within the fenced area (~3-7, 0, ~3-6). The milestone target is fixed at (5, 0, 5), but pigs could be at any position within the pen. With max_distance=16, this is generous enough that it shouldn't matter — the player just needs to be within 16 blocks facing the pen area, which is easily achievable from many positions.\",\n     ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I need to find the actual player spawn coordinates. Let me just verify the relative layout is correct by re-running the scene with known coordinates.\n\n### Validation Summary\n\nBased on the sandbox screenshots and the three iterations of scene design:\n\n```json\n{\n  \"validation_result\": \"PASS_WITH_MINOR_RECOMMENDATIONS\",\n  \"dependency_graph_valid\": true,\n  \"milestones_valid\": true,\n  \"issues\": [\n    {\n      \"severity\": \"minor\",\n      \"issue\": \"find_pig milestone max_distance=16 is very generous — pl",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## SceneDesignerAgent — Sandbox Observation Report (Final Preview)\n\n### Frame-by-Frame Analysis:\n\n- **Initial frame**: Clear flat grass area. The stone cave structure is visible to the upper-left. The pig pen with oak fences is visible to the left with **pink pigs clearly visible** inside. The area around spawn is clear of trees. Yellow flowers (dandelions) dot the grass. Command log confirms all 21 commands executed successfully, including \"Summoned new Pig\" twice.\n\n- **Step 0**: Agent turned l",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## MilestoneAgent — Revised Milestones\n\nBased on ValidatorAgent's recommendation and SceneDesignerAgent's confirmed spatial layout, I'm tightening the `find_pig` max_distance from 16 to 8. This ensures the player must walk at least a step toward the pen rather than potentially satisfying the milestone at spawn.\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find a pig\",\n      \"milestone_id\": \"find_pig\",\n      \"description\": \"The player must navigate toward the fenced pig pen and look at the p",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## MilestoneAgent — Final Confirmation\n\nThank you for the thorough validation process. I confirm the revised milestones as my final output, incorporating ValidatorAgent's recommendation to tighten the `find_pig` distance.\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find a pig\",\n      \"milestone_id\": \"find_pig\",\n      \"description\": \"Uses position_near_with_facing because this is a 'find/locate' task — the player must navigate toward the fenced pig pen and visually observe the pigs. Target ",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Pig pen max_distance=8 with player spawning ~7.07 blocks away means the distance criterion alone is nearly satisfied at spawn. However, the facing_tolerance=60° requirement adds meaningful constraint since the pig pen is at a ~45° angle from default south-facing spawn direction, requiring the player to turn and walk toward it.\",\n      \"severity\": \"low\",\n      \"target_agent\": \"MilestoneAgent\"\n    },\n    {\n      \"issue\": \"Gold ore visual recognition: A",
+      "timestamp": ""
+    }
+  ]
+}

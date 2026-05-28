@@ -1,0 +1,131 @@
+{
+  "id": "0522",
+  "sample_idx": 522,
+  "mode": "multi",
+  "selected_tasks": [
+    "find gray_wool",
+    "shear sheep"
+  ],
+  "selection_reasoning": "These two tasks form a natural dependency chain. The player must first find gray wool (which establishes awareness of where sheep/wool resources are in the scene), and then shear a sheep to obtain wool directly. The logical dependency is that finding gray wool requires locating a sheep (or wool block), and shearing a sheep requires having shears and being near a sheep. We can design the scene so that the player must first locate gray wool (placed as a block or dropped item to orient them), and then find and shear a nearby sheep. This creates a coherent multi-hop task: the gray wool serves as a landmark/clue leading to the sheep that needs to be sheared. The tasks are observable, verifiable, and don't require deep Minecraft expertise beyond basic navigation and item use.",
+  "reasoning_graph": {
+    "nodes": [
+      "find gray_wool",
+      "shear sheep"
+    ],
+    "edges": [
+      {
+        "from": "find gray_wool",
+        "to": "shear sheep",
+        "reason": "Finding gray wool orients the player toward the sheep area; the sheep to shear is located near the gray wool landmark"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find gray_wool",
+        "milestone_id": "find_gray_wool",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The player must navigate to the gray wool structure (centered at spawn-relative 11,2,9) and face it from within 5 blocks. max_distance=5 ensures the player actually walks to the structure (~12 blocks from spawn) rather than just spotting it from the starting position. facing_tolerance=60 confirms the player is looking at the structure.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                11,
+                2,
+                9
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "shear sheep",
+        "milestone_id": "shear_sheep",
+        "description": "Uses inventory_has because shearing a gray sheep (Color:7) drops gray_wool into the player's inventory. The player starts with shears but no wool in inventory, so having at least 1 gray_wool confirms a sheep was successfully sheared. This is preferred over mob-state checks because shearing doesn't kill the sheep — it only removes wool, making inventory_has the most direct and reliable verification.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "gray_wool",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "gray_wool_landmark_and_sheep",
+  "scene_description": "A cleared grassy field with a 3x3x3 gray wool landmark structure at ~10-12,1-3,8-10. Two gray sheep (Color:7, NoAI) are positioned just beyond the structure at ~10,1,13 and ~12,1,14. A cobblestone wall path runs from ~5,1,4 to ~5,1,8 guiding the player. Torches at ~7,1,6 and ~0,1,3 provide visual markers. Player starts with shears in hotbar.",
+  "task_text": "Find the gray wool structure in the field, then locate and shear one of the nearby sheep.",
+  "atomic_tasks_ordered": [
+    "find gray_wool",
+    "shear sheep"
+  ],
+  "commands": [
+    "/fill ~-5 ~1 ~-5 ~18 ~10 ~18 minecraft:air",
+    "/fill ~-5 ~0 ~-5 ~18 ~0 ~18 minecraft:grass_block",
+    "/give @p minecraft:shears 1",
+    "/fill ~10 ~1 ~8 ~12 ~3 ~10 minecraft:gray_wool",
+    "/summon minecraft:sheep ~10 ~1 ~13 {Color:7,NoAI:1b,PersistenceRequired:1b}",
+    "/summon minecraft:sheep ~12 ~1 ~14 {Color:7,NoAI:1b,PersistenceRequired:1b}",
+    "/setblock ~5 ~1 ~4 minecraft:cobblestone_wall",
+    "/setblock ~5 ~1 ~5 minecraft:cobblestone_wall",
+    "/setblock ~5 ~1 ~6 minecraft:cobblestone_wall",
+    "/setblock ~5 ~1 ~7 minecraft:cobblestone_wall",
+    "/setblock ~5 ~1 ~8 minecraft:cobblestone_wall",
+    "/setblock ~7 ~1 ~6 minecraft:torch",
+    "/setblock ~0 ~1 ~3 minecraft:torch"
+  ],
+  "design_notes": "The gray wool structure serves as a visible landmark ~12 blocks from spawn. The sheep are positioned 3-4 blocks behind the structure (higher z), creating a natural find-then-approach flow. The cobblestone wall and torches guide the player's eye toward the wool. NoAI sheep won't wander away. The cleared zone (23x23 blocks) ensures visibility. Player spawns facing the general direction of the structure.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find gray_wool\", \"shear sheep\"],\n  \"selection_reasoning\": \"These two tasks form a natural dependency chain. The player must first find gray wool (which establishes awareness of where sheep/wool resources are in the scene), and then shear a sheep to obtain wool directly. The logical dependency is that finding gray wool requires locating a sheep (or wool block), and shearing a sheep requires having shears and being near a sheep. We can design the scene so that the p",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## Sandbox Observations - Third Attempt (Final)\n\nExamining all 21 frames carefully:\n\n1. **Initial frame**: Clean, open grass area. Shears visible in hotbar slot. A torch is visible nearby. The cleared zone is much larger now - great visibility.\n\n2. **Steps 000-003**: Agent looks around. The **gray wool structure** (3×3×3 dark block) is clearly visible at medium distance. The cobblestone wall line is visible as a path guide. Open grass everywhere.\n\n3. **Steps 004-008**: Agent moves forward. The g",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's sandbox report, I have all the information needed to design the milestones. Here's my analysis:\n\n**Task 1: \"find gray_wool\"** — The gray wool structure is at spawn-relative coordinates (10,1,8) to (12,3,10). The center of this structure is approximately (11, 2, 9). This is a find/locate task, so I'll use `position_near_with_facing` to verify the player navigates near it and faces it.\n\n**Task 2: \"shear sheep\"** — Two gray sheep are at spawn-relative (~10,1,13) an",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I can see the player is now near the gray wool structure. The gray wool blocks are visible around the player. Let me check the sheep locations.",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations - Final Verification\n\nExamining all frames from this latest preview carefully:\n\n1. **Initial frame**: Clear view of the grassy field. Shears are in the hotbar (visible). A torch is directly ahead. The cobblestone wall is visible on the left. Command log confirms \"Successfully filled 27 blocks\" (the 3×3×3 gray wool structure) and \"Summoned new Sheep\" twice. The cleared area is open and navigable.\n\n2. **Step 000**: Similar view, agent looking slightly right. Open grass fiel",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "Thank you for the thorough scene verification. Based on all the observations and feedback, let me now provide my consolidated assessment.\n\n## CommonSenseAgent — Final Assessment\n\n### Addressing the Sandbox Findings:\n\n1. **Gray wool visibility** ✅ — The step_014 and step_019 frames clearly show the gray wool structure is identifiable and reachable. The dark gray texture is distinct from the surrounding green grass.\n\n2. **Sheep positioning** ✅ — Placing sheep behind the wool structure (z=13-14 vs ",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nThank you for the thorough multi-agent review. Let me now provide my final milestone output incorporating all feedback, particularly CommonSenseAgent's recommendation to reduce `max_distance` from 16 to 5.\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find gray_wool\",\n      \"milestone_id\": \"find_gray_wool\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate task. The player must navigate to the gray wool structure (centered at spawn-relative 11,2,9) and face",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Now let me provide my final CommonSense assessment of this complete benchmark.\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"The 'shear sheep' milestone uses inventory_has for gray_wool, but the scene contains a 3x3x3 structure of gray_wool blocks. A player could obtain gray_wool by breaking these blocks (punching for ~1.2 seconds each) rather than shearing the sheep, creating a false positive. While unlikely given the task text says 'shear sheep', it's technically possible.\",\n      \"severity\":",
+      "timestamp": ""
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+{
+  "id": "0529",
+  "sample_idx": 529,
+  "mode": "multi",
+  "selected_tasks": [
+    "find blue_bed",
+    "mine fletching_table"
+  ],
+  "selection_reasoning": "This pair creates a natural navigate-then-act dependency chain. The blue_bed serves as a visually distinctive landmark that the agent must first locate within a structure. The fletching_table is placed inside or adjacent to the same structure but is less visually prominent. The agent must first find the blue_bed to orient itself within the scene, then locate and mine the nearby fletching_table. This tests both navigation/recognition (find) and interaction (mine) skills in sequence, and neither task requires deep Minecraft crafting knowledge.",
+  "reasoning_graph": {
+    "nodes": [
+      "find blue_bed",
+      "mine fletching_table"
+    ],
+    "edges": [
+      {
+        "from": "find blue_bed",
+        "to": "mine fletching_table",
+        "reason": "The blue_bed marks the shelter location where the fletching_table is placed; agent must find the bed first to navigate to the table for mining"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find blue_bed",
+        "milestone_id": "find_blue_bed",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task — the agent must navigate near the blue bed and face it, confirming visual observation. The blue bed foot is at spawn-relative (6, 1, 5), which is the most visible part facing the open shelter entrance. max_distance=16 allows completion from the shelter entrance or just inside (the bed is visible from ~5-6 blocks away through the open front). facing_tolerance=60 ensures the agent is actually looking toward the bed, not just passing nearby.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                6,
+                1,
+                5
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine fletching_table",
+        "milestone_id": "mine_fletching_table",
+        "description": "Uses inventory_has because mining a fletching table drops itself as an item that enters the player's inventory. The fletching table is a wooden block (hardness 2.5) that can be mined by bare hands in ~3.75 seconds — no tool required. When broken, it always drops itself as 'fletching_table'. This is the preferred rule for mine tasks since the mined drop reliably ends up in inventory.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "fletching_table",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "open_front_shelter_with_bed_and_fletching_table",
+  "scene_description": "An open-fronted oak planks shelter located 2-8 blocks from spawn. The shelter has three walls (west, east, north) and a ceiling, with the south face completely open for easy access. Inside, a blue bed is placed on the right side near the front, and a fletching table is placed on the left side near the front. A hanging lantern provides lighting. The open design ensures both objects are immediately visible from the player spawn point, and the agent can walk straight in without needing to find a doorway.",
+  "task_text": "Find the blue bed inside the wooden shelter, then mine the fletching table nearby.",
+  "atomic_tasks_ordered": [
+    "find blue_bed",
+    "mine fletching_table"
+  ],
+  "commands": [
+    "/fill ~-10 ~-1 ~-10 ~10 ~-1 ~10 minecraft:grass_block",
+    "/fill ~-10 ~0 ~-10 ~10 ~10 ~10 minecraft:air",
+    "/fill ~2 ~0 ~3 ~8 ~0 ~8 minecraft:oak_planks",
+    "/fill ~2 ~1 ~8 ~8 ~3 ~8 minecraft:oak_planks",
+    "/fill ~2 ~1 ~3 ~2 ~3 ~8 minecraft:oak_planks",
+    "/fill ~8 ~1 ~3 ~8 ~3 ~8 minecraft:oak_planks",
+    "/fill ~2 ~3 ~3 ~8 ~3 ~8 minecraft:oak_planks",
+    "/setblock ~6 ~1 ~4 minecraft:blue_bed[facing=south,part=head]",
+    "/setblock ~6 ~1 ~5 minecraft:blue_bed[facing=south,part=foot]",
+    "/setblock ~4 ~1 ~4 minecraft:fletching_table",
+    "/setblock ~5 ~3 ~3 minecraft:lantern[hanging=true]"
+  ],
+  "design_notes": "The shelter uses relative coordinates ~2-8 on X axis and ~3-8 on Z axis, with floor at ~0 Y and ceiling at ~3 Y. The south face (Z=3) is completely open. Blue bed head is at (~6,~1,~4) and foot at (~6,~1,~5) — facing south so it's oriented toward the entrance. Fletching table at (~4,~1,~4) is right at the front edge, immediately visible and mineable. Both objects are just 1 block inside the open front, making them visible from spawn without entering. The fletching table can be mined by hand (no tool needed). The grass block ground and air clearing ensure clean terrain.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I'll analyze the candidate tasks to find a pair that forms a coherent multi-hop dependency chain.\n\nLet me evaluate the options:\n\n- **find light_gray_stained_glass** → **mine gray_stained_glass**: These are related glass blocks but don't have a strong dependency.\n- **find purple_concrete_powder** → **mine light_blue_glazed_terracotta**: No logical chain.\n- **find light_gray_stained_glass** → **mine gray_stained_glass**: Finding one type of stained glass could lead to mining another, but the depen",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## CommonSenseAgent Feedback\n\n### Minecraft Knowledge Verification:\n\n1. **Fletching Table Mining**: The fletching table is a wooden block. It can be mined by hand (no tool required), but an axe is fastest. When mined, it drops itself as an item. ✅ The agent doesn't need any tools to mine it — bare hands work fine.\n\n2. **Blue Bed**: A bed is a valid block that can be placed with facing and part properties. The `blue_bed` variant exists in Minecraft. ✅ Correctly placed in the scene.\n\n3. **Scene De",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I can now see the player is inside the shelter, looking slightly downward. I can see the oak planks floor and walls. Let me look around to find the blue bed and fletching table.",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations — Fourth Preview (Final Design) ✅\n\nThis is excellent! The scene works perfectly now. Here's my detailed analysis of each frame:\n\n**Initial frame**: Player spawns facing east. The oak planks shelter is immediately to the left — the west wall is very prominent and close. Chat confirms all 11 commands executed successfully: \"491 blocks\", \"42 blocks\", \"21 blocks\", \"15 blocks\", \"15 blocks\", \"25 blocks\" filled, plus 4 block changes for bed head, bed foot, fletching table, and l",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## CommonSenseAgent — Final Review\n\nLet me review the complete benchmark for any remaining Minecraft-specific issues:\n\n### Verification Checklist:\n\n1. **Blue Bed Placement** ✅\n   - `blue_bed[facing=south,part=head]` at ~6,~1,~4 and `blue_bed[facing=south,part=foot]` at ~6,~1,~5\n   - When `facing=south`, the head is the northern block (lower Z) and foot is the southern block (higher Z). The player sleeps with their head at Z=4 and feet at Z=5, facing south. This is correct Minecraft bed behavior.",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the comprehensive scene design and sandbox verification, here are my finalized milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find blue_bed\",\n      \"milestone_id\": \"find_blue_bed\",\n      \"description\": \"Uses position_near_with_facing because this is a 'find/locate' task — the agent must navigate near the blue bed and face it, confirming visual observation. The blue bed foot is at spawn-relative (6, 1, 5), which is the most visible part facing the open shelter entranc",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## CommonSenseAgent — Final Review\n\nI notice the `/data get block` commands returned \"The target block is not a block entity\" — this is expected because `blue_bed` and `fletching_table` are regular blocks, not block entities (like chests or signs). The blocks ARE placed; they just don't have NBT data to query. This is normal Minecraft behavior and not an issue.\n\nThe screenshots show the player is in a forest biome (from the previous sandbox state before the scene was rebuilt). The important veri",
+      "timestamp": ""
+    }
+  ]
+}

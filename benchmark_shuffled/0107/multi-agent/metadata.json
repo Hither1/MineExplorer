@@ -1,0 +1,128 @@
+{
+  "id": "0440",
+  "sample_idx": 440,
+  "mode": "multi",
+  "selected_tasks": [
+    "mine_prismarine_brick_slab",
+    "find_pink_concrete"
+  ],
+  "selection_reasoning": "These two tasks form a natural spatial dependency chain. The prismarine brick slab will serve as a physical barrier blocking access to an enclosed area containing pink concrete. The agent must first mine (break) the prismarine brick slab to clear the passage, then navigate through the opened path to find the pink concrete block. This creates a meaningful multi-hop sequence where task completion order matters — the agent cannot find the pink concrete without first removing the slab obstruction. Both tasks are visually distinct (prismarine has a teal/green hue, pink concrete is bright pink), making them easy to identify and verify.",
+  "reasoning_graph": {
+    "nodes": [
+      "mine_prismarine_brick_slab",
+      "find_pink_concrete"
+    ],
+    "edges": [
+      {
+        "from": "mine_prismarine_brick_slab",
+        "to": "find_pink_concrete",
+        "reason": "The prismarine brick slab blocks the only passage to the enclosed room containing pink concrete; mining it clears the path"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "mine_prismarine_brick_slab",
+        "milestone_id": "mine_prismarine_slab",
+        "description": "Uses inventory_has because mining a prismarine brick slab with the provided iron pickaxe drops the slab item into the player's inventory. The player must break the slab blocking the doorway at spawn-relative (1, 1, 3). This rule type is preferred for mine tasks because the mined drop appearing in inventory is the most direct confirmation of successful mining. The scene provides an iron pickaxe (confirmed in sandbox preview step_010 showing mining cracks), which is required for stone-type blocks to drop their item.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "prismarine_brick_slab",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "find_pink_concrete",
+        "milestone_id": "find_pink_concrete",
+        "description": "Uses position_near_with_facing because this is a find/locate/observe task. The player must navigate into the room (after mining the slab) and face the pink concrete block at spawn-relative (1, 0, 6). max_distance=5 ensures the player is close enough to clearly see the block (they must be inside or at the doorway of the 6x4 interior room). facing_tolerance=60 confirms the player is actually looking toward the pink concrete, not just standing nearby. The torch at (0, 1, 6) illuminates the target, confirmed visible in sandbox preview.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                1,
+                0,
+                6
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "prismarine_slab_blocked_room",
+  "scene_description": "A stone brick room containing a pink concrete block, with the only entrance blocked by a prismarine brick slab. The player spawns in a cleared area facing the doorway, equipped with an iron pickaxe. A torch inside the room illuminates the pink concrete. The player must mine the slab to enter and find the concrete.",
+  "task_text": "Mine the prismarine brick slab blocking the doorway using your iron pickaxe, then enter the room and find the pink concrete block inside.",
+  "atomic_tasks_ordered": [
+    "mine_prismarine_brick_slab",
+    "find_pink_concrete"
+  ],
+  "commands": [
+    "/fill ~-5 ~-1 ~-2 ~7 ~4 ~2 minecraft:air",
+    "/fill ~-5 ~-1 ~-2 ~7 ~-1 ~2 minecraft:stone_bricks",
+    "/fill ~-3 ~-1 ~3 ~5 ~-1 ~9 minecraft:stone_bricks",
+    "/fill ~-3 ~0 ~3 ~5 ~3 ~3 minecraft:stone_bricks",
+    "/fill ~-3 ~0 ~9 ~5 ~3 ~9 minecraft:stone_bricks",
+    "/fill ~-3 ~0 ~3 ~-3 ~3 ~9 minecraft:stone_bricks",
+    "/fill ~5 ~0 ~3 ~5 ~3 ~9 minecraft:stone_bricks",
+    "/fill ~-3 ~3 ~3 ~5 ~3 ~9 minecraft:stone_bricks",
+    "/fill ~-2 ~0 ~4 ~4 ~2 ~8 minecraft:air",
+    "/setblock ~1 ~0 ~6 minecraft:pink_concrete",
+    "/setblock ~1 ~0 ~3 minecraft:air",
+    "/setblock ~1 ~1 ~3 minecraft:prismarine_brick_slab[type=bottom]",
+    "/setblock ~1 ~2 ~3 minecraft:air",
+    "/setblock ~0 ~1 ~6 minecraft:torch",
+    "/give @p minecraft:iron_pickaxe 1"
+  ],
+  "design_notes": "The structure is an 8x6 stone brick room (interior 6x4) with the entrance on the z=3 face. The doorway at (~1, ~0-2, ~3) is blocked by a prismarine_brick_slab at (~1, ~1, ~3) which prevents passage (only 1 block clearance below, player needs 1.8). Pink concrete is at (~1, ~0, ~6) inside the room. A torch at (~0, ~1, ~6) illuminates the interior. The area in front (z=-2 to z=2) is cleared of trees and paved with stone bricks. Player spawns at origin with iron pickaxe.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I'll analyze the candidate tasks to find a pair that forms a coherent multi-hop dependency chain.\n\nLet me think through the options:\n\n- **\"find pink_concrete\"** and **\"find orange_concrete\"** — these are both \"find\" tasks but would be trivially independent.\n- **\"mine stone\"** and **\"find stone_brick_wall\"** — there's a natural dependency here: stone bricks are made from stone, and a stone brick wall is made from stone bricks. The agent could need to mine stone first (obtaining cobblestone, which",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on my Minecraft knowledge, here are the key observations:\n\n## Common-Sense Review\n\n### Task 1: Mine Prismarine Brick Slab\n- **Tool requirement**: Prismarine brick slabs require a **pickaxe** to mine (any tier). Without a pickaxe, the block breaks but drops nothing. The player needs a pickaxe in their inventory.\n- **Drop**: When mined with a pickaxe, it drops itself (1 prismarine_brick_slab item).\n- **Hardness**: Similar to stone (~1.5), so it takes a few seconds with bare hands but won't d",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good. Now let me verify the tool requirements and mining mechanics more carefully. The key question is: **does the \"mine\" task require the item to appear in inventory, or just the block to be broken?**\n\nLooking at the milestone design:\n- The milestone uses `inventory_has` for `prismarine_brick_slab` with `min_count: 1`\n- This means the player MUST get the drop — which requires a **pickaxe**\n\nThis is a **critical** issue. Let me also check whether the scene commands include giving the player a pi",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Validation Report - Sandbox Verification\n\nAfter examining the actual screenshots from the sandbox, here is my detailed validation:\n\n### What I Observe in Each Frame:\n\n**Initial Frame**: The player spawns very close to the stone brick wall, looking directly at the doorway area. On the left side, I can clearly see the **prismarine brick slab** — it's the distinctive teal/cyan colored block sitting in the doorway opening. The stone brick walls are clearly visible. The dark area behind the slab i",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations - Fourth Preview (with pickaxe fix)\n\nThis is very promising! Let me analyze each frame:\n\n**Initial Frame**: \n- The player spawns facing the stone brick structure directly ahead\n- The **prismarine brick slab** is clearly visible on the left side of the view — it's the distinctive teal/cyan block in the doorway\n- The player is holding an **iron pickaxe** in their right hand (visible in bottom-right) ✅\n- Chat confirms: \"Gave 1 [Iron Pickaxe] to MineRLAgent0\" ✅\n- The advancem",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Thank you for the thorough validation and the confirmed scene design. Based on the fourth preview results, I can now finalize the milestone rules with confidence. The key updates from the sandbox verification:\n\n1. **Pickaxe confirmed working** — the agent received and used the iron pickaxe to mine the slab\n2. **Slab blocking confirmed** — the agent could not pass without mining\n3. **Coordinates confirmed** — prismarine slab at spawn-relative (1, 1, 3), pink concrete at spawn-relative (1, 0, 6)\n4",
+      "timestamp": ""
+    }
+  ]
+}

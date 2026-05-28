@@ -1,0 +1,123 @@
+{
+  "id": "0562",
+  "sample_idx": 562,
+  "mode": "multi",
+  "selected_tasks": [
+    "find dark_oak_door",
+    "craft to bow"
+  ],
+  "selection_reasoning": "These two tasks form a coherent multi-hop dependency chain. The agent must first locate a dark_oak_door in the environment, which serves as a landmark/gateway to reach a chest or area containing the raw materials needed to craft a bow (sticks and string). Finding the dark_oak_door is the navigation/exploration prerequisite that gates access to the crafting materials. Once the agent finds the dark_oak_door and accesses the resources behind/near it, they can proceed to craft a bow. This creates a natural explore-then-craft progression that is observable and verifiable. The 'find' task tests spatial navigation and object recognition, while the 'craft to bow' task tests inventory management and crafting knowledge (bow = 3 sticks + 3 string on a crafting table).",
+  "reasoning_graph": {
+    "nodes": [
+      "find dark_oak_door",
+      "craft to bow"
+    ],
+    "edges": [
+      {
+        "from": "find dark_oak_door",
+        "to": "craft to bow",
+        "reason": "The dark_oak_door marks the entrance to the area containing the crafting table, sticks, and string needed to craft the bow"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find dark_oak_door",
+        "milestone_id": "find_dark_oak_door",
+        "description": "Uses position_near_with_facing because the task is to 'find' (locate/observe) the dark_oak_door. The player must navigate near the door and face toward it, modeling visual discovery. The door is at spawn-relative (4, 1, 0) on the west wall of the stone brick building. max_distance=16 allows detection from a reasonable range, and facing_tolerance=60 ensures the player is actually looking at the door rather than facing away.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                4,
+                1,
+                0
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to bow",
+        "milestone_id": "craft_bow",
+        "description": "Uses inventory_has because crafting a bow results in the bow item appearing in the player's inventory. The player must open the chest at (8, 0, 1) to collect 3 sticks and 3 string, then use the crafting table at (8, 0, -1) to craft a bow. The bow is not in the starting inventory, so having min_count=1 confirms successful crafting. This is the preferred rule type for craft tasks.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "bow",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "dark_oak_workshop",
+  "scene_description": "A stone brick workshop building with a dark oak door on its west wall. Inside are a crafting table and a chest containing 3 sticks and 3 string (materials for crafting a bow). A lantern and red carpet mark the entrance. The player spawns facing east with the building 4 blocks ahead, requiring them to look slightly left to find the door.",
+  "task_text": "Find the dark oak door on the stone brick building, go inside, collect materials from the chest, and craft a bow using the crafting table.",
+  "atomic_tasks_ordered": [
+    "find dark_oak_door",
+    "craft to bow"
+  ],
+  "commands": [
+    "/fill ~-5 ~-1 ~-5 ~15 ~-1 ~15 minecraft:grass_block",
+    "/fill ~-5 ~0 ~-5 ~15 ~5 ~15 minecraft:air",
+    "/fill ~4 ~0 ~-3 ~11 ~3 ~3 minecraft:stone_bricks",
+    "/fill ~5 ~0 ~-2 ~10 ~2 ~2 minecraft:air",
+    "/fill ~4 ~3 ~-3 ~11 ~3 ~3 minecraft:stone_brick_slab[type=top]",
+    "/setblock ~4 ~0 ~0 minecraft:air",
+    "/setblock ~4 ~1 ~0 minecraft:air",
+    "/setblock ~4 ~2 ~0 minecraft:air",
+    "/setblock ~4 ~0 ~0 minecraft:dark_oak_door[facing=west,half=lower,hinge=left]",
+    "/setblock ~4 ~1 ~0 minecraft:dark_oak_door[facing=west,half=upper,hinge=left]",
+    "/setblock ~8 ~0 ~-1 minecraft:crafting_table",
+    "/setblock ~8 ~0 ~1 minecraft:chest[facing=west]",
+    "/data merge block ~8 ~0 ~1 {Items:[{Slot:0b,id:\"minecraft:stick\",Count:3b},{Slot:1b,id:\"minecraft:string\",Count:3b}]}",
+    "/setblock ~2 ~0 ~0 minecraft:lantern",
+    "/setblock ~3 ~0 ~0 minecraft:red_carpet"
+  ],
+  "design_notes": "Building at ~4-11 x, ~-3 to ~3 z. Door at (~4, ~0, ~0) directly ahead of spawn on the z=0 axis. Crafting table at (~8, ~0, ~-1), chest at (~8, ~0, ~1). Player spawns at origin facing east toward the building. Red carpet and lantern guide the player to the door entrance. The door is the ONLY entrance to the building interior.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find dark_oak_door\", \"craft to bow\"],\n  \"selection_reasoning\": \"These two tasks form a coherent multi-hop dependency chain. The agent must first locate a dark_oak_door in the environment, which serves as a landmark/gateway to reach a chest or area containing the raw materials needed to craft a bow (sticks and string). Finding the dark_oak_door is the navigation/exploration prerequisite that gates access to the crafting materials. Once the agent finds the dark_oak_",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## CommonSenseAgent Feedback\n\nBased on my analysis:\n\n1. **Bow crafting recipe**: A bow requires 3 sticks + 3 string arranged in a specific pattern on a crafting table. The chest correctly contains exactly these materials. ✅\n\n2. **Dark oak door**: The door is properly placed and visible. The \"find\" task requires the player to navigate to and observe the door. ✅\n\n3. **Crafting table requirement**: The bow CANNOT be crafted in the 2x2 inventory grid - it requires a 3x3 crafting table. The scene cor",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## SceneDesignerAgent — Sandbox Observations Report (Revision 4) ✅ SUCCESS!\n\nThis version works excellently! Let me analyze each frame:\n\n**Initial frame (initial.png)**: Player spawns facing forward (east). On the far LEFT edge, I can see the stone brick wall of the building and what appears to be a hanging lantern/item above. The grass ground is flat. The building is visible on the left side about 3-4 blocks away.\n\n**Step 000**: Same as initial - agent hasn't acted yet.\n\n**Step 005**: 🎉 **PERFE",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nBased on SceneDesignerAgent's thorough sandbox report, I have all the coordinates and layout information needed. Here are the milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find dark_oak_door\",\n      \"milestone_id\": \"find_dark_oak_door\",\n      \"description\": \"Uses position_near_with_facing because the task is to 'find' (locate/observe) the dark_oak_door. The player must navigate near the door and face toward it, modeling visual discovery. The door is at spawn-relative (4, 1",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## CommonSenseAgent Review\n\nNow let me provide my comprehensive review of this benchmark, checking for Minecraft-specific knowledge issues.\n\n### Key Mechanics Verified:\n\n1. **Bow Crafting Recipe** ✅: A bow requires 3 sticks + 3 string arranged in a specific pattern on a 3x3 crafting table grid. The chest correctly provides exactly these materials (3 sticks, 3 string).\n\n2. **Crafting Table Requirement** ✅: The bow CANNOT be crafted in the 2×2 inventory grid — it requires the 3×3 grid from a craft",
+      "timestamp": ""
+    }
+  ]
+}

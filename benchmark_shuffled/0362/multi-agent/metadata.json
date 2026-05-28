@@ -1,0 +1,116 @@
+{
+  "id": "0349",
+  "sample_idx": 349,
+  "mode": "multi",
+  "selected_tasks": [
+    "craft to dark_oak_stairs",
+    "craft to dark_oak_door"
+  ],
+  "selection_reasoning": "These two tasks form a coherent multi-hop chain because both require dark oak planks as a crafting ingredient. The player must first craft dark oak planks from dark oak logs, then use those planks to craft dark oak stairs, and separately use planks to craft the dark oak door. However, to create a true dependency, we can structure it so that the crafting table needed for the door (which requires 6 planks) is only available after the player has already demonstrated plank-crafting ability via the stairs task. More importantly, both tasks share a common resource (dark oak planks) and the scene can be designed with limited dark oak logs, meaning the player must plan resource allocation carefully. The stairs task (requiring 6 planks) should be completed first to ensure the player has crafted planks, and then the door task (requiring 6 planks) follows. The dependency is that completing stairs first confirms access to the crafting table and establishes the plank-crafting workflow needed for the door.",
+  "reasoning_graph": {
+    "nodes": [
+      "craft to dark_oak_stairs",
+      "craft to dark_oak_door"
+    ],
+    "edges": [
+      {
+        "from": "craft to dark_oak_stairs",
+        "to": "craft to dark_oak_door",
+        "reason": "Crafting stairs first uses the crafting table and dark oak planks, leaving remaining planks for the door; both share limited dark oak log resources"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "craft to dark_oak_stairs",
+        "milestone_id": "craft_dark_oak_stairs",
+        "description": "Uses inventory_has because crafting dark_oak_stairs is a craft task and the crafted item ends up in the player's inventory. The player must first craft dark_oak_planks from dark_oak_logs (using the 2x2 grid or crafting table), then use 6 planks in a stair pattern on the crafting table to produce dark_oak_stairs. min_count=1 is used because the task is simply to craft the item — having at least 1 confirms the craft was completed successfully regardless of exact recipe yield.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "dark_oak_stairs",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to dark_oak_door",
+        "milestone_id": "craft_dark_oak_door",
+        "description": "Uses inventory_has because crafting dark_oak_door is a craft task and the crafted item ends up in the player's inventory. After completing the stairs, the player uses remaining dark_oak_planks (6 planks in a 2x3 door pattern) at the crafting table to craft dark_oak_doors. min_count=1 is used because the task is to craft the item — having at least 1 confirms successful completion regardless of exact recipe yield.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "dark_oak_door",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "dark_oak_crafting_workshop",
+  "scene_description": "A compact stone brick workshop room with a crafting table and exactly 3 dark oak logs in the player's inventory. The room is enclosed by stone brick walls with an open ceiling for natural light. The player must use the crafting table to first craft dark oak planks from the logs, then craft dark oak stairs (6 planks), and finally craft a dark oak door (6 planks). The 3 logs yield exactly 12 planks, which is the minimum needed for both recipes.",
+  "task_text": "You are in a stone brick workshop with a crafting table. You have 3 dark oak logs in your inventory. First, craft dark oak stairs using the crafting table. Then, craft a dark oak door using the crafting table.",
+  "atomic_tasks_ordered": [
+    "craft to dark_oak_stairs",
+    "craft to dark_oak_door"
+  ],
+  "commands": [
+    "/fill ~-3 ~-1 ~-3 ~3 ~-1 ~3 minecraft:stone_bricks",
+    "/fill ~-3 ~0 ~-3 ~3 ~3 ~3 minecraft:air",
+    "/fill ~-3 ~0 ~-3 ~-3 ~2 ~3 minecraft:stone_brick_wall",
+    "/fill ~3 ~0 ~-3 ~3 ~2 ~3 minecraft:stone_brick_wall",
+    "/fill ~-3 ~0 ~-3 ~3 ~2 ~-3 minecraft:stone_brick_wall",
+    "/fill ~-3 ~0 ~4 ~3 ~2 ~4 minecraft:stone_brick_wall",
+    "/fill ~-2 ~0 ~-2 ~2 ~2 ~2 minecraft:air",
+    "/setblock ~2 ~0 ~1 minecraft:crafting_table",
+    "/give @p minecraft:dark_oak_log 3"
+  ],
+  "design_notes": "The room is 7x7 stone bricks with 3-block-high walls and a 5x5 interior. The crafting table is placed at ~2,0,1 (visible from spawn). The player receives exactly 3 dark oak logs (yielding 12 planks = 6 for stairs + 6 for door). The south wall is at z=4 instead of z=3 to provide a slightly asymmetric but fully enclosed room. Open ceiling provides natural daylight. No extra resources are available — the player must manage the 12 planks carefully between both recipes.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"craft to dark_oak_stairs\", \"craft to dark_oak_door\"],\n  \"selection_reasoning\": \"These two tasks form a coherent multi-hop chain because both require dark oak planks as a crafting ingredient. The player must first craft dark oak planks from dark oak logs, then use those planks to craft dark oak stairs, and separately use planks to craft the dark oak door. However, to create a true dependency, we can structure it so that the crafting table needed for the door (which",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## Final Scene Observations\n\nAfter examining all 16 frames from this clean revision:\n\n**Initial frame:** Player spawns in a compact stone brick room. The **crafting table** is clearly visible ahead/right with its distinctive grid-pattern top. Stone brick walls enclose the space. The hotbar shows **3 dark oak logs** in the first slot. All 9 commands executed successfully.\n\n**Exploration frames (Steps 000-014):**\n- The agent turns and walks around the room. The crafting table is consistently visib",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nBased on the SceneDesignerAgent's detailed sandbox report, I have all the information needed to design the milestones. Here's my analysis:\n\n**Task 1: \"craft to dark_oak_stairs\"**\n- Recipe: 6 dark oak planks → 4 dark oak stairs (shaped recipe on crafting table)\n- The player must first craft dark oak planks from logs, then craft stairs\n- The crafted stairs end up in inventory → **inventory_has** is the correct rule\n\n**Task 2: \"craft to dark_oak_door\"**\n- Recipe: 6 dark oak planks → 3 dark oak do",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Final Sandbox Observations — Clean Revision\n\nAfter examining all 16 frames from this final revision, here's my detailed report:\n\n**Initial frame:** Player spawns inside a compact stone brick walled room. The **crafting table** is clearly visible in the bottom-right corner with its distinctive grid-pattern top. Stone brick walls surround the space on all sides. Chat confirms all 9 commands executed successfully, including \"Gave 3 [Dark Oak Log] to MinerLAgent0\". The hotbar shows \"Dark Oak Log\"",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## CommonSenseAgent Review\n\nI've reviewed the scene design, sandbox observations, and milestone rules. Here's my common-sense analysis:\n\n### ✅ What's Correct\n\n1. **Crafting recipes verified:**\n   - Dark oak stairs: 6 dark oak planks in a stair pattern → yields 4 dark oak stairs ✅\n   - Dark oak door: 6 dark oak planks in a 2×3 pattern → yields 3 dark oak doors ✅\n   - Dark oak planks: 1 dark oak log → 4 dark oak planks ✅\n\n2. **Resource math is exact:** 3 logs → 12 planks → 6 for stairs + 6 for doo",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's detailed sandbox report and CommonSenseAgent's review, I have all the information needed. Let me revise my milestones to incorporate the CommonSenseAgent's strong recommendation about `min_count`.\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"craft to dark_oak_stairs\",\n      \"milestone_id\": \"craft_dark_oak_stairs\",\n      \"description\": \"Uses inventory_has because crafting dark_oak_stairs is a craft task and the crafted item ends up in the player's inventory.",
+      "timestamp": ""
+    }
+  ]
+}

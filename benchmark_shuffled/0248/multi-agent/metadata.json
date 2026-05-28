@@ -1,0 +1,177 @@
+{
+  "id": "0747",
+  "sample_idx": 747,
+  "mode": "multi",
+  "selected_tasks": [
+    "find_mossy_cobblestone_wall",
+    "find_green_bed",
+    "plant_flower"
+  ],
+  "selection_reasoning": "These three tasks form a coherent exploration-and-interaction sequence set in a cottage/garden scene. The player first locates a mossy cobblestone wall that marks a garden boundary, which naturally leads them to discover a cottage containing a green bed. Once the cottage and garden area are identified, the player plants a flower in the garden area near the wall. This creates a logical spatial dependency: the wall is the landmark that guides discovery of the bed, and both the wall and bed establish the garden/cottage context needed to know where to plant the flower. The 'plant flower' task adds an interactive action beyond pure exploration.",
+  "reasoning_graph": {
+    "nodes": [
+      "find_mossy_cobblestone_wall",
+      "find_green_bed",
+      "plant_flower"
+    ],
+    "edges": [
+      {
+        "from": "find_mossy_cobblestone_wall",
+        "to": "find_green_bed",
+        "reason": "The mossy cobblestone wall marks the garden perimeter; following it leads to the cottage entrance where the green bed is located inside"
+      },
+      {
+        "from": "find_mossy_cobblestone_wall",
+        "to": "plant_flower",
+        "reason": "The mossy cobblestone wall defines the garden area where the flower must be planted nearby"
+      },
+      {
+        "from": "find_green_bed",
+        "to": "plant_flower",
+        "reason": "Finding the green bed confirms the cottage location; the flower is planted in the garden plot adjacent to the cottage"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find_mossy_cobblestone_wall",
+        "milestone_id": "find_mossy_cobblestone_wall",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task — the player must navigate to and visually identify the mossy cobblestone wall. Target is the midpoint of the east wall segment at spawn-relative (4, 1, 1). Max distance reduced to 5 (from original 16) per ValidatorAgent feedback, forcing the player to actually walk toward the wall rather than triggering from spawn (~6 blocks away). Facing tolerance of 60° ensures the player is looking at the wall.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                4,
+                1,
+                1
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "find_green_bed",
+        "milestone_id": "find_green_bed",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task — the player must enter the cottage and visually identify the green bed. Target is the bed head at spawn-relative (-5, 1, 5). Max distance of 5 ensures the player is inside or at the doorway of the cottage (doorway is at approximately (-4.5, 1, 3), ~2-3 blocks from the bed). Facing tolerance of 60° ensures the player is looking toward the bed.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                -5,
+                1,
+                5
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "plant_flower",
+        "milestone_id": "plant_flower_in_garden",
+        "description": "Uses count_in_box_at_least with kind='block' because this is a place/build task — the player must physically place a dandelion block in the world. The search box (-6,0,-4) to (3,2,6) covers the entire garden interior inside the mossy cobblestone walls. Only dandelions are in the player's inventory (poppies removed per CommonSenseAgent feedback), so this unambiguously checks the correct flower type. The coarse dirt plot at (-1,0)-(1,1) and surrounding grass_block both accept dandelion placement.",
+        "rules": [
+          {
+            "type": "count_in_box_at_least",
+            "params": {
+              "kind": "block",
+              "object": "dandelion",
+              "min": [
+                -6,
+                0,
+                -4
+              ],
+              "max": [
+                3,
+                2,
+                6
+              ],
+              "min_count": 1,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "cottage_garden",
+  "scene_description": "A walled cottage garden enclosed by mossy cobblestone walls. Inside the garden, an oak plank cottage contains a green bed. A coarse dirt garden plot is in the center for planting flowers. The player spawns inside the garden with dandelions in inventory.",
+  "task_text": "You are in a walled garden. First, find and look at the mossy cobblestone wall that forms the garden perimeter. Then, enter the cottage and find the green bed inside. Finally, plant a dandelion flower on the garden plot.",
+  "atomic_tasks_ordered": [
+    "find_mossy_cobblestone_wall",
+    "find_green_bed",
+    "plant_flower"
+  ],
+  "commands": [
+    "/fill ~-12 ~-1 ~-12 ~12 ~-1 ~12 minecraft:grass_block",
+    "/fill ~-12 ~0 ~-12 ~12 ~5 ~12 minecraft:air",
+    "/fill ~4 ~0 ~-5 ~4 ~1 ~7 minecraft:mossy_cobblestone_wall",
+    "/fill ~-7 ~0 ~7 ~4 ~1 ~7 minecraft:mossy_cobblestone_wall",
+    "/fill ~-7 ~0 ~-5 ~-7 ~1 ~7 minecraft:mossy_cobblestone_wall",
+    "/fill ~-7 ~0 ~-5 ~4 ~1 ~-5 minecraft:mossy_cobblestone_wall",
+    "/fill ~-6 ~0 ~3 ~-3 ~0 ~6 minecraft:oak_planks",
+    "/fill ~-6 ~1 ~3 ~-6 ~3 ~6 minecraft:oak_planks",
+    "/fill ~-3 ~1 ~3 ~-3 ~3 ~6 minecraft:oak_planks",
+    "/fill ~-6 ~1 ~6 ~-3 ~3 ~6 minecraft:oak_planks",
+    "/fill ~-6 ~1 ~3 ~-3 ~3 ~3 minecraft:oak_planks",
+    "/fill ~-6 ~4 ~3 ~-3 ~4 ~6 minecraft:oak_slab",
+    "/fill ~-5 ~1 ~3 ~-4 ~2 ~3 minecraft:air",
+    "/setblock ~-5 ~0 ~5 minecraft:oak_planks",
+    "/setblock ~-5 ~1 ~5 minecraft:green_bed[facing=south,part=head]",
+    "/setblock ~-5 ~1 ~4 minecraft:green_bed[facing=south,part=foot]",
+    "/fill ~-1 ~0 ~0 ~1 ~0 ~1 minecraft:coarse_dirt",
+    "/give @p minecraft:dandelion 4",
+    "/tp @p ~0 ~1 ~-2"
+  ],
+  "design_notes": "Garden wall: mossy_cobblestone_wall rectangle from (-7,-5) to (4,7), 2 blocks tall. Cottage: oak_planks at (-6,3) to (-3,6) with 2-wide doorway facing south at (-5,3)/(-4,3). Green bed inside cottage at (-5,4) foot, (-5,5) head, facing south. Coarse dirt garden plot at (-1,0) to (1,1) — 3x2 blocks where dandelions can be planted. Player spawns at (0,1,-2) inside the garden facing roughly north/toward the cottage. Only dandelions given (no poppies) to match milestone check.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 3 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I'll analyze the candidate tasks and select 3 that form a coherent multi-hop dependency chain.\n\nLet me think through the possibilities:\n\n- **find green_bed** → **find brown_banner** → **find beacon**: These are all \"find\" tasks but could be arranged spatially so finding one leads to the next.\n- **find mossy_cobblestone_wall** → **find green_bed** → **plant flower**: This creates a nice narrative — find a garden wall, find a bed in a nearby house, then plant a flower in the garden. The wall helps",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## CommonSenseAgent Assessment\n\nBased on my review of the scene design and Minecraft mechanics:\n\n### Task 1: Find Mossy Cobblestone Wall ✅\n- The mossy cobblestone wall is clearly placed as the garden perimeter (4 walls forming a rectangle from (-7,-5) to (4,7))\n- It's 2 blocks tall and very visible from the player's spawn position inside the garden\n- **No issues** — this is straightforward visual identification\n\n### Task 2: Find Green Bed ✅\n- The green bed is placed inside the cottage at (-5, 4-",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Now I have enough information to provide my assessment.\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"The 'plant flower' milestone only checks for dandelion blocks, but the player is given both dandelions AND poppies. If the player plants a poppy instead of a dandelion, the milestone will fail. This is a significant design flaw since the task is generically 'plant flower' — not 'plant dandelion'.\",\n      \"severity\": \"high\",\n      \"target_agent\": \"both\"\n    },\n    {\n      \"issue\": \"Flowers (dand",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I can see the scene from the overhead and first-person views. The scene looks correct:\n- **Overhead**: Shows the rectangular mossy cobblestone wall perimeter, the oak plank cottage in the upper-left area, and the farmland in the center\n- **First-person**: Player is inside the garden, can see the wall and cottage\n\nNow let me validate the CommonSenseAgent's concerns and produce my validation report:\n\n## ValidatorAgent — Full Validation Report\n\n### Dependency Graph ✅\n- **Structure**: Valid DAG with",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations — Fourth Preview (Revised Scene)\n\nExamining all frames from the corrected scene:\n\n### Frame-by-Frame Analysis:\n\n1. **Initial frame**: Player spawns inside the garden. I can clearly see:\n   - **Coarse dirt plot** directly in front (dark brown 3x2 area) — this replaces the old farmland ✅\n   - **Oak plank cottage** to the right with the doorway visible\n   - **Green bed** visible through the cottage doorway (green-colored block inside!) ✅\n   - **Mossy cobblestone wall** visib",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## MilestoneAgent — Final Milestone Rules\n\nBased on the SceneDesignerAgent's verified scene layout and addressing all feedback from CommonSenseAgent and ValidatorAgent, here are the finalized milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find_mossy_cobblestone_wall\",\n      \"milestone_id\": \"find_mossy_cobblestone_wall\",\n      \"description\": \"The player must locate and look at the mossy cobblestone wall forming the garden perimeter. The east wall segment at x=4 is the most pro",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nThank you for the thorough validation and the revised scene from SceneDesignerAgent. Let me now produce the final revised milestones incorporating all feedback from CommonSenseAgent and ValidatorAgent.\n\n```json\n{\n  \"revised_milestones\": {\n    \"milestones\": [\n      {\n        \"task\": \"find_mossy_cobblestone_wall\",\n        \"milestone_id\": \"find_mossy_cobblestone_wall\",\n        \"description\": \"Uses position_near_with_facing because this is a 'find/locate' task — the player must navigate to and vis",
+      "timestamp": ""
+    }
+  ]
+}

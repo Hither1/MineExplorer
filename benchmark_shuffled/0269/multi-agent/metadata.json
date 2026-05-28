@@ -1,0 +1,98 @@
+{
+  "id": "0095",
+  "sample_idx": 95,
+  "mode": "multi",
+  "selected_tasks": [
+    "find lever"
+  ],
+  "selection_reasoning": "The 'find lever' task is a straightforward observation/navigation task that requires the agent to locate a lever placed in the Minecraft scene. It is easily verifiable (the agent must be near the lever and looking at it), does not require deep Minecraft domain knowledge, and can be set up in an interesting scene where the lever is not immediately visible, requiring some exploration. As a single atomic task, no dependency edges are needed.",
+  "reasoning_graph": {
+    "nodes": [
+      "find lever"
+    ],
+    "edges": []
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find lever",
+        "milestone_id": "find_lever",
+        "description": "Uses position_near_with_facing because this is a find/locate/observe task. The lever is placed at spawn-relative (7, 1, 7) inside a stone brick building. The player must navigate near the lever (within 8 blocks, which means being inside or at the entrance of the building) and face toward it (within 60 degrees). This correctly models 'player can see the lever' without requiring them to stand on an exact spot.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                7,
+                1,
+                7
+              ],
+              "max_distance": 8,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "lever_in_stone_room",
+  "scene_description": "A grass field with a stone brick building (~4,0,4 to ~9,3,9) containing a lever on the inner south wall. The building has a 2-block-wide doorway on the west face. Torches are placed outside to guide the player toward the entrance. A cobblestone structure is placed nearby as a distractor landmark.",
+  "task_text": "Find the lever hidden inside the stone brick building. Explore the area, locate the doorway, enter the building, and look at the lever.",
+  "atomic_tasks_ordered": [
+    "find lever"
+  ],
+  "commands": [
+    "/fill ~-10 ~-1 ~-10 ~10 ~-1 ~10 minecraft:grass_block",
+    "/fill ~-10 ~0 ~-10 ~10 ~4 ~10 minecraft:air",
+    "/fill ~4 ~0 ~4 ~9 ~3 ~9 minecraft:stone_bricks",
+    "/fill ~5 ~0 ~5 ~8 ~3 ~8 minecraft:air",
+    "/setblock ~4 ~0 ~6 minecraft:air",
+    "/setblock ~4 ~1 ~6 minecraft:air",
+    "/setblock ~4 ~0 ~7 minecraft:air",
+    "/setblock ~4 ~1 ~7 minecraft:air",
+    "/setblock ~7 ~1 ~7 minecraft:lever[face=wall,facing=south]",
+    "/setblock ~2 ~0 ~5 minecraft:torch",
+    "/setblock ~2 ~0 ~7 minecraft:torch",
+    "/fill ~-3 ~0 ~-3 ~-1 ~2 ~-1 minecraft:cobblestone",
+    "/setblock ~-2 ~1 ~-3 minecraft:torch"
+  ],
+  "design_notes": "The stone brick building is at relative +4 to +9 in X and Z from spawn, about 5-9 blocks away. The doorway faces west (toward the player), 2 blocks wide. The lever is on the inner east wall at ~7 ~1 ~7 (facing south). Torches at ~2,0,5 and ~2,0,7 mark the path to the entrance. The cobblestone structure at ~-3 to ~-1 serves as a distractor. The lever is the ONLY lever in the scene, making verification unambiguous.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 1 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find lever\"],\n  \"selection_reasoning\": \"The 'find lever' task is a straightforward observation/navigation task that requires the agent to locate a lever placed in the Minecraft scene. It is easily verifiable (the agent must be near the lever and looking at it), does not require deep Minecraft domain knowledge, and can be set up in an interesting scene where the lever is not immediately visible, requiring some exploration. As a single atomic task, no dependency edg",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations — Revised Scene (Attempt 2)\n\nAfter examining all 21 frames from the second preview:\n\n**Initial frame:** The player spawns looking roughly east. To the left is the cobblestone structure with a torch on it. In the center-right area, the stone brick building is visible. Two torches are placed on the ground leading toward the building entrance (acting as visual cues). The scene looks good overall.\n\n**Steps 0-5:** The agent turns right and looks directly at the stone brick bui",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## CommonSenseAgent Feedback\n\nHere's my analysis of the scene design for the \"find lever\" task:\n\n**✅ Scene Design is Sound:**\n1. **Lever placement is valid** — Levers can be placed on walls with `face=wall` and a facing direction. The command `/setblock ~7 ~1 ~7 minecraft:lever[face=wall,facing=south]` is correct — it places the lever on the north wall of the interior, facing south (toward the player entering from the west doorway).\n\n2. **Stone bricks building** — Stone bricks are a standard blo",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"The lever block state 'face=wall,facing=south' means the lever is attached to the block on its north side (i.e., attached to the block at z=8, which is the south interior wall). The lever faces south, meaning it protrudes northward into the room. When the player enters from the west doorway at x=4, they would need to look to their right (south wall) to see it. This is still findable but slightly less intuitive than placing it on the east wall directl",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "Let me check the spawn position and then verify the lever position by looking at the blocks near the expected coordinates.",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "I can see the ground below - it appears to be grass blocks with some structures visible. The overhead view from earlier confirmed the scene layout. Based on my earlier multi-perspective screenshots (overhead, cardinal directions), the scene was correctly built. The overhead view clearly showed:\n- The stone brick building (a square structure)\n- The cobblestone structure\n- Torches on the ground\n\nThe scene is structurally valid. Let me provide my final assessment.\n\n```json\n{\n  \"issues\": [\n    {\n   ",
+      "timestamp": ""
+    }
+  ]
+}

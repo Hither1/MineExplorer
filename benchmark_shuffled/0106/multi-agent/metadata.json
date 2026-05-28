@@ -1,0 +1,117 @@
+{
+  "id": "0371",
+  "sample_idx": 371,
+  "mode": "multi",
+  "selected_tasks": [
+    "mine jungle_trapdoor",
+    "craft to jungle_boat"
+  ],
+  "selection_reasoning": "This pair forms a coherent resource-gathering-to-crafting pipeline. The player must first mine jungle trapdoor(s) to obtain jungle wood/planks as a resource. These jungle planks are then used to craft a jungle boat (which requires 5 jungle planks). The dependency is natural: you need jungle wood material before you can craft jungle items. The scene can place jungle trapdoors as the only source of jungle wood, forcing the player to complete the mining task first. Both tasks are observable (inventory checks) and don't require deep Minecraft knowledge beyond basic mining and crafting.",
+  "reasoning_graph": {
+    "nodes": [
+      "mine jungle_trapdoor",
+      "craft to jungle_boat"
+    ],
+    "edges": [
+      {
+        "from": "mine jungle_trapdoor",
+        "to": "craft to jungle_boat",
+        "reason": "Crafting a jungle boat requires 5 jungle planks; mining jungle trapdoors provides the jungle wood material needed for planks"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "mine jungle_trapdoor",
+        "milestone_id": "mine_jungle_trapdoor",
+        "description": "Uses mine_block event counter to verify the player has mined at least 1 jungle_trapdoor. This is preferred because the task is explicitly 'mine jungle_trapdoor', and the mine_block counter directly tracks block-breaking events. While we could check inventory_has for the dropped trapdoor item, the mine_block counter is the most semantically direct check. The player needs to mine at least one trapdoor to clear the doorway passage and access the back room with the crafting table.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "jungle_trapdoor",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to jungle_boat",
+        "milestone_id": "craft_jungle_boat",
+        "description": "Uses inventory_has to check that the player has a jungle_boat in their inventory. This is the preferred rule type for craft tasks because the crafted item ends up in the player's inventory. The player must use the 5 jungle planks (already in inventory) at the crafting table (located at spawn-relative 0, 0, 7 in the back room) to craft a jungle boat. The boat recipe in Java Edition 1.14+ requires 5 planks in a U-shape. The player cannot reach the crafting table without first completing Task 1 (mining the trapdoors blocking the doorway), which enforces the dependency.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "jungle_boat",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "jungle_workshop_blocked_passage",
+  "scene_description": "A stone brick room divided by a wall with a single doorway. The doorway is blocked by two jungle trapdoors stacked vertically. Behind the dividing wall is a back room containing a crafting table. The player must mine the jungle trapdoors to access the crafting table, then craft a jungle boat using the 5 jungle planks in their inventory.",
+  "task_text": "You are in a stone brick room. A doorway ahead is blocked by jungle trapdoors, and a crafting table is in the room behind them. Mine the jungle trapdoors to clear the passage, then use the crafting table to craft a jungle boat from the jungle planks in your inventory.",
+  "atomic_tasks_ordered": [
+    "mine jungle_trapdoor",
+    "craft to jungle_boat"
+  ],
+  "commands": [
+    "/fill ~-4 ~-1 ~-2 ~4 ~-1 ~8 minecraft:stone_bricks",
+    "/fill ~-4 ~0 ~-2 ~4 ~4 ~8 minecraft:air",
+    "/fill ~-4 ~0 ~-2 ~-4 ~3 ~8 minecraft:stone_bricks",
+    "/fill ~4 ~0 ~-2 ~4 ~3 ~8 minecraft:stone_bricks",
+    "/fill ~-4 ~0 ~8 ~4 ~3 ~8 minecraft:stone_bricks",
+    "/fill ~-4 ~0 ~-2 ~4 ~3 ~-2 minecraft:stone_bricks",
+    "/fill ~-4 ~0 ~4 ~-1 ~3 ~4 minecraft:stone_bricks",
+    "/fill ~1 ~0 ~4 ~4 ~3 ~4 minecraft:stone_bricks",
+    "/setblock ~0 ~0 ~4 minecraft:jungle_trapdoor[half=bottom,facing=south]",
+    "/setblock ~0 ~1 ~4 minecraft:jungle_trapdoor[half=bottom,facing=south]",
+    "/setblock ~0 ~2 ~4 minecraft:stone_bricks",
+    "/setblock ~0 ~3 ~4 minecraft:stone_bricks",
+    "/setblock ~0 ~0 ~7 minecraft:crafting_table",
+    "/give @p minecraft:jungle_planks 5",
+    "/give @p minecraft:wooden_axe 1"
+  ],
+  "design_notes": "Stone brick enclosed room (9x11 blocks). Dividing wall at z=4 with a 1-wide doorway at x=0. Doorway blocked by 2 jungle trapdoors at (0,+0,4) and (0,+1,4), with stone bricks at (0,+2,4) and (0,+3,4) above to prevent jumping over. Crafting table at (0,+0,7) in back room — 3 blocks behind the doorway. Player spawns in front room with 5 jungle planks (exact amount for boat recipe) and wooden axe. The spatial dependency is real: player must mine trapdoors to physically reach the crafting table.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I'll analyze the candidate tasks to find a pair that forms a meaningful dependency chain.\n\nLet me evaluate the options:\n\n1. **craft to jungle_stairs** - Requires jungle planks\n2. **craft to jungle_boat** - Requires jungle planks\n3. **find a cow** - Exploration task\n4. **combat a silverfish** - Combat task\n5. **mine acacia_stairs** - Mining task\n6. **decorate the wall** - Creative/placement task\n7. **mine jungle_trapdoor** - Mining task, produces jungle planks/wood\n8. **find blue_bed** - Explorat",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations - Revised Scene\n\nAfter examining all 21 frames from the revised preview, here's what I observed:\n\n**Initial frame**: The player spawns facing the stone brick back wall. The hotbar clearly shows **jungle planks (5)** and a **wooden axe**. The chat confirms all commands executed. To the right, I can see the distinctive brown/orange texture of **jungle trapdoors** mounted on the wall in two rows.\n\n**Step 000**: The agent turned slightly left. Now I can clearly see the **corn",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "Excellent! Now I can clearly see the **jungle trapdoors** on the stone brick back wall. They are visible as the characteristic jungle wood trapdoor texture (lighter brown with a pattern) mounted on the stone brick wall at z=3. The player is facing toward them from position (-3, 5, 1). I can see at least 3 trapdoors in the lower row clearly.\n\n## CommonSenseAgent — Feedback\n\nHere are my findings and concerns:\n\n### ✅ What Works\n1. **Scene layout is good** — The stone brick room with trapdoors on th",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations — Revised Scene v3 (Spatial Dependency)\n\nThis is looking **much better**! Here's what I see across all frames:\n\n**Initial frame**: The player spawns in a stone brick room. Directly ahead is a **1-block-wide doorway** in the dividing wall. I can clearly see:\n- **Two jungle trapdoors** stacked vertically (at y+0 and y+1) blocking the doorway — their characteristic brown/orange jungle wood texture is unmistakable\n- **The crafting table** is visible BEHIND the trapdoors throu",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nBased on all the information from SceneDesignerAgent's sandbox report and CommonSenseAgent's feedback, I have a clear picture of the scene layout and can design the milestones. Let me analyze the key details:\n\n**Scene Layout (spawn-relative coordinates):**\n- Player spawns at origin (0, 0, 0) in the front room\n- Dividing wall at z=4 with a 1-wide doorway at x=0\n- Two jungle trapdoors blocking the doorway at (0, 0, 4) and (0, 1, 4)\n- Stone bricks above at (0, 2, 4) and (0, 3, 4) preventing jumpi",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "This confirms the key concern I had. Let me now provide my full assessment:\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Jungle trapdoors can be OPENED by right-clicking, not just mined. When a wooden trapdoor is opened (right-click), it swings flat against the wall, creating a passable opening. The player could simply open both trapdoors to walk through to the crafting table WITHOUT mining them. This means the spatial dependency (mine trapdoors to reach crafting table) can be bypassed entirel",
+      "timestamp": ""
+    }
+  ]
+}

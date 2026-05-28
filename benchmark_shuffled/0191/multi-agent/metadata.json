@@ -1,0 +1,190 @@
+{
+  "id": "0943",
+  "sample_idx": 943,
+  "mode": "multi",
+  "selected_tasks": [
+    "find red_glazed_terracotta",
+    "mine red_bed",
+    "find a horse",
+    "hunt a llama"
+  ],
+  "selection_reasoning": "These four tasks form a coherent exploration and interaction sequence. The player must first locate red_glazed_terracotta (a distinctive landmark block), then mine a red_bed placed near/on it (requiring finding the area first). Separately, the player must find a horse (which serves as transportation), and then use that mobility advantage to hunt a llama (which may be placed further away). This creates two parallel branches that test navigation, block interaction, and entity interaction. The tasks are observable and verifiable without deep Minecraft crafting knowledge.",
+  "reasoning_graph": {
+    "nodes": [
+      "find red_glazed_terracotta",
+      "mine red_bed",
+      "find a horse",
+      "hunt a llama"
+    ],
+    "edges": [
+      {
+        "from": "find red_glazed_terracotta",
+        "to": "mine red_bed",
+        "reason": "The red_bed is placed in the same structure as the red_glazed_terracotta; player must navigate to that area first"
+      },
+      {
+        "from": "find a horse",
+        "to": "hunt a llama",
+        "reason": "The llama is located far from spawn; finding and riding the horse provides necessary mobility to reach it"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find red_glazed_terracotta",
+        "milestone_id": "find_red_glazed_terracotta",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The player must navigate near the red_glazed_terracotta structure (centered around [10, 0, 10] spawn-relative) and face it. max_distance=16 allows detection from moderate range, facing_tolerance=60 ensures the player is actually looking at it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                10,
+                0,
+                10
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine red_bed",
+        "milestone_id": "mine_red_bed",
+        "description": "Uses inventory_has because mining a red_bed drops a red_bed item into the player's inventory. Beds can be broken instantly by hand or with any tool. The bed is placed at ~9, 0, 6-7 near the terracotta structure, so the player must first find the terracotta area (dependency). When the bed is broken, it drops as a single 'red_bed' item.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "red_bed",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "find a horse",
+        "milestone_id": "find_horse",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The horse is summoned at [3, 0, 3] spawn-relative with NoAI so it stays in place. The player must navigate near it and face it. max_distance=10 is generous since the horse is relatively close to spawn, facing_tolerance=60 ensures the player is looking at it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                3,
+                0,
+                3
+              ],
+              "max_distance": 10,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "hunt a llama",
+        "milestone_id": "hunt_llama",
+        "description": "Uses count_in_box_at_most (kind=mob, max_count=0) because this is a kill/combat task. The llama is spawned at [15, 0, 15] with NoAI so it won't wander away. A generous box covering the entire scene (min=[0,-2,0], max=[25,5,25]) ensures the llama stays inside the detection area until actually killed. The player has a diamond_sword to kill it efficiently.",
+        "rules": [
+          {
+            "type": "count_in_box_at_most",
+            "params": {
+              "kind": "mob",
+              "object": "llama",
+              "min": [
+                0,
+                -2,
+                0
+              ],
+              "max": [
+                25,
+                5,
+                25
+              ],
+              "max_count": 0,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "terracotta_enclosure_with_mobs",
+  "scene_description": "A grass platform with a red_glazed_terracotta walled enclosure (5x5 floor with 1-block-high walls). A red_bed is placed on the ground just outside the front of the structure. A tamed horse with NoAI stands nearby at ~3,0,3. A llama with NoAI is positioned further away at ~15,0,15 with a fence+torch marker. Player is given a diamond_sword (for hunting) and wooden_pickaxe (for mining the bed).",
+  "task_text": "Find the red glazed terracotta structure and mine the red bed near it. Then find the horse nearby, and hunt the llama in the distance.",
+  "atomic_tasks_ordered": [
+    "find red_glazed_terracotta",
+    "mine red_bed",
+    "find a horse",
+    "hunt a llama"
+  ],
+  "commands": [
+    "/fill ~-3 ~-1 ~-3 ~22 ~-1 ~22 minecraft:grass_block",
+    "/fill ~-3 ~0 ~-3 ~22 ~5 ~22 minecraft:air",
+    "/fill ~8 ~0 ~8 ~12 ~0 ~12 minecraft:red_glazed_terracotta",
+    "/fill ~8 ~1 ~8 ~12 ~1 ~8 minecraft:red_glazed_terracotta",
+    "/fill ~8 ~1 ~12 ~12 ~1 ~12 minecraft:red_glazed_terracotta",
+    "/fill ~8 ~1 ~9 ~8 ~1 ~11 minecraft:red_glazed_terracotta",
+    "/fill ~12 ~1 ~9 ~12 ~1 ~11 minecraft:red_glazed_terracotta",
+    "/setblock ~9 ~0 ~7 minecraft:red_bed[part=foot,facing=south]",
+    "/setblock ~9 ~0 ~6 minecraft:red_bed[part=head,facing=south]",
+    "/summon minecraft:horse ~3 ~0 ~3 {Tame:1b,NoAI:1b}",
+    "/summon minecraft:llama ~15 ~0 ~15 {NoAI:1b}",
+    "/setblock ~15 ~1 ~15 minecraft:oak_fence",
+    "/setblock ~15 ~2 ~15 minecraft:torch",
+    "/give @p minecraft:diamond_sword 1",
+    "/give @p minecraft:wooden_pickaxe 1"
+  ],
+  "design_notes": "The terracotta structure is at ~8-12, 0-1, 8-12 with walls forming an open-top enclosure. The red_bed is just outside at ~9, 0, 6-7 (facing south). Horse at ~3,0,3 is close to spawn. Llama at ~15,0,15 is further away with a torch marker. The two task branches (terracotta→bed and horse→llama) are spatially separated but both within 20 blocks of spawn.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 4 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find red_glazed_terracotta\", \"mine red_bed\", \"find a horse\", \"hunt a llama\"],\n  \"selection_reasoning\": \"These four tasks form a coherent exploration and interaction sequence. The player must first locate red_glazed_terracotta (a distinctive landmark block), then mine a red_bed placed near/on it (requiring finding the area first). Separately, the player must find a horse (which serves as transportation), and then use that mobility advantage to hunt a llama (which m",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## Final Sandbox Observations - Third Preview\n\nAfter examining all 21 frames:\n\n**Initial frame:** Player spawns with diamond sword. Looking forward, the red_glazed_terracotta structure is visible on the left with its distinctive red pattern. The grass platform extends forward.\n\n**Step 000-003:** The agent turns and the horse is clearly visible - a white/gray horse standing on the grass. The red_glazed_terracotta walls are visible behind/beside it forming a clear structure.\n\n**Step 004-008:** The",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's sandbox report, I have all the information needed to design the milestones. Here are the key spatial details:\n\n- **Red glazed terracotta structure**: centered around ~8-12, 0-1, 8-12 (spawn-relative)\n- **Red bed**: at ~9, 0, 6-7 (spawn-relative), just in front of the terracotta structure\n- **Horse**: at ~3, 0, 3 (spawn-relative)\n- **Llama**: at ~15, 0, 15 (spawn-relative)\n\nNow I'll design milestones for each task:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\":",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "The player is still looking at the sky. Let me look down to find the ground level and verify the scene elements.",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations - Final Preview\n\nExcellent! This preview gives me clear confirmation of the scene elements. Let me analyze each frame:\n\n**Initial frame:** Player spawns holding diamond sword. On the left, the horse (white/gray) is clearly visible. Behind the horse, I can see the red_glazed_terracotta structure with its distinctive red swirl pattern. A torch is visible in the upper-left area (the llama marker). The grass platform is clearly established.\n\n**Step 000:** The agent turned rig",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## CommonSenseAgent Review\n\nBased on the sandbox observations and scene design, here are my common-sense checks:\n\n### ✅ Things that work well:\n1. **Red glazed terracotta** - Distinctive block with unique red swirl pattern, easily recognizable. No special tools needed to identify it.\n2. **Horse** - Tamed with NoAI so it stays in place. Visible and accessible near spawn.\n3. **Diamond sword** - Appropriate for hunting the llama (kills in 2-3 hits).\n4. **Wooden pickaxe** - Given for mining, though b",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's sandbox report and CommonSenseAgent's feedback, I have all the information needed to design the milestones. Here are the key spatial details:\n\n- **Red glazed terracotta structure**: centered around ~8-12, 0-1, 8-12 (spawn-relative)\n- **Red bed**: at ~9, 0, 6-7 (spawn-relative), just in front of the terracotta structure\n- **Horse**: at ~3, 0, 3 (spawn-relative)\n- **Llama**: at ~15, 0, 15 (spawn-relative)\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find red_",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good. Now I have all the information I need to provide my final assessment.\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"The dependency 'find a horse → hunt a llama' is logically unjustified. The horse requires a SADDLE to ride (confirmed by wiki: 'can be ridden when tamed and saddled'), but no saddle is provided in the scene. Even if a saddle were provided, the llama is only ~15 blocks from spawn — easily reachable on foot in seconds. The dependency adds no real constraint.\",\n      \"severity\"",
+      "timestamp": ""
+    }
+  ]
+}

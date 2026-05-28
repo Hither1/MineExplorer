@@ -1,0 +1,127 @@
+{
+  "id": "0358",
+  "sample_idx": 358,
+  "mode": "multi",
+  "selected_tasks": [
+    "find iron_trapdoor",
+    "drink potion"
+  ],
+  "selection_reasoning": "These two tasks form a natural spatial dependency chain. The iron trapdoor serves as a barrier or marker for a hidden area (e.g., a cellar or vault) that contains the potion. The player must first locate the iron_trapdoor to gain access to the room where the potion is stored, then retrieve and drink the potion. This creates a meaningful exploration → interaction sequence where the first task (finding the trapdoor) is a prerequisite for the second (drinking the potion located behind/below it).",
+  "reasoning_graph": {
+    "nodes": [
+      "find iron_trapdoor",
+      "drink potion"
+    ],
+    "edges": [
+      {
+        "from": "find iron_trapdoor",
+        "to": "drink potion",
+        "reason": "The potion is stored in a room accessible only through the iron trapdoor; player must find the trapdoor first to reach the potion"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find iron_trapdoor",
+        "milestone_id": "find_iron_trapdoor",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task. The iron trapdoor is placed at relative (5, 0, 7) from spawn inside the stone brick building. The player must navigate near it and face toward it to demonstrate they have found it. max_distance=16 allows detection from within the building or just inside the door, and facing_tolerance=60 ensures the player is actually looking toward the trapdoor.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                5,
+                0,
+                7
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "drink potion",
+        "milestone_id": "drink_potion",
+        "description": "Uses inventory_has with min_count=1 for 'glass_bottle' because drinking a potion in Minecraft consumes the potion and leaves an empty glass bottle in the player's inventory. The player starts with no items at all (the potion is in a chest underground), so having a glass_bottle in inventory proves the player retrieved the Potion of Healing from the chest and drank it. This is more reliable than checking for potion count decrease since the player starts with 0 potions.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "glass_bottle",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "trapdoor_cellar_potion",
+  "scene_description": "A stone brick building on a grass platform contains an iron trapdoor in its floor. The trapdoor (set open) reveals a ladder shaft leading down to an underground stone brick cellar. In the cellar, a chest contains a Potion of Healing. A lever on the wall is provided as a redstone control for the trapdoor. The player must enter the building, find the iron trapdoor, descend the ladder, open the chest, take the potion, and drink it.",
+  "task_text": "Enter the stone brick building and find the iron trapdoor on the floor inside. Descend through it into the underground cellar, find the chest containing a Potion of Healing, take it, and drink it.",
+  "atomic_tasks_ordered": [
+    "find iron_trapdoor",
+    "drink potion"
+  ],
+  "commands": [
+    "/fill ~-10 ~-1 ~-10 ~10 ~-1 ~10 minecraft:grass_block",
+    "/fill ~-10 ~0 ~-10 ~10 ~5 ~10 minecraft:air",
+    "/fill ~3 ~0 ~5 ~7 ~3 ~9 minecraft:stone_bricks",
+    "/fill ~4 ~1 ~6 ~6 ~2 ~8 minecraft:air",
+    "/fill ~4 ~0 ~6 ~6 ~0 ~8 minecraft:air",
+    "/setblock ~5 ~0 ~5 minecraft:air",
+    "/setblock ~5 ~1 ~5 minecraft:air",
+    "/setblock ~5 ~0 ~5 minecraft:oak_door[facing=south,half=lower,open=false]",
+    "/setblock ~5 ~1 ~5 minecraft:oak_door[facing=south,half=upper,open=false]",
+    "/setblock ~5 ~2 ~7 minecraft:lantern[hanging=true]",
+    "/setblock ~5 ~0 ~7 minecraft:iron_trapdoor[facing=south,half=top,open=true]",
+    "/setblock ~6 ~1 ~7 minecraft:lever[face=wall,facing=west]",
+    "/fill ~4 ~-5 ~6 ~6 ~-5 ~8 minecraft:stone_bricks",
+    "/fill ~4 ~-4 ~4 ~6 ~-1 ~5 minecraft:stone_bricks",
+    "/fill ~4 ~-4 ~6 ~4 ~-1 ~8 minecraft:stone_bricks",
+    "/fill ~6 ~-4 ~6 ~6 ~-1 ~8 minecraft:stone_bricks",
+    "/fill ~4 ~-4 ~9 ~6 ~-1 ~9 minecraft:stone_bricks",
+    "/fill ~5 ~-4 ~6 ~5 ~-1 ~8 minecraft:air",
+    "/setblock ~5 ~-4 ~8 minecraft:ladder[facing=north]",
+    "/setblock ~5 ~-3 ~8 minecraft:ladder[facing=north]",
+    "/setblock ~5 ~-2 ~8 minecraft:ladder[facing=north]",
+    "/setblock ~5 ~-1 ~8 minecraft:ladder[facing=north]",
+    "/setblock ~5 ~-4 ~6 minecraft:chest[facing=south]{Items:[{Slot:0b,id:\"minecraft:potion\",Count:1b,tag:{Potion:\"minecraft:healing\"}}]}",
+    "/setblock ~5 ~-4 ~7 minecraft:lantern"
+  ],
+  "design_notes": "Building: ~3,~0,~5 to ~7,~3,~9 (stone bricks). Interior: ~4-6,~0-2,~6-8 (air). Door at ~5,~0-1,~5 (south-facing oak). Iron trapdoor at ~5,~0,~7 (open=true, on floor). Lever at ~6,~1,~7 (east wall). Underground shaft: ~5,~-4 to ~-1,~6-8 (air column). Ladders at ~5,~-4 to ~-1,~8 (north-facing). Cellar floor at y=-5 (stone bricks). Chest with Potion of Healing at ~5,~-4,~6. Lantern at ~5,~-4,~7 for cellar lighting. Interior ceiling lantern at ~5,~2,~7. The iron trapdoor is set open=true so the player can descend without needing redstone knowledge, but a lever is provided as well. Spawn coordinates approximately -3009, 71, -5569. Building absolute coords approximately -3006 to -3002, 71-74, -5564 to -5560.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I'll analyze the candidate tasks to find a pair that forms a coherent multi-hop dependency chain.\n\nLet me evaluate the options:\n\n- **find pumpkin → eat beef**: No natural dependency.\n- **find nether_bricks → craft to quartz_block**: No dependency.\n- **find iron_trapdoor → mine acacia_wall_sign**: No dependency.\n- **till dirt into farmland with hoe → find pumpkin**: Tilling farmland is a prerequisite for planting, but finding pumpkin doesn't require farmland.\n- **find cyan_stained_glass → find ne",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I can see the player is now at `-3004.5, 72.0, -5563.5` (coordinates shown in debug). The view shows jungle foliage and leaves. The player appears to be at the building level but surrounded by jungle trees. The night vision effect was applied. Let me look down to find the iron trapdoor:",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations — Preview 3 (Final Clean Build)\n\nExcellent! This preview is much clearer. Let me analyze each frame:\n\n### Frame-by-Frame Analysis:\n\n1. **Initial frame**: The stone brick building is clearly visible to the left. The oak door is on the south face. A hanging lantern is visible floating above (at `~5 ~3 ~7` — it's above the roof, which looks a bit odd). The grass platform is clean and well-cleared. Command log shows successful block placements at `-3005, 67-70, -5565/-5566` c",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nBased on all the information from SceneDesignerAgent's sandbox reports, I have everything I need to design the milestone rules. Let me output the complete milestones JSON now.\n\n**Key scene details from the reports:**\n- Spawn point: approximately `-3009, 71, -5569`\n- Iron trapdoor at relative `~5, ~0, ~7` from spawn (inside the stone brick building)\n- Potion of Healing is in a chest at relative `~5, ~-4, ~6` from spawn (underground cellar)\n- Player starts with empty inventory\n- The task is \"fin",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "## Validator Agent — Comprehensive Validation\n\nI can see the player has been teleported to `-3004.5, 72.0, -5563.5` with night vision applied. The view shows a jungle biome with dense foliage. I can see what appears to be the stone brick building structure in the distance (the grey/white structure visible through the trees). The scene was built successfully but is partially obscured by jungle terrain.\n\nLet me now perform my full validation of the dependency graph and milestone rules.\n\n---\n\n### D",
+      "timestamp": ""
+    }
+  ]
+}

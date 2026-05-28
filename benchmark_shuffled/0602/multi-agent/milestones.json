@@ -1,0 +1,78 @@
+{
+  "milestones": [
+    {
+      "task": "find cobblestone",
+      "milestone_id": "find_cobblestone",
+      "description": "Uses position_near_with_facing because this is a find/locate task. The player spawns inside a cobblestone structure with walls at ±4 blocks from spawn. The north wall at (0, 1, -4) is targeted. The player needs to be within 10 blocks and facing toward it (within 60°). Since the player spawns at origin inside the structure, they just need to turn toward the north wall. This rule type is preferred over position_inside_box for find tasks because it models 'player can see the target'.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              0,
+              1,
+              -4
+            ],
+            "max_distance": 10,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "mine light_gray_stained_glass_pane",
+      "milestone_id": "mine_light_gray_stained_glass_pane",
+      "description": "Uses count_in_box_at_most (kind='block', max_count=3) because glass panes drop nothing when broken without Silk Touch, so inventory_has cannot detect the mining action. Instead, we verify that fewer than 4 panes remain in the bounding box that encompasses all 4 pane positions (east wall at x=4,y=1-2,z=0 and north wall at x=0,y=1-2,z=-4). The box [-5,0,-5] to [5,3,5] generously covers all pane locations. If max_count <= 3, at least 1 pane was broken.",
+      "rules": [
+        {
+          "type": "count_in_box_at_most",
+          "params": {
+            "kind": "block",
+            "object": "light_gray_stained_glass_pane",
+            "min": [
+              -5,
+              0,
+              -5
+            ],
+            "max": [
+              5,
+              3,
+              5
+            ],
+            "max_count": 3,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "sell Iron Ingot",
+      "milestone_id": "sell_iron_ingot",
+      "description": "Uses inventory_has because selling iron ingots to the armorer villager yields emeralds that appear in the player's inventory. The player starts with exactly 0 emeralds and 16 iron ingots. After completing one trade (4 iron ingots → 1 emerald), the player will have at least 1 emerald. Checking for min_count=1 emerald confirms a successful sale occurred. This is preferred over position-based rules because it directly verifies the trade outcome.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "emerald",
+            "min_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "task": "trade for Any color wool",
+      "milestone_id": "trade_for_wool",
+      "description": "Uses inventory_has because trading with the shepherd villager for wool results in white_wool appearing in the player's inventory. The player starts with 0 wool of any color. After trading 1 emerald → 1 white_wool with the shepherd, the player will have at least 1 white_wool. This directly verifies the trade was completed successfully.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "white_wool",
+            "min_count": 1
+          }
+        }
+      ]
+    }
+  ]
+}

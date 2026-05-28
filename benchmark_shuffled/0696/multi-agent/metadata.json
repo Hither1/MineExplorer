@@ -1,0 +1,145 @@
+{
+  "id": "0752",
+  "sample_idx": 752,
+  "mode": "multi",
+  "selected_tasks": [
+    "mine polished_granite",
+    "find birch_sapling",
+    "dig hole"
+  ],
+  "selection_reasoning": "These three tasks form a coherent multi-hop sequence in a designed scene. The player must first 'find birch_sapling' to locate a specific area of the scene where resources are placed. Near the birch sapling, polished granite blocks are embedded in the ground/wall, requiring the player to 'mine polished_granite'. Mining the polished granite requires digging into the terrain, which naturally leads to 'dig hole' as a prerequisite action — the player must dig a hole to access the polished granite that is buried below surface level. This creates a logical dependency chain: dig hole → mine polished_granite, and find birch_sapling → mine polished_granite (as a navigation/location dependency). The tasks are observable, verifiable, and don't require deep Minecraft crafting knowledge.",
+  "reasoning_graph": {
+    "nodes": [
+      "find birch_sapling",
+      "dig hole",
+      "mine polished_granite"
+    ],
+    "edges": [
+      {
+        "from": "find birch_sapling",
+        "to": "dig hole",
+        "reason": "The birch sapling marks the location where the player must dig; finding it provides navigation to the dig site"
+      },
+      {
+        "from": "dig hole",
+        "to": "mine polished_granite",
+        "reason": "Polished granite is buried below surface level; player must dig a hole to expose and access it for mining"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find birch_sapling",
+        "milestone_id": "find_birch_sapling",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The birch sapling is placed at spawn-relative (6, 0, 6). The player must navigate near it and face toward it to demonstrate they have found it. max_distance=8 gives reasonable range, facing_tolerance=60 ensures they are looking at it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                6,
+                0,
+                6
+              ],
+              "max_distance": 8,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "dig hole",
+        "milestone_id": "dig_hole",
+        "description": "Uses count_in_box_at_least with kind='block' checking for air blocks in the area where grass_block was originally placed. A hole means at least 1 block has been removed from the surface near the sapling (spawn-relative 4-8, -1, 4-8). We check that at least 1 air block exists at y=-1 level (where grass was) in a box around the dig site, confirming a hole was dug. Actually, since the evaluator checks for specific block types, we check for air at the grass level. However, 'air' blocks are tricky. Instead, we use inventory_has for 'dirt' since digging grass_block drops dirt, confirming the player dug. Wait - grass_block drops dirt only with silk touch; without it, grass_block drops nothing when broken by shovel... Actually grass_block drops itself without silk touch in recent versions. Let me reconsider: mining grass_block with a shovel drops the grass_block item in Java Edition only with Silk Touch. Without silk touch, it drops nothing. But the mine_block counter should still increment. The most reliable check is that polished_granite is now exposed - meaning air exists where dirt was at y=-1. Let me use count_in_box_at_most to verify grass_block count decreased in the dig area, meaning blocks were removed. Actually the simplest approach: check that air blocks exist at y=-1 in the dig zone (where grass was). Using count_in_box_at_least with kind='block', object='air' at the grass level.",
+        "rules": [
+          {
+            "type": "count_in_box_at_least",
+            "params": {
+              "kind": "block",
+              "object": "air",
+              "min": [
+                3,
+                -1,
+                3
+              ],
+              "max": [
+                9,
+                -1,
+                9
+              ],
+              "min_count": 1,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine polished_granite",
+        "milestone_id": "mine_polished_granite",
+        "description": "Uses inventory_has because mining polished granite with a pickaxe drops the polished_granite item which ends up in the player's inventory. This is the most direct and reliable check for a mine task.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "polished_granite",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "buried_granite_dig_site",
+  "scene_description": "A flat grass plain with a birch sapling marking a dig site. Below the surface (at depth -2 and -3 relative to spawn) near the sapling, polished granite blocks are embedded in the dirt. The player must find the birch sapling as a landmark, dig a hole through the grass and dirt using the provided iron shovel, then mine the polished granite with the iron pickaxe.",
+  "task_text": "Find the birch sapling on the grass plain. It marks a dig site. Dig a hole near the sapling to uncover polished granite blocks buried below the surface, then mine the polished granite.",
+  "atomic_tasks_ordered": [
+    "find birch_sapling",
+    "dig hole",
+    "mine polished_granite"
+  ],
+  "commands": [
+    "/fill ~-10 ~-1 ~-10 ~10 ~-1 ~10 minecraft:grass_block",
+    "/fill ~-10 ~-2 ~-10 ~10 ~-5 ~10 minecraft:dirt",
+    "/fill ~-10 ~0 ~-10 ~10 ~5 ~10 minecraft:air",
+    "/setblock ~6 ~0 ~6 minecraft:birch_sapling",
+    "/fill ~5 ~-2 ~5 ~7 ~-2 ~7 minecraft:polished_granite replace minecraft:dirt",
+    "/fill ~5 ~-3 ~5 ~7 ~-3 ~7 minecraft:polished_granite replace minecraft:dirt",
+    "/give @p minecraft:iron_pickaxe 1",
+    "/give @p minecraft:iron_shovel 1"
+  ],
+  "design_notes": "The scene is a 21x21 flat grass platform. The birch sapling at (~6, 0, ~6) serves as the landmark. A 3x3 area of polished granite at y=-2 and y=-3 (centered at ~6, ~6) is buried under the grass. The player needs the iron shovel to dig through grass_block (y=-1) exposing the polished granite at y=-2, then switch to iron pickaxe to mine it. The dependency chain is: find sapling → dig hole at that location → mine the exposed granite.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 3 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"mine polished_granite\", \"find birch_sapling\", \"dig hole\"],\n  \"selection_reasoning\": \"These three tasks form a coherent multi-hop sequence in a designed scene. The player must first 'find birch_sapling' to locate a specific area of the scene where resources are placed. Near the birch sapling, polished granite blocks are embedded in the ground/wall, requiring the player to 'mine polished_granite'. Mining the polished granite requires digging into the terrain, which ",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations - Revised Scene\n\nLooking at the frames from the revised scene:\n\n1. **Initial frame**: Flat grass terrain with natural trees around the edges. Command feedback shows all 9 commands executed successfully. Player has iron pickaxe in hand. I can see the terrain was properly flattened.\n\n2. **Step 000**: Agent looking forward across the flat grass area with trees in the background. Clean scene.\n\n3. **Step 005**: The agent has found the **birch sapling** - clearly visible as a s",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the sandbox observations and my knowledge of Minecraft mechanics, here's my **CommonSense feedback**:\n\n## CommonSense Assessment\n\n### ✅ Valid Mechanics\n1. **Polished Granite mining**: Iron pickaxe can mine polished granite (any pickaxe works). It drops itself as an item. ✅\n2. **Grass Block digging**: Iron shovel is the correct tool for grass blocks and dirt. ✅\n3. **Birch Sapling visibility**: Birch saplings are clearly visible on grass — they're small cross-shaped plants with light gree",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "I can see the player is now looking down at the grass surface. The grass blocks are clearly visible. Now I have enough information to complete my assessment. Let me verify one critical concern about the milestone - whether the grass_block drop mechanic matters.\n\nBased on my Minecraft knowledge:\n- **Grass Block** when broken by a shovel (without Silk Touch) drops **dirt**, not grass_block\n- **Polished Granite** when mined with any pickaxe drops **polished_granite** (itself)\n- The \"dig hole\" miles",
+      "timestamp": ""
+    }
+  ]
+}

@@ -1,0 +1,193 @@
+{
+  "id": "0677",
+  "sample_idx": 677,
+  "mode": "multi",
+  "selected_tasks": [
+    "find a cow",
+    "find anvil",
+    "hunt a sheep"
+  ],
+  "selection_reasoning": "These three tasks form a coherent multi-hop sequence centered around exploration and interaction in a Minecraft village/farm setting. The player must first locate a cow (which establishes orientation in the scene), then find an anvil (which is placed near the cow's area, requiring the player to have already navigated to that region), and finally hunt a sheep (which requires the player to have found the anvil area where a weapon/tool is available nearby to accomplish the hunt). This creates a logical dependency: finding the cow orients the player toward the farm area, the anvil is located past the cow pen providing access to equipment context, and the sheep is in a nearby field requiring the player to have traversed through the previous areas. All tasks are observable and verifiable without deep Minecraft crafting knowledge.",
+  "reasoning_graph": {
+    "nodes": [
+      "find a cow",
+      "find anvil",
+      "hunt a sheep"
+    ],
+    "edges": [
+      {
+        "from": "find a cow",
+        "to": "find anvil",
+        "reason": "The anvil is placed beyond the cow pen; finding the cow orients the player toward the correct area to locate the anvil"
+      },
+      {
+        "from": "find anvil",
+        "to": "hunt a sheep",
+        "reason": "The anvil area contains a sword in a nearby chest; the player needs this weapon to successfully hunt the sheep"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find a cow",
+        "milestone_id": "find_cow",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The player must navigate near the cow pen (center ~5, 0, 5) and face toward it. The cows are summoned at (5,1,5) and (4,1,6) inside the fenced pen. max_distance=16 allows detection from a reasonable range, and facing_tolerance=60 ensures the player is actually looking at the cow area.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                5,
+                0,
+                5
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "find anvil",
+        "milestone_id": "find_anvil",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The anvil is placed at (-2, 0, 2) near the workstation area. The player must approach within 16 blocks and face toward the anvil. This correctly models 'player can see the anvil' without requiring them to stand on top of it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                -2,
+                0,
+                2
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "hunt a sheep",
+        "milestone_id": "hunt_sheep",
+        "description": "Uses count_in_box_at_most(kind='mob', max_count=2) because this is a kill/combat task. Exactly 3 sheep are spawned in the scene. Successfully hunting (killing) at least one sheep means at most 2 remain alive in the detection area. The box is very generous (±15 on X/Z, -2 to +10 on Y) to ensure sheep are always detected regardless of wandering, preventing false positives from a sheep simply walking out of a small box.",
+        "rules": [
+          {
+            "type": "count_in_box_at_most",
+            "params": {
+              "kind": "mob",
+              "object": "sheep",
+              "min": [
+                -15,
+                -2,
+                -15
+              ],
+              "max": [
+                15,
+                10,
+                15
+              ],
+              "max_count": 2,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "farm_anvil_hunt",
+  "scene_description": "A compact farm scene with three distinct areas around the player spawn: (1) A cow pen to the front-right (~3-7, ~3-7) with 2 cows inside an oak fence enclosure on dirt, (2) An anvil workstation to the left (~-2, ~2) with a crafting table, chest containing an iron sword, and cobblestone path, and (3) A sheep field to the back-left (~-8 to -5, ~-6 to -2) with 3 sheep inside an oak fence enclosure. The player spawns on oak planks at origin with torches for visibility.",
+  "task_text": "First, find a cow in the nearby pen. Then locate the anvil at the workstation area. Finally, take the iron sword from the chest and hunt a sheep in the fenced field.",
+  "atomic_tasks_ordered": [
+    "find a cow",
+    "find anvil",
+    "hunt a sheep"
+  ],
+  "commands": [
+    "/fill ~-10 ~-1 ~-10 ~10 ~-1 ~10 minecraft:grass_block",
+    "/fill ~-10 ~0 ~-10 ~10 ~10 ~10 minecraft:air",
+    "/fill ~3 ~0 ~3 ~7 ~0 ~7 minecraft:dirt",
+    "/fill ~3 ~1 ~3 ~7 ~1 ~3 minecraft:oak_fence",
+    "/fill ~3 ~1 ~7 ~7 ~1 ~7 minecraft:oak_fence",
+    "/fill ~3 ~1 ~3 ~3 ~1 ~7 minecraft:oak_fence",
+    "/fill ~7 ~1 ~3 ~7 ~1 ~7 minecraft:oak_fence",
+    "/setblock ~5 ~1 ~3 minecraft:air",
+    "/summon minecraft:cow ~5 ~1 ~5",
+    "/summon minecraft:cow ~4 ~1 ~6",
+    "/setblock ~-2 ~0 ~2 minecraft:anvil",
+    "/setblock ~-2 ~0 ~3 minecraft:chest{Items:[{Slot:0b,id:\"minecraft:iron_sword\",Count:1b}]}",
+    "/setblock ~-2 ~0 ~1 minecraft:crafting_table",
+    "/fill ~-8 ~0 ~-6 ~-5 ~0 ~-6 minecraft:oak_fence",
+    "/fill ~-8 ~0 ~-2 ~-5 ~0 ~-2 minecraft:oak_fence",
+    "/fill ~-8 ~0 ~-6 ~-8 ~0 ~-2 minecraft:oak_fence",
+    "/fill ~-5 ~0 ~-6 ~-5 ~0 ~-2 minecraft:oak_fence",
+    "/setblock ~-6 ~0 ~-2 minecraft:air",
+    "/summon minecraft:sheep ~-6 ~0 ~-4",
+    "/summon minecraft:sheep ~-7 ~0 ~-3",
+    "/summon minecraft:sheep ~-7 ~0 ~-5",
+    "/setblock ~0 ~0 ~0 minecraft:torch",
+    "/fill ~-1 ~0 ~1 ~1 ~0 ~1 minecraft:oak_planks",
+    "/fill ~0 ~0 ~-1 ~0 ~0 ~1 minecraft:oak_planks",
+    "/fill ~-2 ~0 ~-1 ~-2 ~0 ~0 minecraft:cobblestone"
+  ],
+  "design_notes": "Layout: Player spawns at origin on oak planks. Cow pen is at +X/+Z quadrant (3-7 range) with 2 cows on dirt, fully fenced with oak fence and one gate opening at ~5,~3. Anvil workstation at ~-2,~2 with crafting table at ~-2,~1 and chest (iron sword) at ~-2,~3 — all within 3 blocks of spawn. Sheep field at -X/-Z quadrant (-8 to -5, -6 to -2) with 3 sheep, fenced with one opening at ~-6,~-2. Cobblestone path connects spawn to anvil area. Torch at origin for lighting. All areas within 10 blocks of spawn for compact navigation.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 3 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find a cow\", \"find anvil\", \"hunt a sheep\"],\n  \"selection_reasoning\": \"These three tasks form a coherent multi-hop sequence centered around exploration and interaction in a Minecraft village/farm setting. The player must first locate a cow (which establishes orientation in the scene), then find an anvil (which is placed near the cow's area, requiring the player to have already navigated to that region), and finally hunt a sheep (which requires the player to have fo",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Revised Sandbox Observation Report\n\nAfter examining all frames from the second preview, here's what I observed:\n\n### Frame-by-Frame Analysis:\n\n- **Initial frame**: Player spawns on oak planks. To the left, a **cow** is clearly visible very close by (brown entity). To the right, a **chest** is visible on the ground. The scene is well-lit and open.\n\n- **Step 000**: Agent turned slightly left. The **crafting table** (orange top) is visible, along with the **cobblestone blocks** and what appears ",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## CommonSenseAgent Feedback\n\nHere's my analysis of the benchmark from a Minecraft knowledge perspective:\n\n### ✅ Things That Work Well\n\n1. **Cow and sheep as passive mobs**: Both are common passive mobs that spawn in grassy biomes. They won't despawn and will stay in fenced areas (mostly). This is realistic.\n\n2. **Anvil visibility**: An anvil is a distinctive dark metallic block that's easy to recognize visually. Good choice for a \"find\" task.\n\n3. **Iron sword in chest**: An iron sword deals 6 d",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Sheep pen has an intentional gap (setblock ~-6 ~0 ~-2 minecraft:air) which allows sheep to wander out. While this doesn't break the 'hunt a sheep' task, it means sheep may roam unpredictably, making milestone coordinate-based detection less reliable.\",\n      \"severity\": \"medium\",\n      \"target_agent\": \"SceneDesignerAgent\"\n    },\n    {\n      \"issue\": \"Cow pen has a gap at ~5 ~1 ~3 (fence removed). Cows may wander out of the pen over time, which could ",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "## MilestoneAgent Output\n\nBased on the scene layout and task sequence, here are the milestone rules. The player spawns at the origin (0, 0, 0) since all commands use relative coordinates (~). I'll use generous bounding boxes to account for mob wandering.\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find a cow\",\n      \"description\": \"The player must navigate to the cow pen area and look at a cow. The cow pen is located at approximately +3 to +7 on X and Z axes from spawn, with cows summoned ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Validator Agent — Scene & Milestone Verification Report\n\n### Scene Observations from Preview Frames\n\nAfter examining all 21 frames from this fresh preview, here's what I can confirm:\n\n**Initial frame**: Player spawns on oak planks. To the left, a **cow** is clearly visible (brown entity, very close). To the right, a **chest** (dark brown box) is visible on the ground. The grass field extends ahead.\n\n**Step 000**: Agent turned slightly left. The **crafting table** (orange/brown top) is visible",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on all the information from SceneDesignerAgent's sandbox report and the Validator's verification, I can now design the milestone rules. Let me carefully map the scene coordinates and use the correct rule types from the valid rule set.\n\n**Key spatial facts (all spawn-relative):**\n- Cow pen: X=3-7, Z=3-7, cows summoned at (5,1,5) and (4,1,6)\n- Anvil: at (-2, 0, 2)\n- Chest with iron sword: at (-2, 0, 3)\n- Sheep pen: X=-8 to -5, Z=-6 to -2, sheep at (-6,0,-4), (-7,0,-3), (-7,0,-5)\n- Player spa",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good. Let me verify one more thing — whether sheep can be killed with fists (relevant to the dependency justification):\n\nSheep have 8 HP (4 hearts). Fist damage is 1 HP per hit. So it takes 8 hits with bare fists to kill a sheep. With an iron sword (6 damage), it takes 2 hits. This confirms the sword is helpful but not strictly required.\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"The 'find a cow' milestone uses position_near_with_facing with max_distance=16. Since the cow pen is only 5 block",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "## Validator Agent — Final Validation Report\n\nI've now reviewed the complete benchmark including the dependency graph, scene layout, and milestone rules. Let me provide my comprehensive validation based on the sandbox observations and Minecraft mechanics analysis.\n\n### Dependency Graph Validation\n\n```json\n{\n  \"approved\": true,\n  \"structural_issues\": [],\n  \"semantic_issues\": [\n    \"Edge 'find anvil → hunt a sheep' justification mentions needing the sword from the chest, but sheep can be killed wi",
+      "timestamp": ""
+    }
+  ]
+}

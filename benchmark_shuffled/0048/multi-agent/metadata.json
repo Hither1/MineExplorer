@@ -1,0 +1,188 @@
+{
+  "id": "1001",
+  "sample_idx": 1001,
+  "mode": "multi",
+  "selected_tasks": [
+    "find spruce_pressure_plate",
+    "find yellow_carpet",
+    "mine oak_fence_gate",
+    "craft to jungle_door"
+  ],
+  "selection_reasoning": "These four tasks form a coherent multi-hop sequence centered around navigating a structured environment and gathering resources. The player must first locate a spruce_pressure_plate which serves as a marker/trigger to access an area containing the yellow_carpet and oak_fence_gate. Finding the yellow_carpet confirms the player is in the correct area. Mining the oak_fence_gate yields wood planks/materials conceptually, and more importantly opens a path or gate blocking access to a crafting table needed to craft the jungle_door. The jungle_door craft requires jungle planks (which we'll provide in the scene), and the crafting table is behind the oak_fence_gate. This creates a logical exploration → collection → crafting pipeline.",
+  "reasoning_graph": {
+    "nodes": [
+      "find spruce_pressure_plate",
+      "find yellow_carpet",
+      "mine oak_fence_gate",
+      "craft to jungle_door"
+    ],
+    "edges": [
+      {
+        "from": "find spruce_pressure_plate",
+        "to": "find yellow_carpet",
+        "reason": "The spruce_pressure_plate opens/marks the path to the room containing the yellow_carpet"
+      },
+      {
+        "from": "find spruce_pressure_plate",
+        "to": "mine oak_fence_gate",
+        "reason": "The oak_fence_gate is in the same area accessed after finding the spruce_pressure_plate"
+      },
+      {
+        "from": "mine oak_fence_gate",
+        "to": "craft to jungle_door",
+        "reason": "Mining the oak_fence_gate clears the path to the crafting table needed to craft the jungle_door"
+      },
+      {
+        "from": "find yellow_carpet",
+        "to": "craft to jungle_door",
+        "reason": "The yellow_carpet is near the jungle planks needed as crafting material for the jungle_door"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find spruce_pressure_plate",
+        "milestone_id": "find_spruce_pressure_plate",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task. The spruce pressure plate is at spawn-relative (0, 0, 2) on a dark oak plank on the floor. The player must walk toward it and face downward/toward it to visually confirm finding it. Max distance 3 blocks ensures the player is close enough to see this flat floor-level block. Facing tolerance 60° is appropriate since the player needs to look roughly toward the ground-level plate.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                0,
+                0,
+                2
+              ],
+              "max_distance": 3,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "find yellow_carpet",
+        "milestone_id": "find_yellow_carpet",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task. The yellow carpet is at spawn-relative (2, 0, 9) on red wool in the back room (behind the dividing wall). The player must navigate past the gate into the back room and face toward the carpet. Max distance 5 blocks ensures the player is in the back room area. Facing tolerance 60° models the player looking at the bright yellow/red contrast block.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                2,
+                0,
+                9
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine oak_fence_gate",
+        "milestone_id": "mine_oak_fence_gate",
+        "description": "Uses inventory_has because mining an oak fence gate drops the oak_fence_gate item into the player's inventory. The player starts without any oak_fence_gate in inventory, so having at least 1 confirms successful mining. This is preferred over position or block-count rules because the mined item reliably appears in inventory.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "oak_fence_gate",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to jungle_door",
+        "milestone_id": "craft_jungle_door",
+        "description": "Uses inventory_has because crafting a jungle door places the resulting item(s) into the player's inventory. The recipe requires 6 jungle planks in a 2×3 pattern on a crafting table, producing 3 jungle doors. The player starts with 6 jungle planks and no jungle_door, so having at least 1 jungle_door confirms successful crafting at the crafting table in the back room.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "jungle_door",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "stone_brick_gatehouse",
+  "scene_description": "An enclosed stone brick room (20x17 blocks) divided into two sections by a full-width internal wall at z=6. The front section contains a spruce pressure plate on a contrasting dark oak plank floor marker at z=2. The dividing wall has a single oak fence gate as the ONLY passage to the back section. The back section contains a yellow carpet on red wool at (2,0,9) and a crafting table at (-3,0,11). The player starts with 6 jungle planks (sufficient for crafting a jungle door) and a wooden axe for mining the gate. Five lanterns provide illumination.",
+  "task_text": "Explore this stone brick room. Find the spruce pressure plate on the floor near the entrance. Find the yellow carpet in the back area. Mine the oak fence gate in the dividing wall using your axe to access the back room. Then use the crafting table to craft a jungle door from your jungle planks.",
+  "atomic_tasks_ordered": [
+    "find spruce_pressure_plate",
+    "find yellow_carpet",
+    "mine oak_fence_gate",
+    "craft to jungle_door"
+  ],
+  "commands": [
+    "/fill ~-10 ~-1 ~-2 ~10 ~-1 ~15 minecraft:stone_bricks",
+    "/fill ~-10 ~0 ~-2 ~10 ~5 ~15 minecraft:air",
+    "/fill ~-10 ~0 ~-2 ~-10 ~4 ~15 minecraft:stone_brick_wall",
+    "/fill ~10 ~0 ~-2 ~10 ~4 ~15 minecraft:stone_brick_wall",
+    "/fill ~-10 ~0 ~-2 ~10 ~4 ~-2 minecraft:stone_brick_wall",
+    "/fill ~-10 ~0 ~15 ~10 ~4 ~15 minecraft:stone_brick_wall",
+    "/fill ~-10 ~5 ~-2 ~10 ~5 ~15 minecraft:stone_brick_slab",
+    "/setblock ~0 ~-1 ~2 minecraft:dark_oak_planks",
+    "/setblock ~0 ~0 ~2 minecraft:spruce_pressure_plate",
+    "/fill ~-10 ~0 ~6 ~-1 ~3 ~6 minecraft:stone_brick_wall",
+    "/fill ~1 ~0 ~6 ~10 ~3 ~6 minecraft:stone_brick_wall",
+    "/setblock ~0 ~0 ~6 minecraft:oak_fence_gate[facing=south]",
+    "/setblock ~0 ~1 ~6 minecraft:air",
+    "/setblock ~0 ~2 ~6 minecraft:air",
+    "/setblock ~0 ~3 ~6 minecraft:air",
+    "/setblock ~2 ~-1 ~9 minecraft:red_wool",
+    "/setblock ~2 ~0 ~9 minecraft:yellow_carpet",
+    "/setblock ~-3 ~0 ~11 minecraft:crafting_table",
+    "/give @p minecraft:jungle_planks 6",
+    "/give @p minecraft:wooden_axe 1",
+    "/setblock ~-5 ~0 ~3 minecraft:lantern",
+    "/setblock ~5 ~0 ~3 minecraft:lantern",
+    "/setblock ~-5 ~0 ~9 minecraft:lantern",
+    "/setblock ~5 ~0 ~9 minecraft:lantern",
+    "/setblock ~0 ~0 ~12 minecraft:lantern"
+  ],
+  "design_notes": "Room is 20x17 blocks (x: -10 to 10, z: -2 to 15). Player spawns at center (0,0,0). Spruce pressure plate at (0,0,2) on dark oak plank for contrast. FULL-WIDTH dividing wall at z=6 from x=-10 to x=10 (height 4 blocks) with ONLY the oak fence gate at (0,0,6) as passage. Yellow carpet at (2,0,9) on red wool in back room. Crafting table at (-3,0,11). Five lanterns for illumination. Player given 6 jungle planks (enough for jungle door recipe: 6 planks → 3 doors) and wooden axe. The gate is the sole passage — player MUST mine it to reach crafting table and yellow carpet.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 4 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find spruce_pressure_plate\", \"find yellow_carpet\", \"mine oak_fence_gate\", \"craft to jungle_door\"],\n  \"selection_reasoning\": \"These four tasks form a coherent multi-hop sequence centered around navigating a structured environment and gathering resources. The player must first locate a spruce_pressure_plate which serves as a marker/trigger to access an area containing the yellow_carpet and oak_fence_gate. Finding the yellow_carpet confirms the player is in the corre",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Now I have all the information needed. Let me provide the **CommonSenseAgent** feedback:\n\n## CommonSense Feedback\n\n**Minecraft Knowledge Check:**\n\n1. **Jungle Door crafting**: Requires 6 jungle planks arranged in a 3×2 pattern on a crafting table → produces 3 jungle doors. The player has 4 jungle planks in inventory — **this is insufficient!** They need 6 planks. We need to give the player 6 jungle planks, or place additional jungle planks blocks they can mine.\n\n2. **Oak Fence Gate mining**: An ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I can now see the interior of the room from the player's perspective. The stone brick walls are visible, and I can see the room is properly enclosed. Now let me verify the key objects are at the right positions.\n\nBased on all my verification, here is my **CommonSenseAgent** feedback:\n\n---\n\n## CommonSense Agent — Final Feedback\n\n### Critical Issues Identified & Resolved:\n\n1. **❌ → ✅ Jungle Planks Count**: The original scene gave only 4 jungle planks, but crafting a jungle door requires **6 planks",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Final Sandbox Observations — Fourth Preview (Corrected Version with 6 Jungle Planks)\n\nExcellent! Now I can see the actual frames clearly with the corrected scene:\n\n1. **Initial frame**: The player is inside the stone brick room looking forward. The **oak fence gate** is clearly visible in the center of the dividing wall — it's the small wooden gate structure between two stone brick wall pillars. The chat confirms **\"Gave 6 [Jungle Planks] to MineRLAgent0\"** and **\"Gave 1 [Wooden Axe] to MineR",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Final Sandbox Observations — Fifth Preview (Full-Width Dividing Wall)\n\nThis is the corrected version with the dividing wall spanning the full room width. Here's what I see:\n\n1. **Initial frame**: The player is inside the stone brick room. I can clearly see the **oak fence gate** in the center of the dividing wall — it's the small wooden gate with the characteristic horizontal slat pattern. The dividing wall extends fully to both sides (left and right stone brick walls are continuous). A **lan",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the fully verified scene from SceneDesignerAgent's sandbox observations (5th preview), I can now provide the finalized milestone rules. The critical fix (full-width dividing wall) has been confirmed, and all coordinates are verified.\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find spruce_pressure_plate\",\n      \"milestone_id\": \"find_spruce_pressure_plate\",\n      \"description\": \"Uses position_near_with_facing because this is a 'find/locate' task. The spruce pressure plate is at spa",
+      "timestamp": ""
+    }
+  ]
+}

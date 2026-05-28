@@ -1,0 +1,120 @@
+{
+  "id": "0366",
+  "sample_idx": 366,
+  "mode": "multi",
+  "selected_tasks": [
+    "mine mossy_stone_bricks",
+    "find yellow_bed"
+  ],
+  "selection_reasoning": "The yellow_bed is enclosed behind a wall of mossy_stone_bricks. The agent must first mine through the mossy_stone_bricks barrier to gain physical access to the room containing the yellow_bed. This creates a strong spatial dependency: mining is a prerequisite for finding because the bed is not visible or reachable until the wall is broken. Both tasks are straightforward and don't require deep Minecraft crafting knowledge — just breaking blocks and locating an object.",
+  "reasoning_graph": {
+    "nodes": [
+      "mine mossy_stone_bricks",
+      "find yellow_bed"
+    ],
+    "edges": [
+      {
+        "from": "mine mossy_stone_bricks",
+        "to": "find yellow_bed",
+        "reason": "The yellow_bed is sealed behind a mossy_stone_bricks wall; agent must mine through the bricks to access and find the bed"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "mine mossy_stone_bricks",
+        "milestone_id": "mine_mossy_stone_bricks",
+        "description": "Uses inventory_has because mining mossy_stone_bricks with a pickaxe drops the block as an item into the player's inventory. The player starts with an iron pickaxe and the sealed room is made entirely of mossy stone bricks, so mining any wall block will produce this item. This is the preferred rule type for mining tasks since the mined drop ends up in inventory.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "mossy_stone_bricks",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "find yellow_bed",
+        "milestone_id": "find_yellow_bed",
+        "description": "Uses position_near_with_facing because 'find' tasks require the player to navigate near the target and be able to see it. The yellow bed head is at spawn-relative coordinates (6, 1, 6). The player must get within 16 blocks and face toward the bed (within 60 degrees). Since the bed is sealed inside the mossy stone brick room, the player physically cannot approach and face the bed until they mine through the wall first — enforcing the dependency. position_near_with_facing is preferred over position_inside_box for find/locate tasks because it models 'player can see the target'.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                6,
+                1,
+                6
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "sealed_mossy_room_with_yellow_bed",
+  "scene_description": "A sealed room made entirely of mossy stone bricks sits on a flat grass clearing about 3 blocks from the player spawn. The room is a 7x5x7 box (exterior dimensions) with 5x3x5 interior air space. Inside the room, a yellow bed is placed on the floor at the center. The player spawns outside with an iron pickaxe in their inventory. There are no doors or openings — the only way to access the bed is to mine through the mossy stone brick walls.",
+  "task_text": "You are standing near a sealed room made of mossy stone bricks. Mine through the mossy stone brick wall using your iron pickaxe to break into the room, then find the yellow bed hidden inside.",
+  "atomic_tasks_ordered": [
+    "mine mossy_stone_bricks",
+    "find yellow_bed"
+  ],
+  "commands": [
+    "/fill ~-5 ~-1 ~-5 ~15 ~5 ~15 minecraft:air",
+    "/fill ~-5 ~-1 ~-5 ~15 ~-1 ~15 minecraft:grass_block",
+    "/fill ~3 ~0 ~3 ~9 ~0 ~9 minecraft:mossy_stone_bricks",
+    "/fill ~3 ~1 ~3 ~9 ~3 ~3 minecraft:mossy_stone_bricks",
+    "/fill ~3 ~1 ~9 ~9 ~3 ~9 minecraft:mossy_stone_bricks",
+    "/fill ~3 ~1 ~3 ~3 ~3 ~9 minecraft:mossy_stone_bricks",
+    "/fill ~9 ~1 ~3 ~9 ~3 ~9 minecraft:mossy_stone_bricks",
+    "/fill ~3 ~4 ~3 ~9 ~4 ~9 minecraft:mossy_stone_bricks",
+    "/fill ~4 ~1 ~4 ~8 ~3 ~8 minecraft:air",
+    "/setblock ~6 ~1 ~6 minecraft:yellow_bed[facing=south,part=head]",
+    "/setblock ~6 ~1 ~5 minecraft:yellow_bed[facing=south,part=foot]",
+    "/give @p minecraft:iron_pickaxe"
+  ],
+  "design_notes": "Coordinate summary (spawn-relative): Structure exterior ~3,0,3 to ~9,4,9. Interior air ~4,1,4 to ~8,3,8. Yellow bed head at ~6,1,6 and foot at ~6,1,5 (facing south). Player spawns at origin on grass. Floor at y=0, walls y=1-3, roof y=4. Iron pickaxe provided for efficient mining.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I'll analyze the candidate tasks to find a pair that forms a coherent multi-hop dependency chain.\n\nLet me consider the options:\n\n- **\"mine mossy_stone_bricks\"** → This is a mining task that produces a block item.\n- **\"find orange_tulip\"** → This is a navigation/finding task.\n- **\"craft to golden_shovel\"** → Requires gold ingots + sticks, a crafting task.\n- **\"craft to spruce_trapdoor\"** → Requires spruce planks, a crafting task.\n- **\"mine orange_concrete\"** → Mining task that produces orange con",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on my analysis, here are the key Minecraft mechanics considerations:\n\n### CommonSense Feedback\n\n**1. Mining Mossy Stone Bricks:**\n- ✅ Mossy stone bricks can be mined with any pickaxe. Iron pickaxe is more than sufficient.\n- ✅ When mined with a pickaxe, mossy stone bricks drop themselves as an item.\n- ⚠️ Mining without a pickaxe would drop nothing — but the scene provides an iron pickaxe, so this is fine.\n- ✅ The task \"mine mossy_stone_bricks\" should result in the item appearing in inventor",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "Now I can see the interior of the room. The player is standing inside the mossy stone brick room, and I can see:\n- **Yellow bed is present!** The distinctive yellow bed texture is visible on the floor.\n- **Mossy stone brick walls** surround the room on all sides - the green-tinted stone texture is clearly visible.\n- **Interior space** is appropriately sized - the room feels enclosed but not cramped.\n- **The ceiling** (mossy stone brick roof) is visible above.\n\nThe bed was successfully placed. No",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations — Third Preview (Final Revision)\n\nExamining all frames carefully:\n\n**Initial frame**: The player spawns on cleared grass. The mossy stone brick wall is clearly visible on the left side, extending upward. The chat log confirms all commands executed successfully:\n- \"Successfully filled 21 blocks\" (multiple times for walls)\n- \"Changed the block at -3004, 72, -5567\" (bed head placed)\n- \"Changed the block at -3004, 72, -5568\" (bed foot placed)\n- \"Gave 1 [Iron Pickaxe] to MineR",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## CommonSenseAgent — Final Review\n\nAfter examining the sandbox screenshots and the SceneDesignerAgent's thorough verification, here is my final common-sense assessment:\n\n### Mechanics Verification:\n\n**1. Mining Mossy Stone Bricks with Iron Pickaxe:**\n- ✅ Mossy stone bricks are a stone-type block requiring a pickaxe to drop items\n- ✅ Iron pickaxe (mining level 2) is more than sufficient — mossy stone bricks only require mining level 0 (wooden pickaxe or better)\n- ✅ Mining time with iron pickaxe ",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's thorough sandbox verification and all the information provided, here are my milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"mine mossy_stone_bricks\",\n      \"milestone_id\": \"mine_mossy_stone_bricks\",\n      \"description\": \"Uses inventory_has because mining mossy_stone_bricks with a pickaxe drops the block as an item into the player's inventory. The player starts with an iron pickaxe and the sealed room is made entirely of mossy stone bricks, so ",
+      "timestamp": ""
+    }
+  ]
+}

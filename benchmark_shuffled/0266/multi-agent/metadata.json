@@ -1,0 +1,123 @@
+{
+  "id": "0303",
+  "sample_idx": 303,
+  "mode": "multi",
+  "selected_tasks": [
+    "find brown_wool",
+    "find orange_bed"
+  ],
+  "selection_reasoning": "These two tasks form a coherent multi-hop sequence. The agent must first locate brown_wool in the environment, which serves as a landmark/waypoint near which the orange_bed is placed. The brown_wool structure acts as a visual guide that leads the agent toward the area containing the orange_bed. This creates a natural exploration dependency: finding the brown_wool first helps the agent orient themselves to then locate the orange_bed, which is positioned behind or adjacent to the brown_wool structure. Both tasks are observation-based (find), easily verifiable, and don't require deep Minecraft crafting knowledge.",
+  "reasoning_graph": {
+    "nodes": [
+      "find brown_wool",
+      "find orange_bed"
+    ],
+    "edges": [
+      {
+        "from": "find brown_wool",
+        "to": "find orange_bed",
+        "reason": "brown_wool structure serves as a landmark guiding the agent toward the orange_bed located behind it"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find brown_wool",
+        "milestone_id": "find_brown_wool",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task — the player must navigate near the brown wool structure and face it to demonstrate they have located it. Target is the volumetric center of the brown wool tower at (4, 2, 4), which spans X=3-5, Y=0-4, Z=3-5. max_distance=16 is generous since the wool is only ~5-7 blocks from spawn and clearly visible. facing_tolerance=60 ensures the player is actually looking toward the structure.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                4,
+                2,
+                4
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "find orange_bed",
+        "milestone_id": "find_orange_bed",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task — the player must navigate near the orange bed and face it to demonstrate they have located it. Target is the center of the orange bed at (5, 0.5, 6.5), using Y=0.5 to account for the bed surface being slightly above ground level (CommonSenseAgent recommendation). The bed spans X=5, Y=0, Z=6-7 so (5, 0.5, 6.5) is the visual center. max_distance=16 allows detection from moderate range. facing_tolerance=60 ensures the player is oriented toward the bed, not just nearby.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                5,
+                0,
+                6
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "brown_wool_landmark_to_orange_bed",
+  "scene_description": "A compact exploration scene featuring a prominent brown wool tower (3x3 base, 4 blocks tall with a peaked top) placed 3-5 blocks from spawn in the +X/+Z direction. An orange bed is placed just behind/beside the wool structure at ~5,~0,~6-7, discoverable by walking around the wool. Oak planks on the ground serve as a visual path from the wool to the bed area. A torch and cobblestone near spawn provide minor orientation landmarks.",
+  "task_text": "Find the brown wool structure, then locate the orange bed hidden near it.",
+  "atomic_tasks_ordered": [
+    "find brown_wool",
+    "find orange_bed"
+  ],
+  "commands": [
+    "/fill ~-10 ~-1 ~-10 ~15 ~-1 ~15 minecraft:grass_block",
+    "/fill ~-10 ~0 ~-10 ~15 ~8 ~15 minecraft:air",
+    "/fill ~3 ~0 ~3 ~5 ~3 ~5 minecraft:brown_wool",
+    "/fill ~4 ~4 ~3 ~4 ~4 ~5 minecraft:brown_wool",
+    "/setblock ~5 ~0 ~7 minecraft:orange_bed[facing=north,part=foot]",
+    "/setblock ~5 ~0 ~6 minecraft:orange_bed[facing=north,part=head]",
+    "/setblock ~0 ~0 ~2 minecraft:torch",
+    "/setblock ~2 ~0 ~3 minecraft:cobblestone",
+    "/fill ~3 ~0 ~6 ~3 ~0 ~7 minecraft:oak_planks"
+  ],
+  "design_notes": "The brown wool tower at ~3-5,~0-4,~3-5 is the primary landmark visible from spawn. The orange bed at ~5,~0,~6-7 (facing north) is placed just past the +Z face of the wool structure, requiring the player to walk around the wool to discover it. Oak planks at ~3,~0,~6-7 serve as a visual breadcrumb connecting the wool to the bed area. The torch at ~0,~0,~2 and cobblestone at ~2,~0,~3 help orient the player. The flat grass platform ensures no terrain obstructs navigation. Coordinate frame: spawn-relative.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find brown_wool\", \"find orange_bed\"],\n  \"selection_reasoning\": \"These two tasks form a coherent multi-hop sequence. The agent must first locate brown_wool in the environment, which serves as a landmark/waypoint near which the orange_bed is placed. The brown_wool structure acts as a visual guide that leads the agent toward the area containing the orange_bed. This creates a natural exploration dependency: finding the brown_wool first helps the agent orient themselve",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## Sandbox Observations — Third Preview\n\nHere's what I observe:\n\n1. **Initial frame**: Brown wool structure clearly visible ahead-left. Torch and cobblestone in foreground. Good starting view.\n\n2. **Steps 000-003**: Agent walks forward toward the brown wool. The structure is very prominent — a 3x3x4 brown block tower. Oak planks visible on the ground near it.\n\n3. **Steps 004-006**: Agent is now very close to the brown wool structure. Looking at it from the front. The brown color is unmistakable.",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on SceneDesignerAgent's sandbox report, I have all the information needed to design the milestones. Here are the key coordinates:\n\n- **Brown wool structure**: Located at spawn-relative ~3-5, ~0-4, ~3-5 (a 3x3 base, 4 blocks tall tower)\n- **Orange bed**: Located at spawn-relative ~5-6, ~0, ~6-7 (just behind/beside the wool structure, facing north)\n- **Player spawn**: Origin (0, 0, 0)\n\nThe tasks are both \"find\" tasks, so I'll use `position_near_with_facing` which correctly models \"player can",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "## CommonSenseAgent — Early Feedback\n\nAfter reviewing the scene design, sandbox observations, and milestone rules, here is my assessment:\n\n### ✅ What Works Well\n1. **Block validity**: Both `brown_wool` and `orange_bed` are valid Minecraft blocks. Wool supports all 16 dye colors, and beds are dyeable in all 16 colors. The commands use correct block IDs.\n\n2. **Scene layout is logical**: The brown wool tower is visible from spawn, and the orange bed is positioned just behind/beside it. This creates",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations — Fourth Preview (Detailed Analysis)\n\n### Frame-by-Frame Analysis:\n\n1. **Initial frame**: Brown wool structure is clearly visible on the LEFT — a large brown wall taking up ~30% of the screen. Cobblestone block and torch visible in the foreground. Chat log confirms blocks placed at absolute coords around -3005 to -3010, 71, -5566 to -5570. The scene is properly built.\n\n2. **Step 000**: Same view as initial — agent hasn't moved yet. Brown wool wall dominates left side.\n\n3.",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nThank you for the detailed scene report and CommonSenseAgent's feedback. I now have all the information needed to finalize the milestones. Let me incorporate CommonSenseAgent's suggestion about the bed Y-coordinate (Y=0 → Y=0.5) and verify my understanding of the layout.\n\n**Key coordinates from SceneDesignerAgent's report:**\n- **Brown wool tower**: spawn-relative ~3-5 X, ~0-4 Y, ~3-5 Z → center at (4, 2, 4)\n- **Orange bed**: spawn-relative ~5 X, ~0 Y, ~6-7 Z → center at (5, 0.5, 6.5)\n- **Playe",
+      "timestamp": ""
+    }
+  ]
+}

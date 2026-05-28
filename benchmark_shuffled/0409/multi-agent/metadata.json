@@ -1,0 +1,195 @@
+{
+  "id": "1005",
+  "sample_idx": 1005,
+  "mode": "multi",
+  "selected_tasks": [
+    "find oak_planks",
+    "craft to dark_oak_slab",
+    "craft to red_wool",
+    "find cyan_bed"
+  ],
+  "selection_reasoning": "These four tasks form a coherent multi-hop sequence centered around finding materials and crafting items, culminating in locating a specific furniture item. The player must first find oak_planks (establishing familiarity with the crafting area and wood resources). Finding oak_planks demonstrates the player can locate resource blocks in the scene. Crafting dark_oak_slab requires the player to have access to dark_oak_planks (which we'll provide in the scene), but the player first needs to understand where crafting stations are — guided by finding oak_planks near the crafting table. Crafting red_wool requires red dye and white wool (both provided in scene), and also requires the crafting table discovered during the oak_planks task. Finally, finding the cyan_bed is the terminal exploration task that requires the player to have navigated the scene (skills built from prior tasks). The dependency structure creates a branching DAG where finding oak_planks unlocks both crafting tasks (by revealing the crafting table location), and all three tasks feed into the final find cyan_bed task (requiring full scene exploration).",
+  "reasoning_graph": {
+    "nodes": [
+      "find oak_planks",
+      "craft to dark_oak_slab",
+      "craft to red_wool",
+      "find cyan_bed"
+    ],
+    "edges": [
+      {
+        "from": "find oak_planks",
+        "to": "craft to dark_oak_slab",
+        "reason": "Finding oak_planks reveals the crafting area where the crafting table and dark_oak_planks are located nearby"
+      },
+      {
+        "from": "find oak_planks",
+        "to": "craft to red_wool",
+        "reason": "Finding oak_planks reveals the crafting table needed to craft red_wool from white wool and red dye"
+      },
+      {
+        "from": "craft to dark_oak_slab",
+        "to": "find cyan_bed",
+        "reason": "Completing dark_oak_slab crafting progresses player deeper into the structure where cyan_bed is hidden"
+      },
+      {
+        "from": "craft to red_wool",
+        "to": "find cyan_bed",
+        "reason": "Completing red_wool crafting ensures player has explored the crafting zone before searching for cyan_bed beyond it"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find oak_planks",
+        "milestone_id": "find_oak_planks",
+        "description": "Uses position_near_with_facing because the task is to find/observe oak_planks blocks. The oak_planks building front wall center is at spawn-relative (6, 2, 4). max_distance=5 ensures the player must physically approach the building wall rather than satisfying the milestone from spawn (~7.5 blocks away). facing_tolerance=60 ensures the player is looking at the oak_planks wall.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                6,
+                2,
+                4
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to dark_oak_slab",
+        "milestone_id": "craft_dark_oak_slab",
+        "description": "Uses inventory_has because crafting dark_oak_slab (3 dark_oak_planks in a row → 6 dark_oak_slabs) results in the item appearing in the player's inventory. The player starts with 6 dark_oak_planks and a crafting table is available inside the building. The 3-wide recipe requires the crafting table's 3x3 grid. The crafted slabs end up in inventory.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "dark_oak_slab",
+              "min_count": 6
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to red_wool",
+        "milestone_id": "craft_red_wool",
+        "description": "Uses inventory_has because crafting red_wool (1 white_wool + 1 red_dye → 1 red_wool, shapeless recipe) results in the item appearing in the player's inventory. The player starts with 2 white_wool and 2 red_dye. The crafted red_wool ends up in inventory. This recipe can be done in either the 2x2 inventory grid or the crafting table.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "red_wool",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "find cyan_bed",
+        "milestone_id": "find_cyan_bed",
+        "description": "Uses position_near_with_facing because the task is to find/locate the cyan_bed placed in the back of the building. The cyan bed head is at spawn-relative (8, 0, 10). max_distance=5 ensures the player must enter the building and approach the bed (it's ~4 blocks from the nearest interior wall), preventing false completion from outside through walls. facing_tolerance=60 ensures the player is looking at the bed.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                8,
+                0,
+                10
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "oak_planks_crafting_house",
+  "scene_description": "A single-room oak planks building on a grass field. The building has a wide doorway entrance on the front (south) wall with glass pane windows on either side. Inside, a crafting table is near the entrance on the left, and a cyan bed is in the back of the room. The player spawns outside facing the building with crafting materials (white_wool, red_dye, dark_oak_planks) in their inventory.",
+  "task_text": "Find the oak planks building, enter it to use the crafting table to craft dark oak slabs and red wool, then locate the cyan bed in the back of the room.",
+  "atomic_tasks_ordered": [
+    "find oak_planks",
+    "craft to dark_oak_slab",
+    "craft to red_wool",
+    "find cyan_bed"
+  ],
+  "commands": [
+    "/fill ~-10 ~-1 ~-10 ~15 ~-1 ~15 minecraft:grass_block",
+    "/fill ~-10 ~-2 ~-10 ~15 ~-2 ~15 minecraft:dirt",
+    "/fill ~-10 ~0 ~-10 ~15 ~8 ~15 minecraft:air",
+    "/fill ~2 ~0 ~4 ~11 ~0 ~12 minecraft:oak_planks",
+    "/fill ~2 ~0 ~4 ~2 ~4 ~12 minecraft:oak_planks",
+    "/fill ~11 ~0 ~4 ~11 ~4 ~12 minecraft:oak_planks",
+    "/fill ~2 ~0 ~12 ~11 ~4 ~12 minecraft:oak_planks",
+    "/fill ~2 ~4 ~4 ~11 ~4 ~12 minecraft:oak_planks",
+    "/fill ~2 ~0 ~4 ~11 ~4 ~4 minecraft:oak_planks",
+    "/fill ~5 ~0 ~4 ~8 ~2 ~4 minecraft:air",
+    "/fill ~3 ~1 ~4 ~4 ~3 ~4 minecraft:glass_pane",
+    "/fill ~9 ~1 ~4 ~10 ~3 ~4 minecraft:glass_pane",
+    "/fill ~3 ~1 ~5 ~10 ~3 ~11 minecraft:air",
+    "/setblock ~4 ~0 ~6 minecraft:crafting_table",
+    "/setblock ~8 ~0 ~10 minecraft:cyan_bed[facing=west,part=head]",
+    "/setblock ~9 ~0 ~10 minecraft:cyan_bed[facing=west,part=foot]",
+    "/setblock ~4 ~0 ~5 minecraft:torch",
+    "/setblock ~10 ~0 ~5 minecraft:torch",
+    "/setblock ~6 ~0 ~9 minecraft:torch",
+    "/give @p minecraft:white_wool 2",
+    "/give @p minecraft:red_dye 2",
+    "/give @p minecraft:dark_oak_planks 6"
+  ],
+  "design_notes": "Building spans from (~2,~0,~4) to (~11,~4,~12). Front wall at Z=4 with 4-wide doorway (X=5-8, Y=0-2). Crafting table at (~4,~0,~6). Cyan bed head at (~8,~0,~10), foot at (~9,~0,~10). Player spawns at origin facing the building. Interior cleared from (~3,~1,~5) to (~10,~3,~11). Three torches light the interior. Removed redundant dark_oak_planks floor blocks per CommonSense feedback.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 4 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find oak_planks\", \"craft to dark_oak_slab\", \"craft to red_wool\", \"find cyan_bed\"],\n  \"selection_reasoning\": \"These four tasks form a coherent multi-hop sequence centered around finding materials and crafting items, culminating in locating a specific furniture item. The player must first find oak_planks (establishing familiarity with the crafting area and wood resources). Finding oak_planks demonstrates the player can locate resource blocks in the scene. Crafting d",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on my knowledge of Minecraft crafting recipes:\n\n**Common Sense Verification:**\n\n1. **Find oak_planks** ✅ — Oak planks are clearly visible as the building material. The player just needs to look at/approach the building.\n\n2. **Craft to dark_oak_slab** ✅ — Recipe: 3 dark_oak_planks → 6 dark_oak_slabs. The player has 6 dark_oak_planks in inventory AND there are dark_oak_planks blocks on the floor. The crafting table is available inside the building. This is achievable.\n\n3. **Craft to red_wool",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good. Now let me verify the key crafting mechanics:\n\n1. **Dark oak slab recipe**: 3 dark_oak_planks in a row → 6 dark_oak_slabs. This requires a crafting table (3x3 grid) since the recipe uses 3 items in a row. ✅ Crafting table is provided.\n\n2. **Red wool recipe**: 1 white_wool + 1 red_dye → 1 red_wool. This is a shapeless 2-ingredient recipe that CAN be done in the 2x2 inventory grid. However, the crafting table is also available. ✅\n\n3. **Cyan bed placement**: Beds are two-block-long items. The",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Validator Agent — Verification Report\n\nBased on the sandbox screenshots and spatial analysis, here's my validation:\n\n### Observations from Screenshots\n\n1. **Initial frame**: Player spawns facing the oak_planks building at an angle. The building is clearly visible with glass pane windows and oak_planks walls. The chat log confirms items were given (white_wool ×2, red_dye ×2, dark_oak_planks ×6). The building front wall is at Z=4 relative to spawn.\n\n2. **Steps 000-019**: The agent circled the b",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## SceneDesignerAgent — Final Sandbox Observations (Revised Scene)\n\nLooking at the actual screenshots from this final preview:\n\n### Frame-by-Frame Analysis:\n\n1. **Initial frame**: Player spawns facing the building at a slight left angle. The oak_planks front wall is clearly visible with glass pane windows on the left side. The doorway opening is partially visible. Chat log confirms items were given: white_wool ×2, red_dye ×2, dark_oak_planks ×6. The \"No blocks were filled\" error appears (likely ",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## MilestoneAgent — Revised Milestones\n\nBased on the Validator's and CommonSense Agent's feedback, I'm revising the two \"find\" milestones to use `max_distance=5` instead of 16. This ensures:\n- **find_oak_planks**: Player must walk up to within 5 blocks of the building wall center (6, 2, 4), requiring meaningful approach rather than just facing from spawn (~7.5 blocks away).\n- **find_cyan_bed**: Player must be within 5 blocks of the bed at (8, 0, 10), which requires entering the building since th",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good. Let me now verify the final state of all issues:\n\n### Re-inspection of Revised Benchmark\n\n**1. find oak_planks (max_distance=5)** ✅\n- Player spawns at (0,0,0), target at (6,2,4). Distance = sqrt(36+4+16) ≈ 7.5 blocks.\n- With max_distance=5, the player MUST walk at least ~2.5 blocks toward the building. This is meaningful.\n- The oak_planks texture is clearly identifiable from the screenshots. No domain knowledge needed beyond recognizing the block.\n\n**2. craft to dark_oak_slab (inventory_ha",
+      "timestamp": ""
+    }
+  ]
+}

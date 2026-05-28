@@ -1,0 +1,158 @@
+{
+  "id": "0746",
+  "sample_idx": 746,
+  "mode": "multi",
+  "selected_tasks": [
+    "find andesite",
+    "mine lapis_block",
+    "find magenta_glazed_terracotta"
+  ],
+  "selection_reasoning": "These three tasks form a coherent exploration and mining sequence in a cave/underground environment. The player must first locate andesite (a common stone variant that signals they are in the right underground area), then mine a lapis block (which requires being in the correct underground zone and having the right tool), and finally find magenta_glazed_terracotta (a decorative block placed deeper in the cave as a reward/goal). The dependency chain is: finding andesite confirms the player is in the mining area, which leads them toward the lapis block to mine, and after mining they continue exploring to find the magenta_glazed_terracotta. This creates a natural exploration → mining → discovery progression.",
+  "reasoning_graph": {
+    "nodes": [
+      "find andesite",
+      "mine lapis_block",
+      "find magenta_glazed_terracotta"
+    ],
+    "edges": [
+      {
+        "from": "find andesite",
+        "to": "mine lapis_block",
+        "reason": "Andesite marks the entrance to the underground mining area where the lapis block is located deeper inside"
+      },
+      {
+        "from": "mine lapis_block",
+        "to": "find magenta_glazed_terracotta",
+        "reason": "Mining the lapis block opens/reveals the path to the chamber containing the magenta_glazed_terracotta"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find andesite",
+        "milestone_id": "find_andesite",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The andesite wall is at spawn-relative (-2, 0-3, -1 to 0), only ~2 blocks from spawn on the left wall. Target is the center of the andesite cluster at (-2, 1, 0). Max_distance=5 ensures the player is actually near the andesite (prevents false triggers from across the 14-block corridor). Facing_tolerance=60° confirms the player is looking toward it, modeling 'finding' the block visually.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                -2,
+                1,
+                0
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine lapis_block",
+        "milestone_id": "mine_lapis_block",
+        "description": "Uses inventory_has because this is a mine task and the mined drop ends up in inventory. CRITICAL MINECRAFT MECHANIC: Block of Lapis Lazuli (lapis_block) drops ITSELF when mined with any pickaxe — it does NOT drop lapis_lazuli items (that's lapis_ore behavior only). The player has an iron pickaxe provided at spawn. There are 3 lapis blocks at (5,0,4), (5,1,4), and (6,0,4). Mining at least one puts lapis_block in inventory.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "lapis_block",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "find magenta_glazed_terracotta",
+        "milestone_id": "find_magenta_glazed_terracotta",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The magenta glazed terracotta is at spawn-relative (10, 0-1, 6) at the far end of the corridor (~12 blocks from spawn). Target is (10, 1, 6) at eye level. Max_distance=8 ensures the player has actually walked toward the far end of the cave rather than triggering from near spawn. Facing_tolerance=60° confirms the player is looking at the distinctive magenta block with its arrow/chevron pattern.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                10,
+                1,
+                6
+              ],
+              "max_distance": 8,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "underground_cave_corridor",
+  "scene_description": "A well-lit underground stone corridor with three target blocks placed at increasing distances from spawn. Andesite blocks form the left wall near spawn, lapis blocks are placed in the middle section, and magenta glazed terracotta is at the far end. The player starts with an iron pickaxe for mining.",
+  "task_text": "Explore this underground cave. First find the andesite blocks near you, then mine the lapis blocks in the middle of the cave, and finally find the magenta glazed terracotta at the far end.",
+  "atomic_tasks_ordered": [
+    "find andesite",
+    "mine lapis_block",
+    "find magenta_glazed_terracotta"
+  ],
+  "commands": [
+    "/fill ~-3 ~-1 ~-2 ~12 ~5 ~8 minecraft:stone",
+    "/fill ~-2 ~0 ~-1 ~11 ~3 ~7 minecraft:air",
+    "/fill ~-2 ~0 ~-1 ~-2 ~2 ~0 minecraft:andesite",
+    "/fill ~-2 ~3 ~-1 ~-2 ~3 ~0 minecraft:andesite",
+    "/setblock ~-1 ~2 ~0 minecraft:torch",
+    "/setblock ~1 ~2 ~0 minecraft:torch",
+    "/setblock ~3 ~2 ~3 minecraft:torch",
+    "/setblock ~5 ~2 ~5 minecraft:torch",
+    "/setblock ~7 ~2 ~3 minecraft:torch",
+    "/setblock ~9 ~2 ~5 minecraft:torch",
+    "/setblock ~5 ~0 ~4 minecraft:lapis_block",
+    "/setblock ~5 ~1 ~4 minecraft:lapis_block",
+    "/setblock ~6 ~0 ~4 minecraft:lapis_block",
+    "/setblock ~10 ~0 ~6 minecraft:magenta_glazed_terracotta",
+    "/setblock ~10 ~1 ~6 minecraft:magenta_glazed_terracotta",
+    "/setblock ~10 ~2 ~6 minecraft:torch",
+    "/give @p minecraft:iron_pickaxe 1"
+  ],
+  "design_notes": "Linear corridor ~14 blocks long, 10 blocks wide. Andesite at (-2,0,-1) near spawn left wall. Lapis blocks at (5,0,4) and (6,0,4) in middle. Magenta glazed terracotta at (10,0,6) at far end. CRITICAL: lapis_block drops itself when mined (not lapis_lazuli — that's from ore). Milestone must check for lapis_block in inventory.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 3 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find andesite\", \"mine lapis_block\", \"find magenta_glazed_terracotta\"],\n  \"selection_reasoning\": \"These three tasks form a coherent exploration and mining sequence in a cave/underground environment. The player must first locate andesite (a common stone variant that signals they are in the right underground area), then mine a lapis block (which requires being in the correct underground zone and having the right tool), and finally find magenta_glazed_terracotta (a de",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## Sandbox Observations — Third Preview (Final Design)\n\nThis layout works much better:\n\n**Initial frame**: The player spawns in a well-lit stone corridor. I can see the iron pickaxe in hand. The cave is brighter with multiple torches visible. Looking ahead, the corridor extends forward.\n\n**Steps 0-5**: The agent turned and explored. The andesite wall section on the left near spawn is visible — it has a slightly different texture from the regular stone. The corridor is open and navigable.\n\n**Step",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nBased on SceneDesignerAgent's final sandbox report, I have all the spatial information needed. Here are the milestone rules:\n\n**Key coordinates (all spawn-relative):**\n- **Andesite wall**: x=-2, y=0–3, z=-1 to 0 (left wall near spawn)\n- **Lapis blocks**: (5,0,4), (5,1,4), (6,0,4) — middle of corridor\n- **Magenta glazed terracotta**: (10,0,6), (10,1,6) — far end of corridor\n- **Player starts at**: (0,0,0) with iron pickaxe\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find andesite\",\n      ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations — Third Preview (Actual Images)\n\nNow I can see the actual frames from the third preview. Let me analyze each:\n\n**Initial frame**: The player spawns in a stone corridor. I can see two torches on the walls, the iron pickaxe in hand (bottom right), and what appears to be a blue block (lapis) partially visible on the far left edge. The cave is well-lit with stone walls.\n\n**Step 000**: Excellent! The agent turned right and I can clearly see:\n- **Blue lapis blocks** (bright blu",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## CommonSenseAgent Response\n\nThank you for the detailed sandbox report and the critical correction about lapis_block drops. Let me verify the Minecraft mechanics involved:\n\n### Minecraft Knowledge Verification:\n\n1. **Lapis Block vs Lapis Ore drops** — **CONFIRMED CRITICAL ISSUE**: \n   - `lapis_ore` → drops `lapis_lazuli` (4-9 pieces)\n   - `lapis_block` → drops **itself** (`lapis_block`) when mined with any pickaxe\n   - The SceneDesignerAgent is absolutely correct. The milestone MUST check for `",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on SceneDesignerAgent's sandbox observations and CommonSenseAgent's critical mechanics correction, here are my final milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find andesite\",\n      \"milestone_id\": \"find_andesite\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate task. The andesite wall is at spawn-relative (-2, 0-3, -1 to 0), only ~2 blocks from spawn on the left wall. Target is the center of the andesite cluster at (-2, 1, 0). Max",
+      "timestamp": ""
+    }
+  ]
+}

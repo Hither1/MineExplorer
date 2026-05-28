@@ -1,0 +1,182 @@
+{
+  "id": "0835",
+  "sample_idx": 835,
+  "mode": "multi",
+  "selected_tasks": [
+    "find birch_log",
+    "craft to wooden_hoe",
+    "find cartography_table"
+  ],
+  "selection_reasoning": "These three tasks form a coherent multi-hop chain. First, the agent must find birch_log (a wood source). The birch_log is needed to craft planks and sticks, which are required to craft a wooden_hoe. The cartography_table serves as a parallel objective that requires navigation/exploration after the crafting step — finding it confirms the agent can locate functional blocks in the environment. The dependency structure is: find birch_log → craft wooden_hoe (needs wood from birch_log to make planks+sticks for the hoe recipe), and find birch_log → find cartography_table (the agent must first orient in the scene by locating the birch logs, then navigate to find the cartography_table placed elsewhere). The craft task is the most complex, requiring the agent to harvest wood, convert to planks, make sticks, then use a crafting table.",
+  "reasoning_graph": {
+    "nodes": [
+      "find birch_log",
+      "craft to wooden_hoe",
+      "find cartography_table"
+    ],
+    "edges": [
+      {
+        "from": "find birch_log",
+        "to": "craft to wooden_hoe",
+        "reason": "Crafting a wooden_hoe requires planks and sticks, which are made from the birch_log the agent must first find and harvest"
+      },
+      {
+        "from": "find birch_log",
+        "to": "find cartography_table",
+        "reason": "Agent must first orient by locating birch logs in the scene before navigating to the cartography_table placed in a different area"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find birch_log",
+        "milestone_id": "find_birch_log",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task — the player must navigate near the birch log tree and face it to demonstrate they have found it. Target is the birch log tree trunk at spawn-relative (5, 2, 4), with max_distance=16 and facing_tolerance=60 to model 'player can see the birch logs'.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                5,
+                2,
+                4
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to wooden_hoe",
+        "milestone_id": "craft_wooden_hoe",
+        "description": "Uses inventory_has because crafting a wooden_hoe results in the item appearing in the player's inventory. The player must harvest birch logs, craft planks, craft sticks, then craft the wooden hoe at a crafting table. The definitive proof of successful crafting is having the item in inventory.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "wooden_hoe",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "find cartography_table",
+        "milestone_id": "find_cartography_table",
+        "description": "Uses position_near_with_facing because this is a 'find/locate' task — the player must navigate near the cartography table and face it to demonstrate they have located it. Target is the cartography table at spawn-relative (10, 0, 5), with max_distance=16 and facing_tolerance=60 to model 'player can see the cartography table'.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                10,
+                0,
+                5
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "birch_crafting_grove",
+  "scene_description": "A cleared grassy area with a birch log tree (5 blocks tall with leaves), a crafting table, and a cartography table. The player spawns with a crafting table in inventory. The birch tree is at ~5,~0,~4, the crafting table at ~8,~0,~3, and the cartography table at ~10,~0,~5. All objects are within 10 blocks of spawn, easily reachable on flat terrain.",
+  "task_text": "Find and harvest the birch log tree, then use the crafting table to craft a wooden hoe (make planks, then sticks, then the hoe). Finally, locate the cartography table nearby.",
+  "atomic_tasks_ordered": [
+    "find birch_log",
+    "craft to wooden_hoe",
+    "find cartography_table"
+  ],
+  "commands": [
+    "/fill ~-8 ~-1 ~-8 ~20 ~-1 ~20 minecraft:grass_block",
+    "/fill ~-8 ~0 ~-8 ~20 ~10 ~20 minecraft:air",
+    "/fill ~-8 ~-2 ~-8 ~20 ~-2 ~20 minecraft:dirt",
+    "/setblock ~5 ~0 ~4 minecraft:birch_log",
+    "/setblock ~5 ~1 ~4 minecraft:birch_log",
+    "/setblock ~5 ~2 ~4 minecraft:birch_log",
+    "/setblock ~5 ~3 ~4 minecraft:birch_log",
+    "/setblock ~5 ~4 ~4 minecraft:birch_log",
+    "/setblock ~5 ~5 ~4 minecraft:birch_leaves",
+    "/setblock ~6 ~4 ~4 minecraft:birch_leaves",
+    "/setblock ~4 ~4 ~4 minecraft:birch_leaves",
+    "/setblock ~5 ~4 ~5 minecraft:birch_leaves",
+    "/setblock ~5 ~4 ~3 minecraft:birch_leaves",
+    "/setblock ~6 ~5 ~4 minecraft:birch_leaves",
+    "/setblock ~4 ~5 ~4 minecraft:birch_leaves",
+    "/setblock ~5 ~5 ~5 minecraft:birch_leaves",
+    "/setblock ~5 ~5 ~3 minecraft:birch_leaves",
+    "/setblock ~8 ~0 ~3 minecraft:crafting_table",
+    "/setblock ~10 ~0 ~5 minecraft:cartography_table",
+    "/give @p minecraft:crafting_table 1",
+    "/tp @p ~0 ~0 ~2"
+  ],
+  "design_notes": "Player spawns 2 blocks forward from command origin on flat grass. Birch tree (5 logs + leaves) at ~5,~0,~4. Crafting table at ~8,~0,~3. Cartography table at ~10,~0,~5. Crafting table also given in inventory as backup. Large 28x28 area cleared of natural trees. All key objects within 10 blocks on flat terrain. World coordinates confirmed: spawn at -3009.5, 71.0, -5570.5.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 3 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find birch_log\", \"craft to wooden_hoe\", \"find cartography_table\"],\n  \"selection_reasoning\": \"These three tasks form a coherent multi-hop chain. First, the agent must find birch_log (a wood source). The birch_log is needed to craft planks and sticks, which are required to craft a wooden_hoe. The cartography_table serves as a parallel objective that requires navigation/exploration after the crafting step — finding it confirms the agent can locate functional blocks i",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observation Report — Revision 2\n\nThis is much better! Here's what I can see in each frame:\n\n### Frame Analysis:\n\n**Initial frame**: Player spawns on a grassy flat area. The crafting table is visible in the hotbar (given item). Some natural trees remain at the edges but the central area is mostly clear. A crafting table block is visible in the inventory bar at the bottom.\n\n**Step 000**: Similar view, agent is looking slightly left. The cleared area is visible with natural tree line in ",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on my Minecraft knowledge, here's my **CommonSenseAgent** assessment:\n\n## Common-Sense Review\n\n### ✅ Task 1: Find birch_log\n- **Valid**: Birch logs are clearly placed in the scene (5 blocks tall at spawn-relative ~5,~0,~4). The white bark is distinctive and easy to identify.\n- **No issues**: The agent just needs to look at/approach the birch tree.\n\n### ✅ Task 2: Craft to wooden_hoe\n- **Recipe**: 2 planks + 2 sticks in a crafting table\n  - 2 planks = 1 birch_log → 4 birch_planks (only need ",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Crafting a wooden hoe requires knowing the specific recipe layout (2 planks in a row on top, 2 sticks vertically below) in a 3x3 crafting grid. A general-purpose AI agent without Minecraft expertise would not know this recipe.\",\n      \"severity\": \"medium\",\n      \"target_agent\": \"TaskSelectorAgent\"\n    },\n    {\n      \"issue\": \"The agent must know the intermediate crafting steps: log → 4 planks, then 2 planks → 4 sticks. These are fundamental Minecraft",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "Now let me provide the milestone rules for this benchmark. Based on the scene design and task requirements, here are the completion criteria:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find birch_log\",\n      \"description\": \"The agent must navigate to and look at the birch log tree\",\n      \"rules\": [\n        {\n          \"type\": \"position_inside_box\",\n          \"description\": \"Agent is within 3 blocks of the birch log tree trunk\",\n          \"parameters\": {\n            \"min\": [2, 0, 1],\n    ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## ValidatorAgent Assessment\n\nFrom the screenshots, I can extract critical coordinate information:\n\n**Player was teleported to: -3004.5, 73.0, -5568.5**\n\nThis tells me the original spawn was approximately at **-3009.5, 71.0, -5572.5** (since the tp command was `~5 ~2 ~4` from wherever the player was after the initial `~0 ~0 ~2` tp).\n\nThe first_person view shows we're elevated above a forested area. I can see the cleared grass area in the distance with what appears to be the birch tree (white tru",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Final Sandbox Observation Report — Revision 3\n\nExcellent! This final preview confirms the scene is working perfectly. Here's what I see in each frame:\n\n### Frame-by-Frame Analysis:\n\n**Initial frame**: Player spawns on flat grass, looking forward. Chat log shows all commands executed successfully. Key coordinates from chat:\n- Birch log blocks placed at **-3005, 75, -5568** (and y=71-75)\n- Leaves placed at **-3005/-3004/-3006, 75-76, -5568/-5569/-5570**\n- Crafting table at **-3002, 71, -5569**\n",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's detailed sandbox report with confirmed coordinates, I'll now output the final milestone rules. The key reference points are:\n\n- **Player spawn (post-tp)**: origin for spawn-relative coordinates (0, 0, 0)\n- **Birch log tree**: spawn-relative ~5, ~0, ~4 (5 logs from y=0 to y=4)\n- **Crafting table**: spawn-relative ~8, ~0, ~3\n- **Cartography table**: spawn-relative ~10, ~0, ~5\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find birch_log\",\n      \"milestone_id\": ",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good. Now let me verify the full crafting chain and assess the final milestones:\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"The crafting chain (birch_log → planks → sticks → wooden_hoe) requires Minecraft recipe knowledge: 1 log = 4 planks (shapeless in 2x2), 2 planks vertically = 4 sticks, and the hoe recipe is 2 planks on top-right + 2 sticks below. This is standard but non-obvious to a non-Minecraft agent.\",\n      \"severity\": \"medium\",\n      \"target_agent\": \"TaskSelectorAgent\"\n    },\n    ",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "## ValidatorAgent — Final Comprehensive Validation\n\nThe multi-perspective screenshots provide excellent confirmation of the scene layout. Here's what I can verify:\n\n### Screenshot Analysis:\n\n**First Person (forward/default facing)**: Player on flat grass, chat log confirms all commands executed. Player teleported to **-3009.5, 71.0, -5570.5**. Crafting Table visible in hotbar slot 1. Looking forward across cleared grassy area with natural dark oak trees at edges.\n\n**North view**: Shows the **cra",
+      "timestamp": ""
+    }
+  ]
+}

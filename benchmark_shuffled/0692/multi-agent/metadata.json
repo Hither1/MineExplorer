@@ -1,0 +1,147 @@
+{
+  "id": "0644",
+  "sample_idx": 644,
+  "mode": "multi",
+  "selected_tasks": [
+    "find red_sandstone",
+    "mine polished_andesite",
+    "craft to golden_helmet"
+  ],
+  "selection_reasoning": "These three tasks form a coherent multi-hop sequence. The player must first locate red_sandstone (a landmark/navigation task that leads them to an area where resources are placed), then mine polished_andesite (which requires finding and breaking polished_andesite blocks placed near the red_sandstone area, requiring a pickaxe). Finally, the player must craft a golden_helmet, which requires gold ingots that will be available in a chest near the polished_andesite. The navigation → mining → crafting chain creates a natural progression where each task builds on the previous one's location or resources. The crafting task requires the player to have found the crafting table and gold ingots placed in the scene, which are accessible only after navigating through the earlier task areas.",
+  "reasoning_graph": {
+    "nodes": [
+      "find red_sandstone",
+      "mine polished_andesite",
+      "craft to golden_helmet"
+    ],
+    "edges": [
+      {
+        "from": "find red_sandstone",
+        "to": "mine polished_andesite",
+        "reason": "Polished andesite blocks are placed adjacent to the red_sandstone structure; player must navigate there first"
+      },
+      {
+        "from": "mine polished_andesite",
+        "to": "craft to golden_helmet",
+        "reason": "Mining polished andesite reveals a chest behind it containing gold ingots needed for the golden helmet"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find red_sandstone",
+        "milestone_id": "find_red_sandstone",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The player must navigate near the red sandstone structure (centered at spawn-relative ~7.5, ~1.5, ~7) and face it. max_distance=8 allows the player to see it from a reasonable distance, and facing_tolerance=60 ensures they are actually looking at it. This is preferred over position_inside_box for find tasks because it models 'player can see the target'.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                8,
+                1,
+                7
+              ],
+              "max_distance": 8,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine polished_andesite",
+        "milestone_id": "mine_polished_andesite",
+        "description": "Uses inventory_has because mining polished andesite with a pickaxe drops polished_andesite as an item into the player's inventory. The player starts with no polished_andesite, so having at least 1 confirms they mined a block. This is the preferred rule type for mine tasks since the mined drop ends up in inventory.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "polished_andesite",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to golden_helmet",
+        "milestone_id": "craft_golden_helmet",
+        "description": "Uses inventory_has because crafting a golden helmet places it in the player's inventory. The player starts with no golden_helmet, so having at least 1 confirms successful crafting. This is the preferred rule type for craft tasks since the crafted item ends up in inventory.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "golden_helmet",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "red_sandstone_mining_forge",
+  "scene_description": "A grass platform with a prominent red sandstone structure (4x3x3 blocks) at ~6-9,0-3,6-8. Adjacent to its right side is a 2x2 wall of polished andesite at ~10,0-1,6-7. Behind the andesite wall is a chest (containing 5 gold ingots) at ~11,0,6 and a crafting table at ~11,0,7. The player spawns with an iron pickaxe. Task flow: find the red_sandstone landmark → mine the polished_andesite wall → access the chest and crafting table to craft a golden helmet.",
+  "task_text": "Find the red sandstone structure, mine through the polished andesite blocks beside it, then use the gold ingots in the chest and the crafting table to craft a golden helmet.",
+  "atomic_tasks_ordered": [
+    "find red_sandstone",
+    "mine polished_andesite",
+    "craft to golden_helmet"
+  ],
+  "commands": [
+    "/fill ~-3 ~-1 ~-3 ~15 ~-1 ~15 minecraft:grass_block",
+    "/fill ~-3 ~0 ~-3 ~15 ~5 ~15 minecraft:air",
+    "/fill ~6 ~0 ~6 ~9 ~3 ~6 minecraft:red_sandstone",
+    "/fill ~6 ~0 ~7 ~9 ~3 ~7 minecraft:red_sandstone",
+    "/fill ~6 ~0 ~8 ~9 ~2 ~8 minecraft:red_sandstone",
+    "/setblock ~10 ~0 ~6 minecraft:polished_andesite",
+    "/setblock ~10 ~1 ~6 minecraft:polished_andesite",
+    "/setblock ~10 ~0 ~7 minecraft:polished_andesite",
+    "/setblock ~10 ~1 ~7 minecraft:polished_andesite",
+    "/setblock ~11 ~0 ~6 minecraft:chest[facing=east]{Items:[{Slot:0b,id:\"minecraft:gold_ingot\",Count:5b}]}",
+    "/setblock ~11 ~0 ~7 minecraft:crafting_table",
+    "/give @p minecraft:iron_pickaxe 1"
+  ],
+  "design_notes": "Red sandstone is the landmark (clearly visible orange). Polished andesite (2x2 wall) is on its right side, blocking access to the chest and crafting table. Player needs iron pickaxe (given) to mine andesite. Chest has 5 gold ingots (only 5 needed for golden helmet). Crafting table is adjacent. All within ~12 blocks of spawn. The dependency chain works: navigate to red_sandstone → mine polished_andesite → access chest + craft golden_helmet.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 3 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find red_sandstone\", \"mine polished_andesite\", \"craft to golden_helmet\"],\n  \"selection_reasoning\": \"These three tasks form a coherent multi-hop sequence. The player must first locate red_sandstone (a landmark/navigation task that leads them to an area where resources are placed), then mine polished_andesite (which requires finding and breaking polished_andesite blocks placed near the red_sandstone area, requiring a pickaxe). Finally, the player must craft a golden",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations - Revised Scene\n\nLooking at the frames from the revised scene:\n\n1. **Initial frame**: The player spawns with the iron pickaxe in hand. To the left I can clearly see the **red_sandstone structure** (orange blocks). The grass platform is visible. On the right side of the red_sandstone, I can see some **gray/white blocks** which appear to be the polished_andesite. Good - both key structures are visible from spawn.\n\n2. **Step 0-5**: The agent turns right and walks across the ",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Now let me verify the crafting recipe for the golden helmet:\n\n## Common-Sense Analysis\n\nHere are my findings for the team:\n\n### ✅ Verified Mechanics\n\n1. **Golden Helmet crafting**: Requires **5 gold ingots** in a helmet pattern on a crafting table. The chest contains exactly 5 gold ingots — this is correct and sufficient.\n\n2. **Iron Pickaxe mining capability**: An iron pickaxe (mining level 2) can mine polished andesite. Polished andesite requires any pickaxe (mining level 0+), so the iron picka",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Golden helmet crafting recipe requires exactly 5 gold ingots in a specific helmet pattern (top row of 3 + 2 on sides of middle row) on a 3x3 crafting grid. A non-expert agent may not know this recipe. However, the scene provides exactly 5 gold ingots and a crafting table, which is the correct amount — no domain knowledge issue with resource quantity.\",\n      \"severity\": \"medium\",\n      \"target_agent\": \"TaskSelectorAgent\"\n    },\n    {\n      \"issue\":",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Good. I can see from the frames that the scene is properly set up. The key insight is that all commands use `~` (tilde) relative coordinates, which means they're placed relative to the player's position at command execution time. Since the evaluator uses `coordinate_frame=\"spawn_relative\"`, the offsets in the milestones should match the `~` offsets in the commands.\n\nSo the spawn-relative coordinates are:\n- **Red sandstone structure**: x=6 to 9, y=0 to 3, z=6 to 8 (center approximately at x=7.5, ",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Golden helmet crafting recipe requires 5 gold ingots in a specific helmet pattern on a 3x3 crafting grid. This is standard Minecraft knowledge but a general-purpose AI agent without Minecraft expertise would not know the exact pattern. The scene correctly provides exactly 5 gold ingots and a crafting table, so the resource requirements are met.\",\n      \"severity\": \"medium\",\n      \"target_agent\": \"TaskSelectorAgent\"\n    },\n    {\n      \"issue\": \"The 'f",
+      "timestamp": ""
+    }
+  ]
+}

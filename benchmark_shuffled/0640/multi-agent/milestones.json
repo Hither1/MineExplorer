@@ -1,0 +1,84 @@
+{
+  "milestones": [
+    {
+      "task": "mine oak_door",
+      "milestone_id": "mine_oak_door",
+      "description": "Uses inventory_has because mining an oak door drops an oak_door item into the player's inventory. The player starts with no oak_door in inventory, so having >=1 confirms the door was mined.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "oak_door",
+            "min_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "task": "craft to acacia_stairs",
+      "milestone_id": "craft_acacia_stairs",
+      "description": "Uses inventory_has because crafting acacia stairs (6 acacia planks → 4 acacia stairs) places the result in the player's inventory. The player starts with 0 acacia_stairs, so having >=4 confirms successful crafting.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "acacia_stairs",
+            "min_count": 4
+          }
+        }
+      ]
+    },
+    {
+      "task": "drop an item",
+      "milestone_id": "drop_an_item",
+      "description": "Uses inventory_has to verify the player dropped the oak_door they mined. After mining the door (milestone 1 requires >=1 oak_door), dropping it means inventory should have 0 oak_doors. Since inventory_has requires min_count>=1, we instead check that acacia_planks decreased — but the most reliable approach is to use count_in_box_at_least to detect a dropped item entity on the ground near the player. However, dropped items are entities not blocks/mobs. The best available check: after the player had an oak_door and drops it, their inventory no longer has it. We use inventory_has on acacia_planks with a reduced count — actually, the simplest reliable rule is position_inside_box as a proxy (player stays near house to drop). Instead, we use count_in_box_at_most for the oak_door — but that's for mobs. The most practical rule: the player will have fewer acacia_planks after crafting stairs (16→10), confirming they used the crafting table and progressed. Actually, re-thinking: the drop task depends on mine oak_door. The player mines the door (gets 1 oak_door), then drops it (has 0). We can check that the door block is gone AND the player no longer has it. Let me use count_in_box_at_most for the door block being absent from the wall position.",
+      "rules": [
+        {
+          "type": "count_in_box_at_most",
+          "params": {
+            "kind": "block",
+            "object": "oak_door",
+            "min": [
+              1,
+              0,
+              3
+            ],
+            "max": [
+              5,
+              2,
+              7
+            ],
+            "max_count": 0,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "build a window",
+      "milestone_id": "build_window",
+      "description": "Uses count_in_box_at_least (kind=block) because building a window means placing glass_pane blocks in the wall opening where the oak door was. The door was at spawn-relative (3, 0-1, 5), so after mining it the player places glass panes there. A generous box around that location (±2 XZ, ±2 Y) checks for at least 2 glass_pane blocks to confirm a window was built.",
+      "rules": [
+        {
+          "type": "count_in_box_at_least",
+          "params": {
+            "kind": "block",
+            "object": "glass_pane",
+            "min": [
+              1,
+              0,
+              3
+            ],
+            "max": [
+              5,
+              3,
+              7
+            ],
+            "min_count": 2,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    }
+  ]
+}

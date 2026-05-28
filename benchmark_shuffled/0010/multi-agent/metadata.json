@@ -1,0 +1,187 @@
+{
+  "id": "0986",
+  "sample_idx": 986,
+  "mode": "multi",
+  "selected_tasks": [
+    "find potted_brown_mushroom",
+    "find brown_bed",
+    "mine purple_bed",
+    "fall"
+  ],
+  "selection_reasoning": "These four tasks form a coherent exploration-and-action sequence. The player must first locate a potted_brown_mushroom (a landmark/waypoint), then find a brown_bed nearby (guided by the mushroom's location), then mine a purple_bed (which requires navigating to a different area after finding the brown_bed area), and finally fall from a height (which can be set up as a consequence of mining the purple_bed on an elevated platform). This creates a multi-hop chain where exploration discoveries guide subsequent actions, and the final mining action leads to a fall event. The tasks are observable, verifiable, and don't require deep crafting knowledge.",
+  "reasoning_graph": {
+    "nodes": [
+      "find potted_brown_mushroom",
+      "find brown_bed",
+      "mine purple_bed",
+      "fall"
+    ],
+    "edges": [
+      {
+        "from": "find potted_brown_mushroom",
+        "to": "find brown_bed",
+        "reason": "The potted_brown_mushroom serves as a landmark near the brown_bed; finding it guides the player to the bed's location"
+      },
+      {
+        "from": "find brown_bed",
+        "to": "mine purple_bed",
+        "reason": "After locating the brown_bed area, the player identifies the path leading to the elevated platform containing the purple_bed"
+      },
+      {
+        "from": "mine purple_bed",
+        "to": "fall",
+        "reason": "The purple_bed is on an elevated platform; after mining it, the player must fall down to complete the final task"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find potted_brown_mushroom",
+        "milestone_id": "find_potted_brown_mushroom",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The potted brown mushroom is placed at spawn-relative (3, 0, 4). The player must navigate within 5 blocks and face toward it (within 60°) to demonstrate they have visually located the object. This is preferred over position_inside_box because find tasks require the player to observe the target, not just be near it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                3,
+                0,
+                4
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "find brown_bed",
+        "milestone_id": "find_brown_bed",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The brown bed head is at spawn-relative (4, 0, 5) with foot at (4, 0, 6). Target is set to the head block. The player must be within 5 blocks and facing toward it (within 60°) to confirm visual discovery. The bed is adjacent to the mushroom so the player naturally finds it after the first milestone.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                4,
+                0,
+                5
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine purple_bed",
+        "milestone_id": "mine_purple_bed",
+        "description": "Uses inventory_has because mining a bed drops it as an item into the player's inventory. The purple bed is on the elevated platform at (-5, 6, -11)/(-5, 6, -10). When broken by hand (no tool required), it drops as 'purple_bed' item. This is the most direct and reliable check for a mine task — the mined drop ends up in inventory.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "purple_bed",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "fall",
+        "milestone_id": "fall_from_platform",
+        "description": "Uses position_inside_box because this is a movement/traversal task — the player must physically fall from the elevated platform (Y=5-6) to ground level (Y=-1 to 0). The box covers the ground area below and around the platform (X: -10 to 0, Y: -1 to 0, Z: -14 to -5) where no stairs exist. Combined with the dependency that mine_purple_bed must complete first (requiring the player to be ON the platform at Y=6), being at ground level in this zone confirms the player fell off the platform rather than walked down the stairs (which are at Z=-4 to -9, outside the box's Z range on the south side).",
+        "rules": [
+          {
+            "type": "position_inside_box",
+            "params": {
+              "min": [
+                -10,
+                -1,
+                -14
+              ],
+              "max": [
+                0,
+                0,
+                -5
+              ],
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "mushroom_bed_platform_fall",
+  "scene_description": "A stone brick arena with two zones: (1) a ground-level area containing a potted brown mushroom and brown bed as exploration targets near lanterns, and (2) an elevated stone brick platform (~6 blocks high) accessed via a stone brick staircase, with a purple bed on top. The platform has open edges allowing the player to fall off after mining the purple bed.",
+  "task_text": "Find the potted brown mushroom, then find the brown bed nearby. Climb the staircase to the elevated platform and mine the purple bed. After mining it, fall off the platform to the ground below.",
+  "atomic_tasks_ordered": [
+    "find potted_brown_mushroom",
+    "find brown_bed",
+    "mine purple_bed",
+    "fall"
+  ],
+  "commands": [
+    "/gamemode survival @s",
+    "/fill ~-10 ~-1 ~-10 ~10 ~-1 ~10 minecraft:stone_bricks",
+    "/fill ~-10 ~0 ~-10 ~10 ~10 ~10 minecraft:air",
+    "/setblock ~3 ~0 ~4 minecraft:potted_brown_mushroom",
+    "/setblock ~4 ~0 ~5 minecraft:brown_bed[facing=south,part=head]",
+    "/setblock ~4 ~0 ~6 minecraft:brown_bed[facing=south,part=foot]",
+    "/fill ~-6 ~0 ~-4 ~-4 ~0 ~-4 minecraft:stone_brick_stairs[facing=south]",
+    "/fill ~-6 ~1 ~-5 ~-4 ~1 ~-5 minecraft:stone_brick_stairs[facing=south]",
+    "/fill ~-6 ~2 ~-6 ~-4 ~2 ~-6 minecraft:stone_brick_stairs[facing=south]",
+    "/fill ~-6 ~3 ~-7 ~-4 ~3 ~-7 minecraft:stone_brick_stairs[facing=south]",
+    "/fill ~-6 ~4 ~-8 ~-4 ~4 ~-8 minecraft:stone_brick_stairs[facing=south]",
+    "/fill ~-6 ~5 ~-9 ~-4 ~5 ~-9 minecraft:stone_brick_stairs[facing=south]",
+    "/fill ~-8 ~5 ~-12 ~-2 ~5 ~-9 minecraft:stone_bricks",
+    "/setblock ~-5 ~6 ~-11 minecraft:purple_bed[facing=north,part=head]",
+    "/setblock ~-5 ~6 ~-10 minecraft:purple_bed[facing=north,part=foot]",
+    "/fill ~-8 ~6 ~-12 ~-8 ~6 ~-12 minecraft:stone_brick_wall",
+    "/fill ~-2 ~6 ~-12 ~-2 ~6 ~-12 minecraft:stone_brick_wall",
+    "/setblock ~5 ~0 ~3 minecraft:lantern",
+    "/setblock ~-4 ~0 ~-2 minecraft:lantern",
+    "/setblock ~2 ~0 ~4 minecraft:lantern"
+  ],
+  "design_notes": "Ground level is Y=-1 (stone brick floor). Objects at Y=0: potted mushroom at (3,0,4), brown bed at (4,0,5-6), lanterns for visibility. Staircase from Z=-4 to Z=-9 rising from Y=0 to Y=5. Platform at Y=5 spanning X=-8 to -2, Z=-12 to -9. Purple bed at Y=6 on platform at (-5,6,-11) and (-5,6,-10). Platform has open edges on north and south sides for falling. Fall from Y=6 to Y=-1 is ~7 blocks, sufficient for fall detection. Two small stone brick walls at corners provide minimal railing but leave most edges open.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 4 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find potted_brown_mushroom\", \"find brown_bed\", \"mine purple_bed\", \"fall\"],\n  \"selection_reasoning\": \"These four tasks form a coherent exploration-and-action sequence. The player must first locate a potted_brown_mushroom (a landmark/waypoint), then find a brown_bed nearby (guided by the mushroom's location), then mine a purple_bed (which requires navigating to a different area after finding the brown_bed area), and finally fall from a height (which can be set up as",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's sandbox report and the frames I can see, I have a clear picture of the scene layout:\n\n- **Potted brown mushroom**: at spawn-relative position (3, 0, 4)\n- **Brown bed**: at spawn-relative position (4, 0, 5) head / (4, 0, 6) foot\n- **Purple bed**: on elevated platform at spawn-relative position (-5, 6, -11) head / (-5, 6, -10) foot\n- **Elevated platform**: ~5-6 blocks high (Y=5 platform surface), sufficient for fall damage\n- **Staircase**: leading from ground leve",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I can see the stone brick floor and the scene elements. Let me look around to verify the key objects are in place.",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "I can now clearly see the scene elements. In this frame I can confirm:\n\n- **Brown bed** (tan/brown colored bed) - clearly visible on the stone brick floor ✅\n- **Potted brown mushroom** (red/terracotta pot with mushroom) - clearly visible next to the bed ✅\n- **Lantern** - glowing lantern between the objects ✅\n- **Stone brick floor** - the flat platform area ✅\n\nThe ground-level objects are confirmed. Based on the earlier exploration frames from the preview, the staircase and elevated platform with",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## CommonSense Agent Review\n\nBased on my examination of the scene design and Minecraft mechanics, here is my assessment:\n\n### ✅ Confirmed Valid Mechanics\n\n1. **Potted brown mushroom** (`minecraft:potted_brown_mushroom`) - Valid decorative block, placed correctly with `/setblock`.\n\n2. **Brown bed** (`minecraft:brown_bed[facing=south,part=head/foot]`) - Valid. Beds require both head and foot parts placed correctly. The facing direction and part specification look correct.\n\n3. **Purple bed** (`mine",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's sandbox report and the comprehensive team discussion, I have all the information needed to finalize the milestone rules. Here are my milestones:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find potted_brown_mushroom\",\n      \"milestone_id\": \"find_potted_brown_mushroom\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate task. The potted brown mushroom is placed at spawn-relative (3, 0, 4). The player must navigate within 5 bl",
+      "timestamp": ""
+    }
+  ]
+}

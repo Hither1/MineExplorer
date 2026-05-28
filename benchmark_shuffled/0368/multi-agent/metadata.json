@@ -1,0 +1,177 @@
+{
+  "id": "1143",
+  "sample_idx": 1143,
+  "mode": "multi",
+  "selected_tasks": [
+    "find spruce_planks",
+    "craft to oak_fence_gate",
+    "find brown_concrete",
+    "find black_wool"
+  ],
+  "selection_reasoning": "These four tasks form a coherent multi-hop sequence. The agent must first locate spruce_planks (which serves as orientation and resource gathering in the scene), then find brown_concrete and black_wool as navigation/exploration tasks that require traversing different parts of the scene. The craft to oak_fence_gate task depends on finding spruce_planks because the scene will place oak planks near the spruce_planks area, and the agent needs to locate the crafting table positioned near the spruce_planks to craft the oak_fence_gate. Finding brown_concrete and black_wool are parallel exploration tasks that become accessible after the agent orients themselves by finding the spruce_planks landmark first. The brown_concrete structure serves as a waypoint that helps the agent navigate toward the black_wool, creating a natural exploration chain.",
+  "reasoning_graph": {
+    "nodes": [
+      "find spruce_planks",
+      "craft to oak_fence_gate",
+      "find brown_concrete",
+      "find black_wool"
+    ],
+    "edges": [
+      {
+        "from": "find spruce_planks",
+        "to": "craft to oak_fence_gate",
+        "reason": "Crafting table and oak planks are placed adjacent to spruce_planks; agent must find that area first to access crafting resources"
+      },
+      {
+        "from": "find spruce_planks",
+        "to": "find brown_concrete",
+        "reason": "Spruce_planks structure serves as starting landmark; brown_concrete is positioned in a direction visible from there"
+      },
+      {
+        "from": "find brown_concrete",
+        "to": "find black_wool",
+        "reason": "Black_wool is placed beyond the brown_concrete structure; agent navigates past brown_concrete to reach it"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find spruce_planks",
+        "milestone_id": "find_spruce_planks",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The spruce_planks structure is at ~3,0,3 to ~5,3,5 (center ~4,2,4). Using max_distance=5 to require the player to actually walk TO the structure (it's ~5 blocks from spawn), not just see it from afar. facing_tolerance=60 ensures the player is looking at it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                4,
+                2,
+                4
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to oak_fence_gate",
+        "milestone_id": "craft_oak_fence_gate",
+        "description": "Uses inventory_has because crafting an oak_fence_gate results in the item appearing in the player's inventory. The player has 2 oak_planks and 4 sticks (the correct recipe for 1 oak_fence_gate) and a crafting table is at ~3,0,6 adjacent to the spruce_planks. The crafted item is not in starting inventory so its presence confirms crafting success.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "oak_fence_gate",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "find brown_concrete",
+        "milestone_id": "find_brown_concrete",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The brown_concrete structure is at ~-2,0,9 to ~0,3,11 (center ~-1,2,10). Using max_distance=5 to require the player to walk forward ~10 blocks from spawn to get close to the structure. facing_tolerance=60 ensures the player is looking at it when nearby.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                -1,
+                2,
+                10
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "find black_wool",
+        "milestone_id": "find_black_wool",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The black_wool structure is at ~-5,0,15 to ~-3,3,17 (center ~-4,2,16). Using max_distance=5 to require the player to navigate past the brown_concrete and walk to the black_wool structure (~17 blocks from spawn). facing_tolerance=60 ensures the player is looking at it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                -4,
+                2,
+                16
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "linear_exploration_crafting_path",
+  "scene_description": "A flat grass platform with structures arranged in a forward-facing linear path. Spruce_planks structure is to the right of spawn (3-5 blocks away) with a crafting table adjacent. Brown_concrete is ahead and slightly left (9-11 blocks). Black_wool is further ahead and left (15-17 blocks). The player can see all structures from spawn but must walk forward to reach them sequentially.",
+  "task_text": "Find the spruce planks structure and use the nearby crafting table to craft an oak fence gate. Then navigate forward to find the brown concrete structure, and continue past it to find the black wool structure.",
+  "atomic_tasks_ordered": [
+    "find spruce_planks",
+    "craft to oak_fence_gate",
+    "find brown_concrete",
+    "find black_wool"
+  ],
+  "commands": [
+    "/fill ~-8 ~-1 ~-3 ~8 ~-1 ~20 minecraft:grass_block",
+    "/fill ~-8 ~0 ~-3 ~8 ~5 ~20 minecraft:air",
+    "/fill ~3 ~0 ~3 ~5 ~3 ~5 minecraft:spruce_planks",
+    "/setblock ~3 ~0 ~6 minecraft:crafting_table",
+    "/give @p minecraft:oak_planks 2",
+    "/give @p minecraft:stick 4",
+    "/fill ~-2 ~0 ~9 ~0 ~3 ~11 minecraft:brown_concrete",
+    "/fill ~-5 ~0 ~15 ~-3 ~3 ~17 minecraft:black_wool"
+  ],
+  "design_notes": "Linear layout along the Z-axis. Spruce_planks at ~3-5,0-3,3-5 (right side, close). Crafting table at ~3,0,6 (adjacent to spruce_planks). Brown_concrete at ~-2 to 0,0-3,9-11 (center-left, medium distance). Black_wool at ~-5 to -3,0-3,15-17 (left, far). Player spawns at 0,0,0 facing +Z. All structures visible from spawn, requiring progressive forward movement to reach each one. Materials: 2 oak_planks + 4 sticks = correct recipe for oak_fence_gate.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 4 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find spruce_planks\", \"craft to oak_fence_gate\", \"find brown_concrete\", \"find black_wool\"],\n  \"selection_reasoning\": \"These four tasks form a coherent multi-hop sequence. The agent must first locate spruce_planks (which serves as orientation and resource gathering in the scene), then find brown_concrete and black_wool as navigation/exploration tasks that require traversing different parts of the scene. The craft to oak_fence_gate task depends on finding spruce_plan",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## Sandbox Observations - Third Preview\n\nExcellent! This layout is much more compact. Here's what I see:\n\n1. **Initial frame**: Player spawns with **spruce_planks** structure visible to the right (light brown wood), **brown_concrete** visible to the left (dark brown), and the **crafting table** is visible at the base of the spruce_planks structure. Oak Planks are in the hotbar. The scene is well-lit and clear.\n\n2. **Step 000-003**: Agent turns to look at the **brown_concrete** structure. It's cl",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's sandbox report, I have all the information needed to design the milestone rules. Here are the milestones:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find spruce_planks\",\n      \"milestone_id\": \"find_spruce_planks\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate task. The spruce_planks structure is at ~3,0,2 to ~5,3,4 (center approximately ~4,1.5,3). The player must navigate near it and face it to 'find' it. Using max_dis",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "Based on the overhead view and the scene layout, I can now provide my comprehensive **CommonSenseAgent** feedback:\n\n---\n\n## CommonSenseAgent Feedback\n\n### 🚨 CRITICAL ISSUE 1: Crafting Recipe Materials Are Wrong\n\nThe **oak_fence_gate** recipe requires:\n- **2 oak_planks** + **4 sticks** = 1 oak_fence_gate\n\nBut the scene gives the player:\n- **4 oak_planks** + **2 sticks** ← INVERTED!\n\n**Fix**: Change `/give @p minecraft:oak_planks 4` to `/give @p minecraft:oak_planks 2` and `/give @p minecraft:stic",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations - Fifth Preview\n\nThis is much better! Here's what I see in each frame:\n\n1. **Initial frame**: Player spawns with **spruce_planks** visible as a large wall on the LEFT side of the screen (light brown horizontal wood grain texture). In the CENTER, the **brown_concrete** structure is clearly visible as a dark brown/terracotta block (medium distance away, ~9 blocks). The **black_wool** is partially visible as a DARK structure just to the RIGHT of the brown_concrete (further a",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Thank you for the detailed sandbox report and CommonSenseAgent's feedback. I'll now revise my milestones based on the confirmed scene layout and the critical issues raised.\n\nKey changes:\n1. **Tighter `max_distance`** for find tasks - since all structures are visible from spawn at distance 16, I need to require the player to actually walk close to each structure\n2. The scene coordinates are confirmed from the fifth preview\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find spruce_planks\",\n   ",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good. Now let me verify the oak_fence_gate recipe one more time by checking if the corrected materials (2 oak_planks + 4 sticks) are indeed correct. Based on my Minecraft knowledge:\n\n**Oak Fence Gate Recipe:**\n```\n[Stick] [Oak Plank] [Stick]\n[Stick] [Oak Plank] [Stick]\n```\n= 4 sticks + 2 oak_planks → 1 oak_fence_gate\n\n✅ The revised scene now gives **2 oak_planks + 4 sticks** — this is the correct recipe.\n\nHowever, there's one more important consideration: **crafting an oak_fence_gate requires a ",
+      "timestamp": ""
+    }
+  ]
+}

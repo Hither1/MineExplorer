@@ -1,0 +1,139 @@
+{
+  "id": "0581",
+  "sample_idx": 581,
+  "mode": "multi",
+  "selected_tasks": [
+    "mine lapis_ore",
+    "find cobweb"
+  ],
+  "selection_reasoning": "I selected 'find cobweb' and 'mine lapis_ore' because they form a coherent multi-hop dependency chain. The cobweb task requires the player to first locate a cobweb in the environment (e.g., in a mineshaft or dungeon-like structure). The lapis_ore is placed nearby but behind or past the cobweb, requiring the player to first find/navigate past the cobweb area to reach the lapis ore to mine it. This creates a natural exploration-then-action sequence: the player must find the cobweb (indicating they've reached the correct area/structure), and then mine the lapis ore that is located in that same structure. This is observable, verifiable, and doesn't require deep Minecraft domain knowledge beyond basic navigation and mining.",
+  "reasoning_graph": {
+    "nodes": [
+      "find cobweb",
+      "mine lapis_ore"
+    ],
+    "edges": [
+      {
+        "from": "find cobweb",
+        "to": "mine lapis_ore",
+        "reason": "Lapis ore is located deeper in the mine structure past the cobweb area; finding cobweb confirms player reached the correct tunnel where lapis ore is placed"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find cobweb",
+        "milestone_id": "find_cobweb",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The cobwebs are at spawn-relative (1,2,4) and (-1,2,5) on the tunnel ceiling corners. Target is (0,2,4) — the closer cobweb. max_distance=4 ensures the milestone does NOT trigger at spawn (spawn-to-target distance is √20 ≈ 4.47, which exceeds 4), forcing the player to walk at least 1-2 blocks forward. facing_tolerance=45° ensures the player is looking toward the cobweb area rather than away from it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                0,
+                2,
+                4
+              ],
+              "max_distance": 4,
+              "facing_tolerance": 45,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine lapis_ore",
+        "milestone_id": "mine_lapis_ore",
+        "description": "Uses inventory_has because mining lapis ore with an iron pickaxe drops 4-9 lapis_lazuli items into the player's inventory. The player starts with zero lapis_lazuli, so min_count=1 confirms at least one lapis ore block was successfully mined. This is preferred over mine_block because the inventory check is the most direct and reliable indicator of successful mining with the correct tool.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "lapis_lazuli",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "mine_tunnel_cobweb_lapis",
+  "scene_description": "A straight stone mine tunnel (3 blocks wide, 3 blocks tall, ~16 blocks deep) with cobwebs at the upper corners near the entrance (z+4 and z+5) and a cluster of lapis ore blocks deeper in the tunnel (z+10 to z+11). The player spawns at the tunnel entrance with an iron pickaxe. Torches provide lighting throughout.",
+  "task_text": "You are in a mine tunnel. Walk forward to find cobwebs in the tunnel, then continue deeper to find and mine the lapis ore with your iron pickaxe.",
+  "atomic_tasks_ordered": [
+    "find cobweb",
+    "mine lapis_ore"
+  ],
+  "commands": [
+    "/fill ~-3 ~-1 ~-3 ~3 ~-1 ~16 minecraft:stone",
+    "/fill ~-3 ~0 ~-3 ~3 ~4 ~16 minecraft:stone",
+    "/fill ~-1 ~0 ~0 ~1 ~2 ~16 minecraft:air",
+    "/fill ~-1 ~0 ~-1 ~1 ~2 ~-1 minecraft:air",
+    "/setblock ~1 ~2 ~4 minecraft:cobweb",
+    "/setblock ~-1 ~2 ~5 minecraft:cobweb",
+    "/setblock ~0 ~0 ~10 minecraft:lapis_ore",
+    "/setblock ~1 ~0 ~11 minecraft:lapis_ore",
+    "/setblock ~-1 ~1 ~10 minecraft:lapis_ore",
+    "/setblock ~0 ~1 ~11 minecraft:lapis_ore",
+    "/setblock ~1 ~1 ~10 minecraft:lapis_ore",
+    "/fill ~-1 ~3 ~0 ~1 ~3 ~16 minecraft:stone",
+    "/setblock ~0 ~2 ~2 minecraft:wall_torch[facing=south]",
+    "/setblock ~0 ~2 ~8 minecraft:wall_torch[facing=south]",
+    "/setblock ~0 ~2 ~14 minecraft:wall_torch[facing=south]",
+    "/give @p minecraft:iron_pickaxe 1"
+  ],
+  "design_notes": "Tunnel is 3 wide (x: -1 to +1), 3 tall (y: 0 to 2), 16 deep (z: 0 to 16). Cobwebs at ceiling corners (y+2) at z+4 and z+5 — player walks underneath without being trapped. Lapis ore cluster at z+10/11 on floor (y+0) and lower walls (y+1). Three wall torches for visibility. Iron pickaxe given for mining lapis ore (requires stone+ pickaxe). Cobweb target midpoint: (0, 2, 4.5) spawn-relative. Lapis ore center: (0, 0.5, 10.5) spawn-relative.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"mine lapis_ore\", \"find cobweb\"],\n  \"selection_reasoning\": \"I selected 'find cobweb' and 'mine lapis_ore' because they form a coherent multi-hop dependency chain. The cobweb task requires the player to first locate a cobweb in the environment (e.g., in a mineshaft or dungeon-like structure). The lapis_ore is placed nearby but behind or past the cobweb, requiring the player to first find/navigate past the cobweb area to reach the lapis ore to mine it. This creates a",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## CommonSenseAgent Feedback\n\nHere are my Minecraft-specific observations:\n\n1. **Lapis Ore Mining**: Mining lapis ore with an iron pickaxe drops **lapis lazuli** (the dye item), NOT the ore block itself. The task says \"mine lapis_ore\" — the milestone should track `mine_block` for `lapis_ore` (the block mined event), not `inventory_has` for `lapis_lazuli`. Actually, looking at the info dict, `mine_block` tracks blocks broken. So `mine_block[\"lapis_ore\"]` would increment when the player breaks a l",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good. Now let me assess the full benchmark:\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"The 'find cobweb' milestone uses position_near_with_facing with target (0, 2, 5) spawn-relative and max_distance=16. Since the player spawns at (0, 0, 0) relative, they are already within 16 blocks of the cobweb at spawn and likely facing down the tunnel (toward the cobweb). This means the milestone could be triggered immediately at spawn without the player actually moving or identifying the cobweb.\",\n    ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "## Validator Verdict\n\n```json\n{\n  \"graph_valid\": true,\n  \"graph_issues\": [],\n  \"milestone_valid\": false,\n  \"milestone_issues\": [\n    {\n      \"milestone_id\": \"find_cobweb\",\n      \"issue\": \"CRITICAL: max_distance=16 is far too generous. The cobwebs are only ~5.4 blocks from spawn. The player spawns facing down the tunnel (toward +z), so they are already facing the cobweb within 60° tolerance at spawn. This milestone would trigger on frame 0 without any player action.\",\n      \"fix\": \"Reduce max_dis",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations — Final Verification\n\nAfter examining all frames from this latest preview, I can confirm the scene works well:\n\n**Initial frame**: Player spawns in the stone tunnel. Both cobwebs are clearly visible at the upper corners (~4-5 blocks ahead) — large white web blocks on left and right ceiling edges. Lapis ore (blue-speckled blocks) is visible deeper in the tunnel. Iron pickaxe is in the hotbar. A wall torch is on the ceiling.\n\n**Step 0-5**: Agent moves forward toward the cob",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Revised Milestones (MilestoneAgent)\n\nBased on the Validator's feedback and the confirmed sandbox observations, here are the revised milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find cobweb\",\n      \"milestone_id\": \"find_cobweb\",\n      \"description\": \"The player must walk forward through the tunnel and look toward the cobwebs at the upper corners. Cobwebs are at spawn-relative (1, 2, 4) and (-1, 2, 5). Using max_distance=4 forces the player to walk at least 2-3 blocks forw",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nThank you for the thorough validation. I agree with all the findings and have already incorporated the critical fix into my revised milestones above. Let me provide the clean final revision response:\n\n```json\n{\n  \"revised_milestones\": {\n    \"milestones\": [\n      {\n        \"task\": \"find cobweb\",\n        \"milestone_id\": \"find_cobweb\",\n        \"description\": \"Uses position_near_with_facing because this is a find/locate task. The cobwebs are at spawn-relative (1,2,4) and (-1,2,5) on the tunnel cei",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "The wall torch placement is a minor detail — even if the facing direction is slightly off, it won't affect gameplay since torches just provide light. The scene was verified working in the sandbox with torches visible and providing illumination.\n\n```json\n{\n  \"issues\": [],\n  \"approved\": true,\n  \"critique_for_task_selector\": \"\",\n  \"critique_for_scene_designer\": \"\",\n  \"summary\": \"All issues have been resolved. The benchmark is approved. Key verifications: (1) find_cobweb milestone now requires actua",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "## ValidatorAgent — Final Re-Validation\n\nI can now clearly see both screenshots from the fresh scene build:\n\n### First-Person View Analysis:\n- ✅ **Cobwebs clearly visible** — Two large white cobweb blocks at the upper corners of the tunnel, approximately 4-5 blocks ahead. They're at ceiling level (y+2) on the left and right sides.\n- ✅ **Lapis ore clearly visible** — The distinctive blue-speckled blocks are visible deeper in the tunnel, past the cobwebs. I can count multiple lapis ore blocks on t",
+      "timestamp": ""
+    }
+  ]
+}

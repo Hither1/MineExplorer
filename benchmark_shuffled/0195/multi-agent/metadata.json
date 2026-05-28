@@ -1,0 +1,131 @@
+{
+  "id": "0584",
+  "sample_idx": 584,
+  "mode": "multi",
+  "selected_tasks": [
+    "mine brown_stained_glass",
+    "find yellow_terracotta"
+  ],
+  "selection_reasoning": "These two tasks form a coherent multi-hop sequence. The player must first locate and find yellow_terracotta, which serves as a landmark/waypoint that leads to or is near the brown_stained_glass. The brown_stained_glass must then be mined (broken). The dependency is that the yellow_terracotta acts as a navigational marker - the player needs to find it first to orient themselves toward the brown_stained_glass location. This creates a natural explore-then-act sequence: find a visible landmark (yellow_terracotta), then navigate from there to mine the brown_stained_glass. Both tasks are visually observable and verifiable without deep Minecraft knowledge.",
+  "reasoning_graph": {
+    "nodes": [
+      "find yellow_terracotta",
+      "mine brown_stained_glass"
+    ],
+    "edges": [
+      {
+        "from": "find yellow_terracotta",
+        "to": "mine brown_stained_glass",
+        "reason": "Yellow terracotta serves as a visible landmark guiding the player toward the brown stained glass location nearby"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find yellow_terracotta",
+        "milestone_id": "find_yellow_terracotta",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The player must navigate near the yellow terracotta structure (centered at spawn-relative [4, 2, 4]) and face it, confirming they have visually located it. max_distance=16 allows detection from reasonable range, facing_tolerance=60 ensures the player is actually looking at it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                4,
+                2,
+                4
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine brown_stained_glass",
+        "milestone_id": "mine_brown_stained_glass",
+        "description": "Uses count_in_box_at_most (kind='block') because mining glass without silk touch drops nothing, so inventory_has cannot be used. Instead, we verify that at least one brown_stained_glass block has been removed from the structure's bounding box. The original structure contains 28 blocks (3x3x4 solid cube = 27 + 1 cap block). Setting max_count=27 means at least 1 block must have been mined. The box generously covers the entire structure area with ±1 padding.",
+        "rules": [
+          {
+            "type": "count_in_box_at_most",
+            "params": {
+              "kind": "block",
+              "object": "brown_stained_glass",
+              "min": [
+                5,
+                -1,
+                1
+              ],
+              "max": [
+                11,
+                6,
+                7
+              ],
+              "max_count": 27,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "terracotta_landmark_glass_mine",
+  "scene_description": "A flat stone brick platform with two adjacent structures: a 3x3x5 yellow terracotta tower (landmark) and a 3x3x5 brown stained glass tower next to it, separated by 1 block gap with torches for lighting. The player spawns facing the structures and has a diamond pickaxe for mining.",
+  "task_text": "Find the yellow terracotta landmark on the stone platform, then locate the brown stained glass structure next to it and mine at least one block of brown stained glass.",
+  "atomic_tasks_ordered": [
+    "find yellow_terracotta",
+    "mine brown_stained_glass"
+  ],
+  "commands": [
+    "/fill ~-8 ~-1 ~-8 ~12 ~-1 ~12 minecraft:stone_bricks",
+    "/fill ~-8 ~0 ~-8 ~12 ~8 ~12 minecraft:air",
+    "/fill ~-8 ~-5 ~-8 ~12 ~-2 ~12 minecraft:stone",
+    "/fill ~3 ~0 ~3 ~5 ~3 ~5 minecraft:yellow_terracotta",
+    "/setblock ~4 ~4 ~4 minecraft:yellow_terracotta",
+    "/fill ~7 ~0 ~3 ~9 ~3 ~5 minecraft:brown_stained_glass",
+    "/setblock ~8 ~4 ~4 minecraft:brown_stained_glass",
+    "/setblock ~6 ~0 ~4 minecraft:torch",
+    "/setblock ~2 ~0 ~4 minecraft:torch",
+    "/setblock ~10 ~0 ~4 minecraft:torch",
+    "/give @p minecraft:diamond_pickaxe 1"
+  ],
+  "design_notes": "Yellow terracotta at [3,0,3]-[5,3,5] with cap at [4,4,4]. Brown stained glass at [7,0,3]-[9,3,5] with cap at [8,4,4]. One block gap at x=6 with torch. Player spawns at origin facing the structures ~4-5 blocks away. Stone brick platform from [-8,-1,-8] to [12,-1,12]. Stone foundation below. Air cleared above to prevent obstruction.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"mine brown_stained_glass\", \"find yellow_terracotta\"],\n  \"selection_reasoning\": \"These two tasks form a coherent multi-hop sequence. The player must first locate and find yellow_terracotta, which serves as a landmark/waypoint that leads to or is near the brown_stained_glass. The brown_stained_glass must then be mined (broken). The dependency is that the yellow_terracotta acts as a navigational marker - the player needs to find it first to orient themselves toward t",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## Sandbox Observation Report - Revision 3\n\nExamining all frames carefully:\n\n1. **Initial frame**: The player is on a stone brick platform. The yellow terracotta structure (golden/orange cube) is clearly visible ahead-right at moderate distance (~4-5 blocks). Right next to it (to its right), the brown stained glass structure is visible as a semi-transparent brownish cube. Both structures are clearly distinguishable. A torch is visible between them. Excellent!\n\n2. **Step 000-002**: The agent turn",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's sandbox report, I have all the information needed to design the milestones. Here are the milestone rules:\n\n**Key spatial information from the scene:**\n- Yellow terracotta structure: spawn-relative coordinates ~3,0,3 to ~5,3,5 with a cap at ~4,4,4\n- Brown stained glass structure: spawn-relative coordinates ~7,0,3 to ~9,3,5 with a cap at ~8,4,4\n- Player spawns at origin (0,0,0) relative, facing the structures\n- Player has a diamond pickaxe\n\n**Task analysis:**\n1. *",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "Now I can see the scene from the player's perspective. I can see the stone brick platform, and in the distance I can see both structures - the yellow terracotta (golden/orange) on the left and the brown stained glass (translucent brown) on the right. The torch between them is also visible. Let me verify the exact positions by checking overhead:\n\nLooking at the overhead view from earlier, I can confirm:\n- The stone brick platform is laid out correctly\n- Yellow terracotta structure is at the expec",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observation Report - Revision 3\n\nExamining all frames carefully from the latest preview:\n\n1. **Initial frame**: The player is on a stone brick platform. The yellow terracotta structure (large golden/orange cube) is prominently visible on the LEFT side of the view, very close. The stone brick floor extends ahead. The diamond pickaxe is visible in the hotbar. Chat messages confirm all commands executed successfully (448 blocks filled, 1732 blocks filled, 36 blocks filled, etc.). I can s",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## CommonSenseAgent Review\n\nLooking at the scene design and sandbox observations, here are my Minecraft-specific knowledge checks:\n\n### ✅ Validated Mechanics\n\n1. **Mining brown stained glass**: Any tool (or bare hands) can break glass blocks. The diamond pickaxe works fine but is actually overkill - glass breaks fastest with bare hands or any tool equally. No special tool is required. However, providing a diamond pickaxe doesn't hurt and makes the task clearer to the player.\n\n2. **Glass drops no",
+      "timestamp": ""
+    }
+  ]
+}

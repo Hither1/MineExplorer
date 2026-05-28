@@ -1,0 +1,162 @@
+{
+  "id": "0663",
+  "sample_idx": 663,
+  "mode": "multi",
+  "selected_tasks": [
+    "find orange_bed",
+    "mine smooth_sandstone",
+    "craft to diamond_helmet"
+  ],
+  "selection_reasoning": "These three tasks form a coherent exploration-mining-crafting chain. First, the player must find an orange bed inside a desert-themed structure, which orients them in the scene. The smooth sandstone is part of the same structure, so finding the bed helps the player locate the mineable sandstone nearby. After mining smooth sandstone (demonstrating mining capability), the player proceeds to a crafting station with pre-placed diamond resources to craft a diamond helmet. This creates a natural find→mine→craft progression with increasing complexity.",
+  "reasoning_graph": {
+    "nodes": [
+      "find orange_bed",
+      "mine smooth_sandstone",
+      "craft to diamond_helmet"
+    ],
+    "edges": [
+      {
+        "from": "find orange_bed",
+        "to": "mine smooth_sandstone",
+        "reason": "Finding the orange bed orients the player within the desert structure where smooth sandstone walls are located nearby"
+      },
+      {
+        "from": "mine smooth_sandstone",
+        "to": "craft to diamond_helmet",
+        "reason": "After mining sandstone, the player reaches the crafting area behind the wall containing a crafting table and diamonds"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find orange_bed",
+        "milestone_id": "find_orange_bed",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The player must navigate inside the sandstone building and get close to the orange bed (at spawn-relative (3, 0, 5)) while facing it. Max distance reduced to 5 blocks (from 16) per Validator/CommonSense feedback to ensure the player is actually inside the room and can see the bed, not just standing outside. Facing tolerance of 60° ensures the player is looking at the bed.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                3,
+                0,
+                5
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine smooth_sandstone",
+        "milestone_id": "mine_smooth_sandstone",
+        "description": "Uses inventory_has because mining smooth sandstone with a pickaxe drops the smooth_sandstone item into the player's inventory. The player has a diamond pickaxe and must mine at least 1 block from the solid east wall (at spawn-relative x=5) to access the crafting room. Smooth sandstone drops itself when mined with any pickaxe.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "smooth_sandstone",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to diamond_helmet",
+        "milestone_id": "craft_diamond_helmet",
+        "description": "Uses inventory_has because crafting a diamond helmet results in the item appearing in the player's inventory. The player must retrieve 5 diamonds from the chest (at spawn-relative (8, 1, 6)) and use the crafting table (at spawn-relative (7, 1, 6)) to craft exactly 1 diamond helmet using the standard 5-diamond helmet recipe pattern.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "diamond_helmet",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "desert_sandstone_rooms",
+  "scene_description": "A desert-themed scene with two connected sandstone rooms. The front room contains an orange bed and is accessible through a 2-block-wide doorway. The back room (crafting room) contains a crafting table and a chest with 5 diamonds, separated from the front room by a solid smooth sandstone wall that must be mined through. The player spawns facing the building entrance with a diamond pickaxe.",
+  "task_text": "Enter the sandstone building ahead and find the orange bed inside. Then mine through the smooth sandstone east wall to reach the hidden crafting room. Open the chest to get diamonds and use the crafting table to craft a diamond helmet.",
+  "atomic_tasks_ordered": [
+    "find orange_bed",
+    "mine smooth_sandstone",
+    "craft to diamond_helmet"
+  ],
+  "commands": [
+    "/fill ~-6 ~-1 ~-2 ~14 ~-1 ~14 minecraft:sand",
+    "/fill ~-6 ~0 ~-2 ~14 ~6 ~14 minecraft:air",
+    "/fill ~2 ~0 ~1 ~7 ~0 ~7 minecraft:smooth_sandstone",
+    "/fill ~2 ~0 ~1 ~7 ~3 ~1 minecraft:smooth_sandstone",
+    "/fill ~2 ~0 ~7 ~7 ~3 ~7 minecraft:smooth_sandstone",
+    "/fill ~2 ~0 ~1 ~2 ~3 ~7 minecraft:smooth_sandstone",
+    "/fill ~7 ~0 ~1 ~7 ~3 ~7 minecraft:smooth_sandstone",
+    "/fill ~4 ~0 ~1 ~5 ~2 ~1 minecraft:air",
+    "/setblock ~5 ~0 ~4 minecraft:orange_bed[facing=north,part=head]",
+    "/setblock ~5 ~0 ~5 minecraft:orange_bed[facing=north,part=foot]",
+    "/setblock ~4 ~2 ~4 minecraft:torch",
+    "/setblock ~6 ~2 ~4 minecraft:torch",
+    "/fill ~8 ~0 ~2 ~11 ~0 ~7 minecraft:smooth_sandstone",
+    "/fill ~8 ~0 ~2 ~11 ~3 ~2 minecraft:smooth_sandstone",
+    "/fill ~8 ~0 ~7 ~11 ~3 ~7 minecraft:smooth_sandstone",
+    "/fill ~11 ~0 ~2 ~11 ~3 ~7 minecraft:smooth_sandstone",
+    "/fill ~8 ~0 ~2 ~8 ~3 ~7 minecraft:smooth_sandstone",
+    "/setblock ~9 ~1 ~5 minecraft:crafting_table",
+    "/setblock ~10 ~1 ~5 minecraft:chest[facing=west]{Items:[{Slot:0b,id:\"minecraft:diamond\",Count:5b}]}",
+    "/setblock ~10 ~2 ~4 minecraft:torch",
+    "/give @p minecraft:diamond_pickaxe",
+    "/tp @p ~2 ~0 ~-1 0 0"
+  ],
+  "design_notes": "Layout: Player spawns at (2,0,-1) facing north (yaw=0). Bed room spans x=2-7, z=1-7 with entrance at x=4-5, z=1. Orange bed at (5,0,4)-(5,0,5) center-right of room. East wall at x=7 is completely solid smooth sandstone — must be mined. Crafting room at x=8-11, z=2-7 is fully enclosed with crafting table at (9,1,5) and chest with 5 diamonds at (10,1,5). Two torches in bed room at (4,2,4) and (6,2,4), one torch in crafting room at (10,2,4). No sticks given — only diamond pickaxe needed.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 3 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I'll analyze the candidate tasks to find 3 that form a coherent multi-hop dependency chain.\n\nLet me think through the possible connections:\n\n1. **craft to diamond_helmet** (task 7) requires diamonds and a crafting table\n2. **craft to diamond_shovel** (task 2) requires diamonds and a crafting table\n3. **craft to emerald_block** (task 10) requires 9 emeralds\n4. **craft to yellow_carpet** (task 1) requires yellow wool\n5. **mine smooth_sandstone** (task 9) is a mining task\n6. **mine snow_block** (ta",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Let me proceed with my knowledge of Minecraft mechanics for these tasks:\n\n## Common Sense Analysis\n\n### Task 1: Find Orange Bed\n- **Knowledge needed**: Recognizing an orange bed visually. Orange beds have a distinctive orange wool top.\n- **No issues**: The bed is placed inside the building and visible from the doorway.\n\n### Task 2: Mine Smooth Sandstone\n- **Knowledge needed**: \n  - Smooth sandstone can be mined with any pickaxe (the player has a diamond pickaxe ✅)\n  - Smooth sandstone drops itse",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good. Now I have all the information I need. Let me compile my full review:\n\n## CommonSense Judge Assessment\n\n### Issues Found:\n\n**1. Diamond Helmet Crafting Recipe Knowledge**\n- The diamond helmet requires 5 diamonds arranged in a specific pattern: 3 across the top row and 1 on each side of the middle row.\n- A general-purpose AI agent without Minecraft expertise would need to know this recipe. However, this is a standard crafting recipe and the task is explicitly \"craft to diamond_helmet\" — the",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I can see we're now at a different position. Let me try a different approach and use the getblock command to verify key blocks are placed correctly.",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## ValidatorAgent — Full Validation Report\n\nBased on the sandbox screenshots I can now see clearly, let me analyze the scene and milestones:\n\n### Screenshot Analysis:\n\n1. **Initial frame**: Player faces the smooth sandstone front wall of the building. The doorway opening (2 blocks wide) is clearly visible as a darker rectangle. A torch is visible on the left. Diamond pickaxe in hand. Sand floor. ✅\n\n2. **Step 000**: Same view — agent hasn't moved yet. The building entrance is directly ahead.\n\n3. ",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations — Revised Scene (Preview 4)\n\nAnalyzing each frame carefully:\n\n**Initial frame**: Player spawns facing the smooth sandstone front wall. The 2-block-wide doorway is visible as a lighter rectangular outline on the wall. Diamond pickaxe in hand. Sand floor. Trees to the right. The building is directly ahead, about 2 blocks away. ✅\n\n**Step 000**: Agent has turned slightly left. Now we can see the doorway opening more clearly — it's a dark opening in the sandstone wall leading ",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the revised scene from SceneDesignerAgent and the feedback from CommonSenseAgent and ValidatorAgent, I'll now output the revised milestones with the key fix: reducing the `find_orange_bed` max_distance from 16 to 5 blocks.\n\nLet me recalculate the spawn-relative coordinates for the revised scene:\n- Commands execute at origin P\n- Player teleported to P+(2, 0, -1), so spawn = P+(2, 0, -1)\n- Orange bed head at P+(5, 0, 4), foot at P+(5, 0, 5)\n- In spawn-relative: bed center ≈ (5-2, 0-0, 4.5",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good. Now I have all the information needed for my final review.\n\n## CommonSense Judge — Final Review (Post-Revision)\n\n### Verification of Key Mechanics:\n\n1. **Smooth Sandstone Mining**: Wiki confirms it's obtained by smelting sandstone. When mined with a pickaxe, it drops itself. The player has a diamond pickaxe. ✅ No issue.\n\n2. **Orange Bed Placement**: Beds are 2-block entities with `part=head` and `part=foot`. The commands use `facing=north,part=head` at z=4 and `facing=north,part=foot` at z",
+      "timestamp": ""
+    }
+  ]
+}

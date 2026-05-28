@@ -1,0 +1,186 @@
+{
+  "id": "0968",
+  "sample_idx": 968,
+  "mode": "multi",
+  "selected_tasks": [
+    "find red_sandstone_wall",
+    "find orange_stained_glass_pane",
+    "mine magenta_stained_glass_pane",
+    "craft to oak_button"
+  ],
+  "selection_reasoning": "These 4 tasks form a coherent multi-hop exploration and interaction sequence. The player must first locate landmarks (red_sandstone_wall and orange_stained_glass_pane) which serve as navigation waypoints leading to the area where the magenta_stained_glass_pane can be mined. Mining the magenta_stained_glass_pane isn't directly needed for crafting the oak_button, but the oak_button crafting station (crafting table) is placed near the magenta glass pane area, requiring the player to navigate through the scene sequentially. The red_sandstone_wall acts as the first landmark, the orange_stained_glass_pane as a second landmark nearby, and finding both guides the player toward the magenta glass pane which must be mined before reaching the crafting table area where oak planks are available to craft an oak_button. This creates a natural exploration → mining → crafting progression.",
+  "reasoning_graph": {
+    "nodes": [
+      "find red_sandstone_wall",
+      "find orange_stained_glass_pane",
+      "mine magenta_stained_glass_pane",
+      "craft to oak_button"
+    ],
+    "edges": [
+      {
+        "from": "find red_sandstone_wall",
+        "to": "find orange_stained_glass_pane",
+        "reason": "Orange stained glass pane is located behind/past the red sandstone wall; finding the wall guides navigation to the glass pane"
+      },
+      {
+        "from": "find orange_stained_glass_pane",
+        "to": "mine magenta_stained_glass_pane",
+        "reason": "Magenta stained glass pane is in the next area past the orange glass pane; finding orange pane confirms correct path"
+      },
+      {
+        "from": "mine magenta_stained_glass_pane",
+        "to": "craft to oak_button",
+        "reason": "Crafting table and oak plank are in the room accessed after mining through the magenta glass pane barrier"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find red_sandstone_wall",
+        "milestone_id": "find_red_sandstone_wall",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The red sandstone wall is at spawn-relative (5, 0-2, 2-5), so its center is approximately (5, 1, 3). Player must navigate near it and face it to 'find' it. max_distance=16 and facing_tolerance=60 ensure the player is looking toward the structure.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                5,
+                1,
+                3
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "find orange_stained_glass_pane",
+        "milestone_id": "find_orange_stained_glass_pane",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The orange stained glass panes are at spawn-relative (7-8, 0-1, 4). The center of this 2x2 arrangement is approximately (7, 1, 4). Player must navigate near and face the panes to 'find' them. Using facing_tolerance=60 to confirm the player is looking at them.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                7,
+                1,
+                4
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine magenta_stained_glass_pane",
+        "milestone_id": "mine_magenta_stained_glass_pane",
+        "description": "Uses count_in_box_at_most because glass panes broken without Silk Touch do NOT drop as items (so inventory_has won't work). Instead we verify that at least one magenta glass pane block has been removed from the barrier. The barrier is at spawn-relative (6-8, 0-2, 9) — 9 blocks total. Using a generous box around the barrier and checking at most 8 remain (meaning at least 1 was mined).",
+        "rules": [
+          {
+            "type": "count_in_box_at_most",
+            "params": {
+              "kind": "block",
+              "object": "magenta_stained_glass_pane",
+              "min": [
+                4,
+                0,
+                7
+              ],
+              "max": [
+                10,
+                3,
+                11
+              ],
+              "max_count": 8,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to oak_button",
+        "milestone_id": "craft_oak_button",
+        "description": "Uses inventory_has because crafting an oak_button results in the item appearing in the player's inventory. The player has 2 oak planks in inventory (given via /give) and can craft an oak button (1 plank = 1 button) either at the crafting table or in the 2x2 inventory grid. The oak_button is not in the starting inventory so its presence confirms crafting.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "oak_button",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "landmark_corridor_room",
+  "scene_description": "An enclosed stone brick room divided by a wall. The player spawns in the first half which contains a red sandstone wall landmark and orange stained glass panes. A dividing wall at z=9 blocks access to the second half, with a magenta stained glass pane doorway (3 wide, 3 tall) that must be mined through. The second half contains a crafting table and oak planks block.",
+  "task_text": "Navigate through this room: find the red sandstone wall, find the orange stained glass panes nearby, mine through the magenta stained glass pane barrier in the dividing wall, then craft an oak button using the crafting table on the other side.",
+  "atomic_tasks_ordered": [
+    "find red_sandstone_wall",
+    "find orange_stained_glass_pane",
+    "mine magenta_stained_glass_pane",
+    "craft to oak_button"
+  ],
+  "commands": [
+    "/fill ~-3 ~-1 ~-3 ~16 ~-1 ~16 minecraft:smooth_stone",
+    "/fill ~-3 ~0 ~-3 ~16 ~4 ~16 minecraft:air",
+    "/fill ~-3 ~0 ~-3 ~-3 ~3 ~16 minecraft:stone_bricks",
+    "/fill ~16 ~0 ~-3 ~16 ~3 ~16 minecraft:stone_bricks",
+    "/fill ~-3 ~0 ~-3 ~16 ~3 ~-3 minecraft:stone_bricks",
+    "/fill ~-3 ~0 ~16 ~16 ~3 ~16 minecraft:stone_bricks",
+    "/fill ~5 ~0 ~2 ~5 ~2 ~5 minecraft:red_sandstone_wall",
+    "/setblock ~7 ~0 ~4 minecraft:orange_stained_glass_pane",
+    "/setblock ~7 ~1 ~4 minecraft:orange_stained_glass_pane",
+    "/setblock ~8 ~0 ~4 minecraft:orange_stained_glass_pane",
+    "/setblock ~8 ~1 ~4 minecraft:orange_stained_glass_pane",
+    "/fill ~-3 ~0 ~9 ~16 ~3 ~9 minecraft:stone_bricks",
+    "/fill ~6 ~0 ~9 ~8 ~2 ~9 minecraft:magenta_stained_glass_pane",
+    "/setblock ~12 ~0 ~12 minecraft:crafting_table",
+    "/setblock ~12 ~0 ~13 minecraft:oak_planks",
+    "/give @p minecraft:oak_planks 2"
+  ],
+  "design_notes": "Room is 19x19 blocks. Dividing wall at z=9 creates two halves. First half (z=-3 to 8): red sandstone wall at (5, 0-2, 2-5), orange glass panes at (7-8, 0-1, 4). Second half (z=10 to 16): crafting table at (12, 0, 12), oak planks at (12, 0, 13). Magenta glass pane doorway at (6-8, 0-2, 9) is the only passage between halves. Player given 2 oak planks in inventory.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 4 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find red_sandstone_wall\", \"find orange_stained_glass_pane\", \"mine magenta_stained_glass_pane\", \"craft to oak_button\"],\n  \"selection_reasoning\": \"These 4 tasks form a coherent multi-hop exploration and interaction sequence. The player must first locate landmarks (red_sandstone_wall and orange_stained_glass_pane) which serve as navigation waypoints leading to the area where the magenta_stained_glass_pane can be mined. Mining the magenta_stained_glass_pane isn't dire",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## Sandbox Observations - Third Preview (Final)\n\nExcellent! This version looks great. Here's what I observe:\n\n1. **Initial frame**: Player spawns in the enclosed stone brick room. Smooth stone floor is clearly visible. I can see the **red sandstone wall** (orange/brown pillar) straight ahead at medium distance. The room is well-lit and spacious enough for navigation.\n\n2. **Step 002-004**: Agent turns and moves forward. The **red sandstone wall** is clearly visible as a distinct orange/brown stru",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find red_sandstone_wall\",\n      \"milestone_id\": \"find_red_sandstone_wall\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate task. The red sandstone wall is at spawn-relative (4, 1, 5) (center of the 3-tall, 3-wide structure at x=4, y=0-2, z=4-6). Player must navigate near it and face it to 'find' it. max_distance=16 and facing_tolerance=60 ensure the player is looking at the structure.\",\n      \"rules\": [\n        {",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "Based on my review of the scene and game mechanics, here are my findings as the **CommonSenseAgent**:\n\n## CommonSense Review\n\n### ⚠️ Critical Issue: Mining Magenta Stained Glass Pane\n\n**Glass panes broken without Silk Touch do NOT drop as items.** This is a well-known Minecraft mechanic. The milestone for \"mine magenta_stained_glass_pane\" correctly uses `count_in_box_at_most` (checking block removal) rather than `inventory_has`, which is appropriate. However:\n\n1. **The task says \"mine\"** — in Mi",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observations - Fifth Preview (Final Version)\n\nThis version looks excellent! Here's my detailed analysis:\n\n### Frame-by-Frame:\n\n1. **Initial frame**: Player spawns and can immediately see:\n   - **Red sandstone wall** (orange/brown blocks on the left side)\n   - **Magenta stained glass panes** (pink/purple blocks visible in the center-left, embedded in the stone brick dividing wall)\n   - **Stone brick walls** enclosing the room on the right\n   - Player is holding **Oak Planks** in hotbar",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on the SceneDesignerAgent's final scene report, I now have all the coordinates needed to design accurate milestones. Let me output the revised milestones reflecting the updated scene layout.\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find red_sandstone_wall\",\n      \"milestone_id\": \"find_red_sandstone_wall\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate task. The red sandstone wall is at spawn-relative (5, 0-2, 2-5), so its center is approximately",
+      "timestamp": ""
+    }
+  ]
+}

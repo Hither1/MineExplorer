@@ -1,0 +1,137 @@
+{
+  "id": "0381",
+  "sample_idx": 381,
+  "mode": "multi",
+  "selected_tasks": [
+    "find pink_bed",
+    "mine white_bed"
+  ],
+  "selection_reasoning": "These two tasks form a coherent multi-hop sequence. The agent must first locate a pink_bed (which serves as a landmark/orientation task), and then navigate to and mine a white_bed. The dependency is logical: the pink_bed is placed as a visual waypoint or in the same structure as the white_bed, so finding the pink_bed first helps the agent orient and locate the white_bed for mining. Both tasks are observable, verifiable, and don't require deep Minecraft domain knowledge — beds are easily recognizable objects. Mining a bed is straightforward (break it with any tool or bare hands). The multi-hop nature comes from the spatial navigation: the agent must first identify the pink_bed landmark before proceeding to mine the white_bed in a nearby but distinct location.",
+  "reasoning_graph": {
+    "nodes": [
+      "find pink_bed",
+      "mine white_bed"
+    ],
+    "edges": [
+      {
+        "from": "find pink_bed",
+        "to": "mine white_bed",
+        "reason": "Finding the pink_bed orients the agent toward the structure containing the white_bed, which must then be mined"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find pink_bed",
+        "milestone_id": "find_pink_bed",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The pink bed is now placed just outside the structure entrance at spawn-relative (~7, ~1, ~4.5). The player spawns at origin facing roughly east — the pink bed is NOT visible from spawn (confirmed in sandbox preview: it's behind the structure wall from the initial view angle). The player must turn and walk ~8.4 blocks to reach it. max_distance=10 is generous enough to allow detection from a reasonable range while being tighter than the previous 16 to add meaningful navigation. facing_tolerance=60 ensures the player is actually looking toward the bed.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                7,
+                1,
+                5
+              ],
+              "max_distance": 10,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "mine white_bed",
+        "milestone_id": "mine_white_bed",
+        "description": "Uses inventory_has because mining a bed drops it as an item into the player's inventory. The white bed is placed inside the wooden structure at spawn-relative (~7, ~1, ~8-9). When the player breaks either half of the white bed, the entire bed breaks and drops a 'white_bed' item which appears in their inventory. The player starts with an empty inventory so this cannot be pre-satisfied. No tool is required — beds break instantly with bare hands.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "white_bed",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "bed_landmark_shelter",
+  "scene_description": "A grass field with a small oak plank shelter. A pink bed is placed just outside the shelter entrance as a visible landmark. Inside the shelter, a white bed sits on the floor illuminated by a glowstone ceiling light. The player spawns ~8 blocks away and must first find the pink bed landmark, then enter the shelter to locate and mine the white bed.",
+  "task_text": "Find the pink bed outside the wooden shelter, then go inside the shelter and mine the white bed.",
+  "atomic_tasks_ordered": [
+    "find pink_bed",
+    "mine white_bed"
+  ],
+  "commands": [
+    "/fill ~-10 ~-1 ~-10 ~10 ~-1 ~10 minecraft:grass_block",
+    "/fill ~-10 ~0 ~-10 ~10 ~5 ~10 minecraft:air",
+    "/fill ~5 ~0 ~6 ~10 ~0 ~10 minecraft:oak_planks",
+    "/fill ~5 ~1 ~6 ~5 ~3 ~10 minecraft:oak_planks",
+    "/fill ~10 ~1 ~6 ~10 ~3 ~10 minecraft:oak_planks",
+    "/fill ~5 ~1 ~10 ~10 ~3 ~10 minecraft:oak_planks",
+    "/fill ~5 ~1 ~6 ~10 ~3 ~6 minecraft:oak_planks",
+    "/fill ~6 ~1 ~6 ~9 ~2 ~6 minecraft:air",
+    "/fill ~6 ~0 ~6 ~9 ~0 ~6 minecraft:oak_planks",
+    "/setblock ~7 ~1 ~5 minecraft:pink_bed[facing=south,part=head]",
+    "/setblock ~7 ~1 ~4 minecraft:pink_bed[facing=south,part=foot]",
+    "/setblock ~7 ~1 ~9 minecraft:white_bed[facing=north,part=foot]",
+    "/setblock ~7 ~1 ~8 minecraft:white_bed[facing=north,part=head]",
+    "/setblock ~8 ~3 ~8 minecraft:glowstone"
+  ],
+  "design_notes": "Pink bed at (~7,~1,~4-5) just outside structure entrance. White bed at (~7,~1,~8-9) inside structure. Structure has 4-block wide entrance on south wall (~6-9,~1-2,~6). Glowstone at (~8,~3,~8) lights interior. Player spawns at origin facing east — must turn and walk ~8 blocks to reach pink bed. Scene is compact within 10 blocks of spawn.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find pink_bed\", \"mine white_bed\"],\n  \"selection_reasoning\": \"These two tasks form a coherent multi-hop sequence. The agent must first locate a pink_bed (which serves as a landmark/orientation task), and then navigate to and mine a white_bed. The dependency is logical: the pink_bed is placed as a visual waypoint or in the same structure as the white_bed, so finding the pink_bed first helps the agent orient and locate the white_bed for mining. Both tasks are observa",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "### CommonSenseAgent Feedback\n\n**Minecraft Knowledge Check for \"find pink_bed\" → \"mine white_bed\":**\n\n1. **Bed Mining Mechanics**: Beds can be broken with any tool or bare hands. They break instantly regardless of tool. When a bed is broken, it drops as an item. In Minecraft, beds are stored as colored variants — `white_bed`, `pink_bed`, etc. ✅ No special tool needed.\n\n2. **Bed Block Structure**: Each bed occupies 2 blocks (head + foot). When you break either half, the entire bed breaks and drop",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "I can see the white_bed item in the player's inventory. The item ID `white_bed` is confirmed correct — it shows up as a valid item. This confirms the `inventory_has` milestone rule will work correctly.\n\n## CommonSense Review Summary\n\n### ✅ Mechanics Verified:\n1. **Bed mining**: Beds break instantly with bare hands — no tool required. ✅\n2. **Item drop**: Mining a white bed drops `white_bed` as an inventory item. ✅ Confirmed via `/give` test.\n3. **Two-block structure**: Beds occupy 2 blocks (head ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "\n\n## Validator Agent — Full Analysis with Screenshots\n\n### Frame-by-Frame Observations:\n\n- **Initial frame**: Player spawns looking roughly east/northeast. The oak plank structure is visible on the **left side** of the frame. Critically, the **pink bed is clearly visible** — its distinctive magenta/pink color is showing at the base-left of the structure. The player can see the pink bed from spawn position.\n\n- **Step 000**: Agent turned left to face the structure more directly. The **pink bed is ",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## Sandbox Observation Report — Revision 4 (Pink Bed Relocated)\n\n### Frame-by-Frame Analysis:\n\n- **Initial frame**: Player spawns facing roughly east. The wooden structure is visible on the **left side** of the frame. The pink bed is NOT immediately visible — it's behind/beside the structure from this angle. The structure's oak plank walls are clearly rendered. Good — the pink bed is no longer in the spawn view!\n\n- **Step 000**: Agent turned left toward the structure. Now we can see the **full s",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nThank you for the thorough validation and the successful scene revision. Based on the updated scene with the pink bed relocated to `~7 ~1 ~4-5` (just outside the structure entrance), I'm now revising the milestones with corrected coordinates.\n\n```json\n{\n  \"revised_milestones\": {\n    \"milestones\": [\n      {\n        \"task\": \"find pink_bed\",\n        \"milestone_id\": \"find_pink_bed\",\n        \"description\": \"Uses position_near_with_facing because this is a find/locate task. The pink bed is now place",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Now I have all the information needed to provide my final CommonSense review of the revised benchmark.\n\n## CommonSense Agent — Final Review (Post-Revision)\n\n### Verified Facts:\n\n1. **Bed Mining Mechanics** ✅: Beds break instantly with bare hands. No tool required. When either half (head or foot) is broken, the entire bed drops as one item. The wiki confirms beds are basic utility blocks.\n\n2. **Item ID Confirmed** ✅: The inventory screenshot clearly shows \"White Bed\" as a valid item after `/give ",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "## Spawn Facing Analysis\n\nLooking at this first-person screenshot carefully:\n\n- The **oak plank structure** is on the **left side** of the frame\n- The player is facing roughly **east-southeast** based on the tree line and structure position\n- The **pink bed is NOT visible** — it's behind/beside the structure wall from this angle\n- The structure's south wall (with the entrance) is visible on the left, but the bed which is at z=4-5 (in front of the entrance at z=6) would be occluded by the wall co",
+      "timestamp": ""
+    }
+  ]
+}

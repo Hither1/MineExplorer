@@ -1,0 +1,153 @@
+{
+  "id": "0475",
+  "sample_idx": 475,
+  "mode": "multi",
+  "selected_tasks": [
+    "find pink_bed",
+    "Trap a zombie in house"
+  ],
+  "selection_reasoning": "This creates a coherent two-step dependency chain. First, the player must locate and find the pink bed, which is placed inside a house structure in the scene. This navigation/exploration step establishes the house's location. Then, the player must trap a zombie inside that same house — closing the door or blocking the entrance after luring the zombie in. The first task (find pink_bed) serves as a necessary reconnaissance step: the player must discover where the house is before they can execute the trapping strategy. Both tasks are observable and verifiable — the pink bed can be checked via proximity, and the zombie's containment can be verified by checking if a zombie entity is within the house bounds with doors closed.",
+  "reasoning_graph": {
+    "nodes": [
+      "find pink_bed",
+      "Trap a zombie in house"
+    ],
+    "edges": [
+      {
+        "from": "find pink_bed",
+        "to": "Trap a zombie in house",
+        "reason": "Player must first locate the house by finding the pink bed inside it, then use that location knowledge to lure and trap the zombie within the house structure"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find pink_bed",
+        "milestone_id": "find_pink_bed",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The pink bed head is placed at spawn-relative (11, 1, 8) inside the house. The player must navigate close to the bed (within 5 blocks, achievable from the doorway at z=5 which is 3 blocks away) and face toward it (within 60°). This correctly models 'player has found and is looking at the pink bed' without requiring them to stand on top of it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                11,
+                1,
+                8
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "Trap a zombie in house",
+        "milestone_id": "trap_zombie_in_house",
+        "description": "Uses count_in_box_at_least (kind=mob) to verify a zombie is inside the house. The house structure spans x=[8,14], z=[5,11], y=[0,4] in spawn-relative coordinates. The box covers the full enclosed house volume. The zombie starts outside at (11, 0, 2) — well south of the house — so this rule only triggers if the player has actively lured the zombie through the door into the house. On Easy difficulty zombies cannot break doors, so once the door is closed with the zombie inside, it is effectively trapped. While we cannot directly verify door state, the zombie being inside the fully-enclosed structure is a strong proxy for being trapped.",
+        "rules": [
+          {
+            "type": "count_in_box_at_least",
+            "params": {
+              "kind": "mob",
+              "object": "zombie",
+              "min": [
+                8,
+                0,
+                5
+              ],
+              "max": [
+                14,
+                4,
+                11
+              ],
+              "min_count": 1,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "house_with_pink_bed_and_zombie",
+  "scene_description": "A compact oak plank house (7x7 footprint) sits on a grass platform about 8-14 blocks east and 5-11 blocks south of spawn. The house has a single oak door on the south face, glass pane windows, and contains a pink bed, crafting table, and wall torch inside. A zombie with a leather helmet (to prevent burning) spawns 3 blocks south of the door. The player must first find the pink bed inside the house, then lure the zombie through the door and trap it inside.",
+  "task_text": "Find the pink bed inside the nearby house, then lure the zombie into the house and trap it inside by closing the door.",
+  "atomic_tasks_ordered": [
+    "find pink_bed",
+    "Trap a zombie in house"
+  ],
+  "commands": [
+    "/fill ~-15 ~-1 ~-15 ~15 ~-1 ~15 minecraft:grass_block",
+    "/fill ~-15 ~0 ~-15 ~15 ~10 ~15 minecraft:air",
+    "/fill ~8 ~0 ~5 ~14 ~0 ~11 minecraft:oak_planks",
+    "/fill ~8 ~1 ~5 ~8 ~3 ~11 minecraft:oak_planks",
+    "/fill ~14 ~1 ~5 ~14 ~3 ~11 minecraft:oak_planks",
+    "/fill ~8 ~1 ~5 ~14 ~3 ~5 minecraft:oak_planks",
+    "/fill ~8 ~1 ~11 ~14 ~3 ~11 minecraft:oak_planks",
+    "/fill ~9 ~1 ~6 ~13 ~3 ~10 minecraft:air",
+    "/fill ~8 ~4 ~5 ~14 ~4 ~11 minecraft:oak_planks",
+    "/setblock ~11 ~1 ~5 minecraft:oak_door[facing=south,half=lower,open=false]",
+    "/setblock ~11 ~2 ~5 minecraft:oak_door[facing=south,half=upper,open=false]",
+    "/setblock ~12 ~2 ~5 minecraft:glass_pane",
+    "/setblock ~10 ~2 ~5 minecraft:glass_pane",
+    "/setblock ~8 ~2 ~8 minecraft:glass_pane",
+    "/setblock ~11 ~1 ~8 minecraft:pink_bed[facing=north,part=head]",
+    "/setblock ~11 ~1 ~9 minecraft:pink_bed[facing=north,part=foot]",
+    "/setblock ~12 ~1 ~7 minecraft:crafting_table",
+    "/setblock ~9 ~2 ~7 minecraft:wall_torch[facing=south]",
+    "/summon minecraft:zombie ~11 ~0 ~2 {PersistenceRequired:1b,ArmorItems:[{},{},{},{id:\"minecraft:leather_helmet\",Count:1b}],HandItems:[{},{}]}",
+    "/time set day",
+    "/difficulty easy",
+    "/gamerule doDaylightCycle false",
+    "/gamerule doMobSpawning false"
+  ],
+  "design_notes": "House: x=[8,14], z=[5,11], floor y=0, walls y=1-3, roof y=4. Interior air: x=[9,13], z=[6,10], y=1-3. Door at (11,1-2,5) facing south. Pink bed head at (11,1,8), foot at (11,1,9). Zombie spawns at (11,0,2) — 3 blocks south of door. Leather helmet prevents zombie from burning in daylight. Easy difficulty prevents zombie from breaking doors. doMobSpawning=false prevents random spawns. All coordinates spawn-relative.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I'll analyze the candidate tasks to find a pair that forms a coherent multi-hop dependency chain.\n\nLet me evaluate the options:\n\n- **find pink_bed** and **find green_terracotta** are both \"find\" tasks that are independent — no good chain.\n- **craft to diamond_block** requires finding diamonds first, but that's internal to the task.\n- **Trap a zombie in house** is interesting — it requires a house structure and a zombie to interact with.\n- **find pink_bed** could be a prerequisite for a decoratio",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Based on my Minecraft knowledge and the sandbox observations, here are my common-sense findings:\n\n## Common-Sense Analysis\n\n### Task 1: \"find pink_bed\"\n- **Pink beds** exist in Minecraft as a colored variant of the bed block. The bed was placed at spawn-relative coordinates (~11, ~1, ~8) for the head and (~11, ~1, ~9) for the foot.\n- The bed is inside the house, so the player needs to enter through the door to see it.\n- **No knowledge bottleneck** — finding a pink bed is straightforward visual i",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "### Common-Sense Feedback\n\n**Overall Assessment: The benchmark is well-designed.** Here are my detailed findings:\n\n#### ✅ Things That Work Well\n1. **Zombie burning prevention**: The leather helmet on the zombie is the correct Minecraft solution — any armor piece in the head slot prevents undead from burning in sunlight. Confirmed working in sandbox.\n2. **Easy difficulty + door trapping**: On Easy difficulty, zombies **cannot** break wooden doors. They will bang on them but never break through. T",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "\n\n## Validator Agent — Dependency Graph & Milestone Validation\n\n### 1. Dependency Graph Validation\n\n**Graph Structure:**\n- Nodes: `[\"find pink_bed\", \"Trap a zombie in house\"]`\n- Edge: `find pink_bed → Trap a zombie in house`\n\n**Validation:**\n- ✅ **Exactly 2 tasks** selected from the candidate list\n- ✅ **DAG is acyclic** (single directed edge)\n- ✅ **Dependency is logical**: Finding the pink bed inside the house establishes the house's location, which is necessary before the player can execute a t",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "\n\n## Sandbox Observations — Third Preview (Final Verification)\n\n### Frame-by-Frame Analysis:\n\n1. **Initial frame**: Player spawns facing east/northeast. The left wall of the oak plank house is visible on the left side of the screen. Chat confirms all commands succeeded — no errors. \"Summoned new Zombie\" confirmed. Grass platform is visible.\n\n2. **Step 000**: Agent turned left to face the house. The full house is visible — a solid rectangular oak plank building with a flat roof. **The zombie is c",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Thank you for the comprehensive validation and sandbox verification. Based on all the information gathered across three sandbox previews, the scene design report, and feedback from all agents, here are my finalized milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find pink_bed\",\n      \"milestone_id\": \"find_pink_bed\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate task. The pink bed head is placed at spawn-relative (11, 1, 8) inside the house.",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good. Now let me assess the full benchmark for knowledge bottlenecks:\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Trapping a zombie requires knowledge that zombies are attracted to and chase players (aggro mechanic), and that the player must use the 'use' action on a door to open/close it. A general-purpose AI agent may not know how to lure a zombie or interact with doors.\",\n      \"severity\": \"medium\",\n      \"target_agent\": \"TaskSelectorAgent\"\n    },\n    {\n      \"issue\": \"The milestone for 'T",
+      "timestamp": ""
+    }
+  ]
+}

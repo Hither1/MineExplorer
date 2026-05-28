@@ -1,0 +1,134 @@
+{
+  "id": "0590",
+  "sample_idx": 590,
+  "mode": "multi",
+  "selected_tasks": [
+    "find lapis_block",
+    "find emerald_block"
+  ],
+  "selection_reasoning": "These two 'find' tasks form a coherent multi-hop navigation challenge. The dependency is structured so that the player must first locate a lapis block, which serves as a landmark/waypoint leading toward the emerald block. This creates a sequential exploration task where finding the first block provides visual or positional information needed to locate the second. Both tasks are observable (distinctive colored blocks), verifiable (player proximity/line-of-sight), and require no deep crafting knowledge. The scene can be designed so the lapis block is visible from spawn and the emerald block is hidden behind or near the lapis block area, creating a natural navigation chain.",
+  "reasoning_graph": {
+    "nodes": [
+      "find lapis_block",
+      "find emerald_block"
+    ],
+    "edges": [
+      {
+        "from": "find lapis_block",
+        "to": "find emerald_block",
+        "reason": "Lapis block serves as a waypoint; emerald block is placed beyond/behind it, requiring the player to first navigate to the lapis block area to discover the emerald block's location"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find lapis_block",
+        "milestone_id": "find_lapis_block",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The player must navigate to the lapis lazuli pillar (3 blocks tall at spawn-relative 8,1,8). max_distance=5 ensures the player actually walks to the pillar rather than just spotting it from spawn (~11.3 blocks away). facing_tolerance=60 ensures the player is looking at the block when nearby, modeling that they have 'found' it.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                8,
+                1,
+                8
+              ],
+              "max_distance": 5,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "find emerald_block",
+        "milestone_id": "find_emerald_block",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The emerald pillar (3 blocks tall at spawn-relative 17,1,15) is hidden behind a stone brick wall (14-16, 0-3, 13-16). max_distance=8 ensures the player has navigated around the wall — from the lapis pillar at (8,1,8) the emerald is ~11.4 blocks away, so the player must move closer. The wall blocks direct line-of-sight from spawn, forcing navigation around it. facing_tolerance=60 ensures the player is actually looking at the emerald block.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                17,
+                1,
+                15
+              ],
+              "max_distance": 8,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "lapis_waypoint_to_hidden_emerald",
+  "scene_description": "A flat grass plain with a 3-block-tall lapis lazuli pillar visible from spawn as a waypoint, a stone brick wall structure behind it that occludes a 3-block-tall emerald pillar on the far side. The player must first navigate to the lapis pillar, then explore around the stone brick wall to discover the emerald.",
+  "task_text": "Find the blue lapis block pillar, then navigate around the stone brick wall to find the hidden green emerald block pillar behind it.",
+  "atomic_tasks_ordered": [
+    "find lapis_block",
+    "find emerald_block"
+  ],
+  "commands": [
+    "/fill ~-20 ~-1 ~-20 ~20 ~-1 ~20 minecraft:grass_block",
+    "/fill ~-20 ~0 ~-20 ~20 ~10 ~20 minecraft:air",
+    "/setblock ~8 ~0 ~8 minecraft:lapis_block",
+    "/setblock ~8 ~1 ~8 minecraft:lapis_block",
+    "/setblock ~8 ~2 ~8 minecraft:lapis_block",
+    "/fill ~14 ~0 ~13 ~16 ~3 ~16 minecraft:stone_bricks",
+    "/fill ~15 ~0 ~14 ~15 ~2 ~15 minecraft:air",
+    "/setblock ~17 ~0 ~15 minecraft:emerald_block",
+    "/setblock ~17 ~1 ~15 minecraft:emerald_block",
+    "/setblock ~17 ~2 ~15 minecraft:emerald_block"
+  ],
+  "design_notes": "Lapis pillar at (8,0-2,8) is ~11.3 blocks from spawn and clearly visible. Stone brick wall at (14-16, 0-3, 13-16) occludes the emerald pillar at (17,0-2,15) from the spawn direction. Player must navigate past lapis, then around the wall to discover emerald. The interior air pocket in the wall adds visual interest but doesn't affect gameplay.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 2 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "```json\n{\n  \"selected_tasks\": [\"find lapis_block\", \"find emerald_block\"],\n  \"selection_reasoning\": \"These two 'find' tasks form a coherent multi-hop navigation challenge. The dependency is structured so that the player must first locate a lapis block, which serves as a landmark/waypoint leading toward the emerald block. This creates a sequential exploration task where finding the first block provides visual or positional information needed to locate the second. Both tasks are observable (distinc",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## CommonSenseAgent Review\n\n**All blocks are valid Minecraft blocks:**\n- `lapis_block` — correct internal name for Block of Lapis Lazuli ✓\n- `emerald_block` — correct internal name for Block of Emerald ✓\n- `stone_bricks` — correct internal name for Stone Bricks ✓\n- `grass_block` — correct internal name for Grass Block ✓\n\n**Task feasibility assessment:**\n1. **\"find lapis_block\"** — The lapis pillar (3 blocks tall at relative 8,0-2,8) is clearly visible from spawn. The player just needs to navigat",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "## CommonSenseAgent Assessment\n\n```json\n{\n  \"issues\": [\n    {\n      \"issue\": \"Milestone for 'find lapis_block' uses max_distance=16, but the lapis pillar is only 8 blocks from spawn (at relative 8,1,8). This means the player could satisfy the milestone almost immediately from spawn just by turning to face the lapis block without actually walking toward it. The lapis pillar is 3 blocks tall and clearly visible from spawn (as confirmed in sandbox). A player facing the right direction at spawn woul",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "## ValidatorAgent — Final Assessment\n\nBased on my review of the scene, sandbox observations, and milestone rules:\n\n```json\n{\n  \"validation_results\": {\n    \"dependency_graph\": {\n      \"status\": \"APPROVED\",\n      \"notes\": \"DAG is structurally valid (no cycles, correct nodes). The spatial dependency is enforced by scene design — the emerald is occluded from spawn by the stone brick wall, making the lapis block a natural waypoint. While not a strict mechanical dependency, it's appropriate for a navi",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## SceneDesignerAgent — Sandbox Observations (Final Preview)\n\nExcellent! Now I can see the actual frames clearly:\n\n### Frame-by-Frame Analysis:\n\n1. **Initial frame**: The **lapis pillar (3 tall, bright blue)** is clearly visible on the LEFT side of the screen. The **stone brick structure** (grey) is visible to the RIGHT and behind the lapis pillar. The emerald block is NOT visible — it's hidden behind the stone brick wall. Perfect setup!\n\n2. **Step 000**: The agent has turned slightly right. The",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## MilestoneAgent — Revised Milestones\n\nBased on the ValidatorAgent's recommendations and CommonSenseAgent's critique, I'm issuing revised milestone rules with tighter distance thresholds:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find lapis_block\",\n      \"milestone_id\": \"find_lapis_block\",\n      \"description\": \"The player must navigate to the lapis lazuli pillar (3 blocks tall at spawn-relative 8,1,8). max_distance=5 ensures the player actually walks to the pillar rather than just spott",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "## MilestoneAgent — Revised Milestones\n\nBased on the ValidatorAgent's assessment and CommonSenseAgent's critique, I agree that the max_distance values need to be tightened. Here are my revised milestones:\n\n```json\n{\n  \"revised_milestones\": {\n    \"milestones\": [\n      {\n        \"task\": \"find lapis_block\",\n        \"milestone_id\": \"find_lapis_block\",\n        \"description\": \"Uses position_near_with_facing because this is a find/locate task. The player must navigate to the lapis lazuli pillar (3 bloc",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "# CommonSenseAgent — Final Review\n\nAfter reviewing the complete benchmark sample including the revised milestones, scene design, and dependency graph, here is my final assessment:\n\n```json\n{\n  \"issues\": [],\n  \"approved\": true,\n  \"critique_for_task_selector\": \"\",\n  \"critique_for_scene_designer\": \"\",\n  \"summary\": \"The benchmark sample is well-designed and ready for finalization. All blocks use correct Minecraft internal names (lapis_block, emerald_block, stone_bricks, grass_block) — verified again",
+      "timestamp": ""
+    }
+  ]
+}

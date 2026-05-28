@@ -1,0 +1,171 @@
+{
+  "id": "0720",
+  "sample_idx": 720,
+  "mode": "multi",
+  "selected_tasks": [
+    "find oak_fence",
+    "craft to birch_planks",
+    "craft to mushroom_stew"
+  ],
+  "selection_reasoning": "These three tasks form a natural crafting dependency chain. First, the agent must find the oak_fence landmark, which orients them in the scene near birch logs. Second, the agent crafts birch_planks from birch logs found near the fence. Third, the agent uses birch_planks to craft a bowl (3 birch_planks → 1 bowl), then combines the bowl with a red mushroom and brown mushroom to craft mushroom_stew. Each task's output feeds directly into the next task's requirements, creating a genuine multi-hop benchmark.",
+  "reasoning_graph": {
+    "nodes": [
+      "find oak_fence",
+      "craft to birch_planks",
+      "craft to mushroom_stew"
+    ],
+    "edges": [
+      {
+        "from": "find oak_fence",
+        "to": "craft to birch_planks",
+        "reason": "Oak fence serves as a landmark near birch logs; finding it guides the agent to the birch log resource area"
+      },
+      {
+        "from": "craft to birch_planks",
+        "to": "craft to mushroom_stew",
+        "reason": "Birch planks are needed to craft a bowl (3 planks), which is a required ingredient for mushroom_stew"
+      }
+    ]
+  },
+  "milestones": {
+    "milestones": [
+      {
+        "task": "find oak_fence",
+        "milestone_id": "find_oak_fence",
+        "description": "Uses position_near_with_facing because this is a find/locate task. The oak fence pen structure is centered at spawn-relative (5, 1, 4) — a 3x3 double-height fence pen with a torch beacon on top. The player must navigate near it and face toward it to demonstrate they've found it. max_distance=16 allows detection from a reasonable distance, and facing_tolerance=60 ensures the player is actually looking at the structure rather than having their back turned.",
+        "rules": [
+          {
+            "type": "position_near_with_facing",
+            "params": {
+              "target": [
+                5,
+                1,
+                4
+              ],
+              "max_distance": 16,
+              "facing_tolerance": 60,
+              "coordinate_frame": "spawn_relative"
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to birch_planks",
+        "milestone_id": "craft_birch_planks",
+        "description": "Uses inventory_has because crafting birch_planks results in the item appearing in the player's inventory. The player starts with 4 birch_log (via /give) and 0 birch_planks, so any birch_planks in inventory proves crafting occurred. 1 birch_log yields 4 birch_planks in a 2x2 inventory grid (no crafting table needed). min_count=1 is the minimum threshold to confirm the craft action happened.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "birch_planks",
+              "min_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "task": "craft to mushroom_stew",
+        "milestone_id": "craft_mushroom_stew",
+        "description": "Uses inventory_has because crafting mushroom_stew results in the item appearing in the player's inventory. The player must complete the full crafting chain: birch_planks → bowl (3 planks at crafting table at ~5,~0,~7), then collect red_mushroom (on mycelium at ~3,~0,~2) and brown_mushroom (on mycelium at ~7,~0,~2), and combine bowl + both mushrooms at the crafting table. Since mushroom_stew cannot be obtained any other way in this scene, its presence in inventory conclusively proves the entire dependency chain was completed.",
+        "rules": [
+          {
+            "type": "inventory_has",
+            "params": {
+              "item": "mushroom_stew",
+              "min_count": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scene_name": "mushroom_stew_crafting_station",
+  "scene_description": "A flat grass clearing (40x40 blocks) with all overhead vegetation removed. A prominent oak fence pen (3x3 base, 2 blocks tall with torch on top) sits ~5 blocks from spawn as the primary landmark. Two birch log columns (3 blocks tall) flank the fence. A crafting table sits behind the fence. Red and brown mushrooms are placed on mycelium patches in front of the fence to survive daylight. The player starts with 4 birch logs in inventory.",
+  "task_text": "Find the oak fence structure, then craft birch planks from the birch logs in your inventory, craft a bowl from the planks at the crafting table, collect the red and brown mushrooms, and craft mushroom stew.",
+  "atomic_tasks_ordered": [
+    "find oak_fence",
+    "craft to birch_planks",
+    "craft to mushroom_stew"
+  ],
+  "commands": [
+    "/fill ~-20 ~0 ~-20 ~20 ~15 ~20 minecraft:air",
+    "/fill ~-20 ~-1 ~-20 ~20 ~-1 ~20 minecraft:grass_block",
+    "/fill ~-20 ~-2 ~-20 ~20 ~-2 ~20 minecraft:dirt",
+    "/fill ~-20 ~-3 ~-20 ~20 ~-3 ~20 minecraft:stone",
+    "/setblock ~4 ~0 ~3 minecraft:oak_fence",
+    "/setblock ~5 ~0 ~3 minecraft:oak_fence",
+    "/setblock ~6 ~0 ~3 minecraft:oak_fence",
+    "/setblock ~4 ~0 ~4 minecraft:oak_fence",
+    "/setblock ~6 ~0 ~4 minecraft:oak_fence",
+    "/setblock ~4 ~0 ~5 minecraft:oak_fence",
+    "/setblock ~5 ~0 ~5 minecraft:oak_fence",
+    "/setblock ~6 ~0 ~5 minecraft:oak_fence",
+    "/setblock ~4 ~1 ~3 minecraft:oak_fence",
+    "/setblock ~5 ~1 ~3 minecraft:oak_fence",
+    "/setblock ~6 ~1 ~3 minecraft:oak_fence",
+    "/setblock ~4 ~1 ~5 minecraft:oak_fence",
+    "/setblock ~5 ~1 ~5 minecraft:oak_fence",
+    "/setblock ~6 ~1 ~5 minecraft:oak_fence",
+    "/setblock ~5 ~2 ~4 minecraft:torch",
+    "/setblock ~3 ~0 ~6 minecraft:birch_log",
+    "/setblock ~3 ~1 ~6 minecraft:birch_log",
+    "/setblock ~3 ~2 ~6 minecraft:birch_log",
+    "/setblock ~7 ~0 ~6 minecraft:birch_log",
+    "/setblock ~7 ~1 ~6 minecraft:birch_log",
+    "/setblock ~7 ~2 ~6 minecraft:birch_log",
+    "/setblock ~5 ~0 ~7 minecraft:crafting_table",
+    "/setblock ~3 ~-1 ~2 minecraft:mycelium",
+    "/setblock ~3 ~0 ~2 minecraft:red_mushroom",
+    "/setblock ~7 ~-1 ~2 minecraft:mycelium",
+    "/setblock ~7 ~0 ~2 minecraft:brown_mushroom",
+    "/give @p minecraft:birch_log 4"
+  ],
+  "design_notes": "Oak fence structure at (~5, ~1, ~4) center with torch beacon. Birch logs at (~3,~0-2,~6) and (~7,~0-2,~6). Crafting table at (~5,~0,~7). Red mushroom at (~3,~0,~2) on mycelium. Brown mushroom at (~7,~0,~2) on mycelium. Player given 4 birch logs in inventory. All objects within 10 blocks of spawn. Mycelium blocks prevent mushroom pop-off in daylight.",
+  "debate_log": [
+    {
+      "from": "Orchestrator",
+      "content": "# MCBench Multi-Agent Benchmark Generation — START\n\nYou are participating in a **multi-agent collaborative workflow** to generate a\nhigh-quality Minecraft multi-hop benchmark sample.\n\n## Your Roles\n- **TaskSelectorAgent**: Select 3 atomic tasks and build a dependency DAG.\n- **SceneDesignerAgent**: Design the Minecraft scene. You have sandbox tools including\n  `preview_scene_in_sandbox` to build the scene, run an AI exploration agent through it\n  (up to 20 steps, same loop as eval_benchmark.py), ",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "I'll analyze the candidate tasks to find 3 that form a coherent multi-hop dependency chain.\n\nLet me think through the possibilities:\n\n1. **craft to birch_planks** - Requires finding/having birch logs\n2. **craft to mushroom_stew** - Requires a bowl (crafted from planks) + red mushroom + brown mushroom\n3. **find oak_fence** - A navigation/exploration task\n4. **find blue_banner** - A navigation/exploration task\n5. **mine** tasks - Require finding and breaking specific blocks\n\nThe strongest dependen",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "Now I have enough information to provide my **CommonSense assessment**:\n\n## CommonSense Agent Assessment\n\n### Crafting Chain Verification:\n1. **Birch Log → Birch Planks**: 1 birch log → 4 birch planks (shapeless, can be done in 2×2 inventory grid OR crafting table)\n2. **Birch Planks → Bowl**: 3 birch planks in a V-shape → 1 bowl (requires crafting table - 3×3 grid)\n3. **Bowl + Red Mushroom + Brown Mushroom → Mushroom Stew**: Shapeless recipe, requires crafting table\n\n### Key Observations:\n- ✅ **",
+      "timestamp": ""
+    },
+    {
+      "from": "TaskSelectorAgent",
+      "content": "Now I can see the scene from the first-person view. The screenshots show:\n\n1. **First person**: I can see the oak fence structure clearly ahead (wooden posts), with birch log columns (white bark) on both sides. The torch on top is visible. The red mushroom appears to be on the left side and brown mushroom on the right. The ground is flat grass with mycelium patches under the mushrooms.\n\n2. **Overhead**: The overhead view confirms the layout — fence pen in center, birch logs flanking, crafting ta",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## SceneDesigner — Sandbox Observations Report (Final Preview)\n\nI can now clearly see the scene from the actual sandbox screenshots. Here's my detailed analysis:\n\n### Frame-by-Frame Observations:\n\n1. **Initial frame**: The player spawns facing the scene. On the left, I can see the **oak fence structure** (wooden fence posts clearly visible). In the center, a tall **birch log column** (3 blocks, distinctive white bark) is prominent. The player's hotbar shows **Birch Log** item (from the /give com",
+      "timestamp": ""
+    },
+    {
+      "from": "SceneDesignerAgent",
+      "content": "## MilestoneAgent — Final Milestone Rules\n\nBased on SceneDesignerAgent's verified scene layout and CommonSenseAgent's approval, I have all the information needed. Here are the milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find oak_fence\",\n      \"milestone_id\": \"find_oak_fence\",\n      \"description\": \"The player must locate the oak fence pen structure centered at spawn-relative (~5, ~1, ~4). The structure is a 3x3 double-height fence pen with a torch on top, clearly visible fr",
+      "timestamp": ""
+    },
+    {
+      "from": "MilestoneAgent",
+      "content": "\n\nBased on all the information from the SceneDesignerAgent's sandbox report and the team discussion, here are my final milestone rules:\n\n```json\n{\n  \"milestones\": [\n    {\n      \"task\": \"find oak_fence\",\n      \"milestone_id\": \"find_oak_fence\",\n      \"description\": \"Uses position_near_with_facing because this is a find/locate task. The oak fence pen structure is centered at spawn-relative (5, 1, 4) — a 3x3 double-height fence pen with a torch beacon on top. The player must navigate near it and fac",
+      "timestamp": ""
+    },
+    {
+      "from": "CommonSenseAgent",
+      "content": "Good — this confirms the critical mushroom mechanic. Now let me look at the first-person screenshot from the mushroom test more carefully.\n\nThe screenshot shows a flat grass clearing with trees at the edges. The command log confirms:\n- `Changed the block at -3007, 71, -5571` (red mushroom)\n- `Changed the block at -3003, 71, -5571` (brown mushroom)\n\nBut I **cannot see either mushroom** in the first-person view. They were placed on **grass_block** without mycelium, and in daylight. This strongly s",
+      "timestamp": ""
+    },
+    {
+      "from": "ValidatorAgent",
+      "content": "## Validator Agent — Final Validation\n\nNow I can see the actual scene clearly from the **first-person perspective**. Let me analyze all 6 screenshots:\n\n### Screenshot Analysis:\n\n**First-person view** (most important): This is excellent! I can clearly see:\n- **Two birch log columns** (3 blocks tall, white bark) — one on the left, one center-right\n- **Oak fence structure** visible on the far left — the characteristic brown wooden fence posts are clearly identifiable\n- **Crafting table** — visible ",
+      "timestamp": ""
+    }
+  ]
+}
