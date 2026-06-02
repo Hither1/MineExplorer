@@ -13,14 +13,6 @@ from PIL import Image
 from gymnasium import spaces
 from loguru import logger
 
-try:
-    from pssdk import BaseSandboxClusterTool
-    from pssdk import errors as pssdk_errors
-except ImportError:
-    logger.warning("pssdk not found. Sandbox management will not be available.")
-    BaseSandboxClusterTool = object
-    pssdk_errors = None
-
 
 class MineRLLocalEnv(gym.Env):
     """

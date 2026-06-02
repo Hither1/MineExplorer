@@ -103,7 +103,7 @@ def generate(
 
     Returns a list of output directory paths.
     """
-    from .agents import BenchmarkOrchestrator
+    from .orchestrator import BenchmarkOrchestrator
 
     if seed is not None:
         random.seed(seed)

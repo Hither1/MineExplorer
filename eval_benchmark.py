@@ -14,28 +14,17 @@ from typing import Any, Dict, List, Optional
 import typer
 
 _ROOT_DIR = Path(__file__).resolve().parent
-_PLAYGROUND_DIR = _ROOT_DIR / "playground"
 _BENCHMARK_GEN = _ROOT_DIR / "benchmark_gen"
 
-if str(_PLAYGROUND_DIR) not in sys.path:
-    sys.path.insert(0, str(_PLAYGROUND_DIR))
 if str(_ROOT_DIR) not in sys.path:
     sys.path.append(str(_ROOT_DIR))
 
-from playground.engine.simple_loop import AgentSimpleLoopEndine
-from env.minerl_local import MineRLLocalEnv
 from env.minerl_sandbox import MineRLSandboxEnv
-from env.tools.render import RenderWrapper
-from playground.agent.default import DefaultAgent
-from playground.components.action_space.minerl import MinerRLActionSpace
-from playground.components.provider.openai_provider import OpenAIProvider
-from playground.components.provider.vllm_provider import VLLMProvider
-from playground.components.context.default import DefaultContextBuilder
+from env.render import RenderWrapper
+from mc_agent import DefaultAgent, MinerRLActionSpace, OpenAIProvider, VLLMProvider, DefaultContextBuilder
 
 FRAME_BUFFER_SIZE = 20
 MAX_STEPS = 300
-MAX_WORKERS = 8
-
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 AGENT_API_BASE = os.getenv("AGENT_API_BASE", "")
 if not AGENT_API_KEY:
@@ -328,7 +317,6 @@ def _worker_eval(worker_args: dict) -> dict:
     _signal.signal(_signal.SIGINT, _signal.SIG_IGN)
 
     _root = Path(__file__).resolve().parent
-    sys.path.insert(0, str(_root / "playground"))
     sys.path.append(str(_root))
 
     return _run_benchmark(

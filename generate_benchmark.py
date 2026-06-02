@@ -351,7 +351,7 @@ def _worker_both(worker_args: dict) -> tuple | None:
     from benchmark_gen.llm_client import LLMClient
     from benchmark_gen import single_agent
     from benchmark_gen.utils import save_benchmark_sample
-    from benchmark_gen.agents import BenchmarkOrchestrator
+    from benchmark_gen.orchestrator import BenchmarkOrchestrator
 
     api_key = worker_args["api_key"]
     api_base = worker_args["api_base"]
@@ -527,7 +527,7 @@ def cmd_both(args: argparse.Namespace) -> None:
         system_prompt = single_agent.load_prompt("bench_system")
         single_round_prompt = single_agent.load_prompt("bench_single_round")
 
-        from benchmark_gen.agents import BenchmarkOrchestrator
+        from benchmark_gen.orchestrator import BenchmarkOrchestrator
         orchestrator = BenchmarkOrchestrator(
             api_model=multi_model,
             api_key=api_key,
