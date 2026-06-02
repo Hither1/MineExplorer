@@ -5,7 +5,7 @@
 # MineExplorer: Evaluating Open-World Exploration of MLLM Agents in Minecraft
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Jometeorie/MineExplorer/main/figures/minecraft_bench.png" alt="LongCat Logo" width="300"/>
+  <img src="https://raw.githubusercontent.com/Jometeorie/MineExplorer/main/figures/minecraft_bench.png" alt="LongCat Logo" width="900"/>
 </div>
 
 [![arXiv](https://img.shields.io/badge/arXiv-2605.30931-b31b1b.svg)](https://arxiv.org/abs/2605.30931)
