@@ -1,19 +1,3 @@
-"""
-benchmark_gen/multi_agent.py
-
-Multi-agent (AutoGen GroupChat) benchmark generator.
-
-Five specialized agents collaborate to generate a benchmark sample:
-  TaskSelectorAgent    - selects atomic tasks and builds dependency DAG
-  SceneDesignerAgent   - designs the Minecraft scene (optionally with sandbox tools)
-  MilestoneAgent       - designs rule-based milestone completion criteria
-  CommonSenseAgent     - validates common-sense knowledge requirements
-  ValidatorAgent       - validates DAG + milestones
-
-Output (per sample): metadata.json, reasoning_graph.json, reasoning_graph.png,
-                     debate_log.json, agent_conversation_log.json
-"""
-
 from __future__ import annotations
 
 import json
@@ -28,10 +12,6 @@ from .utils import save_benchmark_sample
 BENCHMARK_GEN_DIR = Path(__file__).resolve().parent
 
 
-# ---------------------------------------------------------------------------
-# Task pool
-# ---------------------------------------------------------------------------
-
 def load_easy_tasks(task_analysis_path: str) -> List[str]:
     """Return all atomic task names where requires_domain_knowledge == 'No'."""
     with open(task_analysis_path, "r", encoding="utf-8") as f:
@@ -41,10 +21,6 @@ def load_easy_tasks(task_analysis_path: str) -> List[str]:
         if info.get("requires_domain_knowledge") == "No"
     ]
 
-
-# ---------------------------------------------------------------------------
-# Main generation loop
-# ---------------------------------------------------------------------------
 
 def generate(
     api_model: str,
@@ -66,41 +42,9 @@ def generate(
     sandbox_tmp_dir: str = "/tmp/benchmark_gen_sandbox",
     seed: Optional[int] = None,
     candidate_tasks: Optional[List[str]] = None,
-    render_preview: bool = False,
-    preview_minerl_env_id: str = "MineStudio-simple-run_and_explore",
-    preview_loading_steps: int = 60,
-    preview_render_size: Optional[List[int]] = None,
-    preview_seed: int = 0,
     start_idx: int = 0,
 ) -> List[str]:
-    """
-    Generate `num_samples` benchmark samples using AutoGen multi-agent debate.
-
-    A live Minecraft sandbox is always enabled: the sandbox is started once per
-    run and shared across all agents.  SceneDesignerAgent calls
-    ``preview_scene_in_sandbox`` (a native function-call tool) to build the
-    scene and get screenshots.  The sandbox is started/stopped automatically by
-    the orchestrator.
-
-    Connection credentials are read from environment variables:
-      FRIDAY_SANDBOX_ENDPOINT, FRIDAY_SANDBOX_TOKEN, FRIDAY_SANDBOX_BODY
-
-    Args:
-        api_model:        LLM model name (without provider prefix).
-        api_key:          API key for the LLM.
-        api_base_url:     Base URL for the OpenAI-compatible API.
-        task_analysis_path: Path to task_analysis.json.
-        benchmark_dir:    Root output directory.
-        num_samples:      Number of samples to generate.
-        candidate_num:    Number of candidate tasks to draw per sample.
-        k_min / k_max:    Range for number of tasks per sample.
-        max_debate_rounds: Debate rounds after initial generation.
-        temperature_*:    Per-agent sampling temperatures.
-        max_retries:      Max JSON parse retries per agent.
-        sandbox_tmp_dir:  Temp directory for sandbox screenshots.
-        seed:             Random seed for task sampling.
-        candidate_tasks:  If provided, use these tasks directly (skip sampling).
-
+    """Generate num_samples benchmark samples using AutoGen multi-agent debate.
     Returns a list of output directory paths.
     """
     from .orchestrator import BenchmarkOrchestrator
@@ -108,7 +52,6 @@ def generate(
     if seed is not None:
         random.seed(seed)
 
-    # Load task pool
     if candidate_tasks:
         easy_tasks = None
         fixed_candidates: Optional[List[str]] = list(candidate_tasks)
@@ -118,7 +61,6 @@ def generate(
         fixed_candidates = None
         print(f"Loaded {len(easy_tasks)} easy tasks from {task_analysis_path}")
 
-    # Build orchestrator
     orchestrator = BenchmarkOrchestrator(
         api_model=api_model,
         api_key=api_key,
@@ -144,11 +86,9 @@ def generate(
     while len(generated_dirs) < num_samples and attempted < max_attempts:
         attempted += 1
 
-        # Per-attempt staging directory (clean up on failure)
         attempt_log_dir = benchmark_path / f"_tmp_attempt_{attempted:04d}"
         attempt_log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Draw candidate tasks
         if fixed_candidates is not None:
             _candidates = fixed_candidates
         else:
@@ -171,7 +111,6 @@ def generate(
             shutil.rmtree(str(attempt_log_dir), ignore_errors=True)
             continue
 
-        # Check if result is partial (extraction failed for scene_design or milestones)
         is_partial = result.get("partial", False)
         if is_partial:
             missing = []
@@ -190,11 +129,6 @@ def generate(
             benchmark_dir=str(benchmark_path),
             mode="multi",
             tool_log_staging_dir=str(attempt_log_dir),
-            render_preview=render_preview if not is_partial else False,
-            preview_minerl_env_id=preview_minerl_env_id,
-            preview_loading_steps=preview_loading_steps,
-            preview_render_size=preview_render_size,
-            preview_seed=preview_seed,
         )
         if out_dir is None:
             print("  [SKIP] save_benchmark_sample returned None.")
@@ -203,7 +137,6 @@ def generate(
 
         if is_partial:
             print(f"  [WARN] Partial result saved at {out_dir} (conversation log preserved).")
-            # Don't count partial results towards the generated sample quota
             continue
 
         generated_dirs.append(out_dir)

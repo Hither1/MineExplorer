@@ -1,22 +1,3 @@
-"""
-sandbox_tools.py
-
-Minecraft Sandbox Tool Library
-================================
-Provides callable tools that AutoGen agents can invoke to interact with the
-Minecraft sandbox environment (via MineRLSandboxEnv / pssdk gateway).
-
-Key capabilities exposed as plain Python functions (AutoGen tool-use compatible):
-  - lazy_setup_sandbox()     : create a SandboxHandle (lazy, sandbox starts on first use)
-  - execute_commands()       : send /commands, return screenshot(s) as base64
-  - execute_agent_action()   : control an AI agent for N steps, return screenshots
-  - take_screenshot()        : grab current frame
-  - close_sandbox()          : release the sandbox
-
-All functions accept a SandboxHandle (opaque dict) so that multiple agents can
-share / pass around the same live environment.
-"""
-
 from __future__ import annotations
 
 import base64
@@ -30,60 +11,20 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-# ---------------------------------------------------------------------------
-# Resolve project root path
-# This file lives at: benchmark_gen/sandbox_tools.py
-# ---------------------------------------------------------------------------
-BENCHMARK_GEN_DIR = Path(__file__).resolve().parent   # benchmark_gen/
-LUMINE_CLIENT_DIR = BENCHMARK_GEN_DIR.parent           # project root
+BENCHMARK_GEN_DIR = Path(__file__).resolve().parent
+LUMINE_CLIENT_DIR = BENCHMARK_GEN_DIR.parent
 
 if str(LUMINE_CLIENT_DIR) not in sys.path:
     sys.path.insert(0, str(LUMINE_CLIENT_DIR))
 
 
-# ---------------------------------------------------------------------------
-# SandboxHandle – opaque dict with live env + metadata
-# ---------------------------------------------------------------------------
-
 SandboxHandle = Dict[str, Any]
-"""
-Keys:
-  env           : MineRLSandboxEnv instance (or LazyMCBenchSandboxEnv for lazy handles)
-  default_action: dict  – zero noop action
-  last_pov      : np.ndarray | None  – most-recent RGB frame
-  tmp_dir       : str  – scratch directory for saving images
-  _lazy         : bool – True when using lazy-init semantics (env not yet started)
-"""
+"""Keys: env, default_action, last_pov, tmp_dir, spawn_pos, _lazy"""
 
-
-# ---------------------------------------------------------------------------
-# LazyMCBenchSandboxEnv – deferred sandbox startup
-# ---------------------------------------------------------------------------
 
 class LazyMCBenchSandboxEnv:
-    """
-    A thin proxy that mirrors the MineRLSandboxEnv interface but defers
-    the actual sandbox_start + create_env call until the first time
-    commands are provided.
-
-    Lifecycle
-    ---------
-    1. Construction (``__init__``):
-       - Creates the ``SandboxClusterTool`` (only reads credentials from env).
-       - Does NOT call ``sandbox_start`` or ``create_env``.
-       - The sandbox resource is therefore not allocated yet.
-
-    2. First real use (``initialize(commands, task_text)``):
-       - Calls ``sandbox_tool.sandbox_start()`` to acquire a pod.
-       - Calls ``sandbox_tool.create_env(env='MinecraftSim', commands=commands, …)``
-         with the commands the agent has designed — exactly as
-         ``eval_benchmark.py``'s ``MineRLBenchmarkEnv._init_remote_env()`` does.
-       - Sets ``self._ready = True``.
-
-    3. Subsequent calls:
-       - ``create_env(commands, task_text)`` just re-sends the scene commands to
-         rebuild the scene (no re-``sandbox_start``).
-       - ``reset_env``, ``step``, ``close_env`` delegate to ``sandbox_tool``.
+    """HTTP sandbox proxy that mirrors the MineRLSandboxEnv interface.
+    Server address is read from MC_SANDBOX_URL; no request is sent until initialize() is called.
     """
 
     def __init__(
@@ -93,82 +34,24 @@ class LazyMCBenchSandboxEnv:
     ) -> None:
         self.env_id = env_id
         self._ready = False
-        self.server_address: Optional[str] = None
         self.task: str = ""
 
-        # Build the SandboxClusterTool (credentials only, no network call yet)
         from benchmark_gen.sandbox_client import SandboxClusterTool as _SCT
 
         cfg = sandbox_config or {}
-        endpoint = (
-            cfg.get("endpoint")
-            or os.getenv(
-                "FRIDAY_SANDBOX_ENDPOINT",
-                "https://model.sankuai.com/sandboxGateway/system/347",
-            )
-        )
-        token = cfg.get("token") or os.getenv("FRIDAY_SANDBOX_TOKEN")
-        if not token:
-            raise ValueError(
-                "Sandbox token must be provided in sandbox_config or "
-                "FRIDAY_SANDBOX_TOKEN environment variable."
-            )
-        self.sandbox_tool = _SCT(endpoint, token)
-        self._sandbox_config = cfg
-        print("  [LazySandbox] SandboxClusterTool created – sandbox NOT yet started.")
-
-    # ------------------------------------------------------------------
-    # Lazy initialisation – called on first real tool invocation
-    # ------------------------------------------------------------------
+        endpoint = cfg.get("endpoint") or None
+        self.sandbox_tool = _SCT(endpoint=endpoint)
+        self.server_address: Optional[str] = self.sandbox_tool.server_address
+        print(f"  [LazySandbox] HTTP sandbox client created – server: {self.server_address}")
 
     def initialize(
         self,
         commands: Optional[List[str]] = None,
         task_text: Optional[str] = None,
     ) -> None:
-        """
-        Start the sandbox and run create_env with the agent's commands.
-
-        This mirrors ``eval_benchmark.py``'s ``MineRLBenchmarkEnv._init_remote_env``
-        exactly: sandbox_start first, then create_env with the full parameter set.
-        """
-        if self._ready:
-            # Already started – just rebuild the scene with new commands
-            # (no sandbox_start needed; skip the long init sleep in _create_env)
-            self._create_env(commands=commands, task_text=task_text, is_rebuild=True)
-            return
-
-        # ── Step 1: sandbox_start ──────────────────────────────────────
-        cfg = self._sandbox_config
-        body = cfg.get("body")
-        if body is None:
-            body_str = os.getenv("FRIDAY_SANDBOX_BODY")
-            if body_str:
-                try:
-                    body = json.loads(body_str)
-                except json.JSONDecodeError:
-                    body = {}
-            else:
-                body = {}
-
-        print("  [LazySandbox] Calling sandbox_start()…")
-        start_params = self.sandbox_tool.sandbox_start(body)
-        if not start_params or not start_params.get("success"):
-            raise RuntimeError(f"sandbox_start failed: {start_params}")
-
-        data = start_params.get("data", {})
-        host_ip = data.get("host_ip")
-        port_mapping = data.get("port_mapping")
-        if not host_ip or not port_mapping:
-            raise RuntimeError(
-                f"Sandbox started but missing host_ip or port_mapping: {data}"
-            )
-        port = port_mapping.split(":")[0]
-        self.server_address = f"http://{host_ip}:{port}"
-        print(f"  [LazySandbox] Sandbox started at {self.server_address}")
-
-        # ── Step 2: create_env (scene build) ─────────────────────────
-        self._create_env(commands=commands, task_text=task_text, is_rebuild=False)
+        """Call create_env to initialize (or rebuild) the scene."""
+        is_rebuild = self._ready
+        self._create_env(commands=commands, task_text=task_text, is_rebuild=is_rebuild)
         self._ready = True
 
     def _create_env(
@@ -177,15 +60,6 @@ class LazyMCBenchSandboxEnv:
         task_text: Optional[str] = None,
         is_rebuild: bool = False,
     ) -> None:
-        """
-        Send create_env to the server with the full parameter set used by
-        eval_benchmark.py's MineRLBenchmarkEnv._init_remote_env().
-
-        Args:
-            is_rebuild: True when the sandbox is already running and we are only
-                        rebuilding the scene (subsequent calls).  In this case
-                        a shorter settle sleep (2 s) is used instead of 10 s.
-        """
         print(
             f"  [LazySandbox] create_env: {len(commands or [])} commands, "
             f"task='{(task_text or '')[:60]}'"
@@ -206,17 +80,9 @@ class LazyMCBenchSandboxEnv:
             raise RuntimeError(f"create_env failed: {response.get('msg')}")
         self.task = response.get("task_text", "") or (task_text or "")
         print(f"  [LazySandbox] create_env OK – task='{self.task[:60]}'")
-        # First init needs a longer wait for the server to fully boot the world.
-        # Scene rebuilds (is_rebuild=True) only need a short settle.
-        settle = 2 if is_rebuild else 10
-        time.sleep(settle)
-
-    # ------------------------------------------------------------------
-    # Env interface (delegated to sandbox_tool after init)
-    # ------------------------------------------------------------------
+        time.sleep(2 if is_rebuild else 10)
 
     def reset(self, seed=None, options=None):
-        """Reset the remote environment; returns (obs, info)."""
         import numpy as _np
         import base64 as _b64
         import io as _io
@@ -237,7 +103,6 @@ class LazyMCBenchSandboxEnv:
         return {"pov": pov}, {}
 
     def step(self, action: Dict[str, Any]):
-        """Execute one action; returns (obs, reward, terminated, truncated, info)."""
         import numpy as _np
         import base64 as _b64
         import io as _io
@@ -248,7 +113,6 @@ class LazyMCBenchSandboxEnv:
             if k == "camera":
                 serializable_action[k] = [float(x) for x in v]
             elif k == "chat" or isinstance(v, str):
-                # Preserve string commands like "/gamemode spectator @s"
                 serializable_action[k] = v
             elif isinstance(v, (list, tuple)):
                 serializable_action[k] = [int(x) for x in v]
@@ -280,44 +144,22 @@ class LazyMCBenchSandboxEnv:
         return {"pov": pov}, reward, terminated, False, info
 
     def close(self) -> None:
-        """Stop the sandbox and release resources."""
         if not self._ready:
             return
         try:
-            self.sandbox_tool.sandbox_stop()
-            print("  [LazySandbox] Sandbox stopped.")
+            self.sandbox_tool.close_env()
+            print("  [LazySandbox] close_env OK.")
         except Exception as _e:
-            print(f"  [LazySandbox] sandbox_stop error: {_e}")
+            print(f"  [LazySandbox] close_env error: {_e}")
         finally:
             self._ready = False
-            self.server_address = None
 
-
-# ---------------------------------------------------------------------------
-# lazy_setup_sandbox – create a SandboxHandle without starting the sandbox
-# ---------------------------------------------------------------------------
 
 def lazy_setup_sandbox(
     tmp_dir: str = "/tmp/mcbench_sandbox",
     sandbox_config: Optional[Dict[str, Any]] = None,
 ) -> SandboxHandle:
-    """
-    Create a SandboxHandle whose underlying env is a ``LazyMCBenchSandboxEnv``.
-
-    The sandbox is **not** started at this point — only the credentials are
-    validated and the ``SandboxClusterTool`` is instantiated.
-
-    The first call to ``execute_commands`` or ``preview_scene_in_sandbox``
-    (which both supply ``commands``) will trigger the actual
-    ``sandbox_start + create_env`` sequence.
-
-    Args:
-        tmp_dir:        Directory for screenshot files.
-        sandbox_config: Optional override for sandbox connection credentials.
-
-    Returns:
-        SandboxHandle with ``_lazy=True``.
-    """
+    """Create a SandboxHandle with lazy initialization (create_env on first use)."""
     os.makedirs(tmp_dir, exist_ok=True)
     lazy_env = LazyMCBenchSandboxEnv(sandbox_config=sandbox_config)
     handle: SandboxHandle = {
@@ -328,7 +170,7 @@ def lazy_setup_sandbox(
         "spawn_pos": {"x": 0.0, "y": 64.0, "z": 0.0},
         "_lazy": True,
     }
-    print("  [LazySandbox] Lazy SandboxHandle created – waiting for first tool call.")
+    print("  [LazySandbox] SandboxHandle created – will call create_env on first tool use.")
     return handle
 
 
@@ -342,12 +184,7 @@ _NOOP_ACTION: Dict[str, Any] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
 def _rgb_to_b64png(rgb: np.ndarray) -> str:
-    """Convert an RGB numpy array to a base64-encoded PNG string."""
     from PIL import Image as _Image
     img = _Image.fromarray(rgb.astype(np.uint8))
     buf = io.BytesIO()
@@ -356,7 +193,6 @@ def _rgb_to_b64png(rgb: np.ndarray) -> str:
 
 
 def _save_rgb(rgb: np.ndarray, path: str) -> None:
-    """Save RGB numpy array to disk as PNG."""
     try:
         import cv2
         import numpy as _np
@@ -375,19 +211,6 @@ def _step_noop(env, n: int = 1) -> np.ndarray:
     return pov
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
-def _parse_body_env() -> Dict[str, Any]:
-    body_str = os.getenv("FRIDAY_SANDBOX_BODY", "{}")
-    try:
-        return json.loads(body_str)
-    except Exception:
-        return {}
-
-
 def close_sandbox(handle: SandboxHandle) -> None:
     """Release the sandbox and all resources."""
     try:
@@ -397,19 +220,7 @@ def close_sandbox(handle: SandboxHandle) -> None:
 
 
 def take_screenshot(handle: SandboxHandle, save_path: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Capture the current first-person view.
-
-    Args:
-        handle:    SandboxHandle.
-        save_path: Optional file path to save the PNG. If None, uses tmp_dir.
-
-    Returns:
-        Dict with:
-          "first_person": base64-encoded PNG string of the current frame.
-          "saved_paths":  {"first_person": "<path>"}  — where the file was saved.
-    """
-    # Guard: lazy sandbox must be initialised before taking a screenshot.
+    """Capture the current first-person view and return base64 PNG."""
     env = handle.get("env")
     if isinstance(env, LazyMCBenchSandboxEnv) and not env._ready:
         return {
@@ -423,7 +234,6 @@ def take_screenshot(handle: SandboxHandle, save_path: Optional[str] = None) -> D
 
     pov = handle.get("last_pov")
     if pov is None:
-        # try a noop step to get a fresh frame
         pov = _step_noop(handle["env"], 1)
         handle["last_pov"] = pov
 
@@ -438,16 +248,15 @@ def take_screenshot(handle: SandboxHandle, save_path: Optional[str] = None) -> D
     }
 
 
-# Mapping: perspective name → (yaw_degrees, description)
 # Yaw: 0=south, 90=west, 180=north, 270=east (Minecraft convention)
 _PERSPECTIVE_CONFIGS: Dict[str, Dict[str, Any]] = {
     "first_person":  {"type": "first_person",  "description": "Player spawn eye-level"},
     "overhead":      {"type": "overhead",       "description": "Bird's-eye view from above"},
     "inventory":     {"type": "inventory",      "description": "Player inventory view"},
-"north":         {"type": "cardinal",       "yaw": 180,  "pitch": 10,  "description": "Agent looks north (eye-level)"},
-"south":         {"type": "cardinal",       "yaw": 0,    "pitch": 10,  "description": "Agent looks south (eye-level)"},
-"east":          {"type": "cardinal",       "yaw": 270,  "pitch": 10,  "description": "Agent looks east (eye-level)"},
-"west":          {"type": "cardinal",       "yaw": 90,   "pitch": 10,  "description": "Agent looks west (eye-level)"},
+    "north":         {"type": "cardinal",       "yaw": 180,  "pitch": 10,  "description": "Agent looks north"},
+    "south":         {"type": "cardinal",       "yaw": 0,    "pitch": 10,  "description": "Agent looks south"},
+    "east":          {"type": "cardinal",       "yaw": 270,  "pitch": 10,  "description": "Agent looks east"},
+    "west":          {"type": "cardinal",       "yaw": 90,   "pitch": 10,  "description": "Agent looks west"},
 }
 
 
@@ -460,29 +269,15 @@ def execute_commands(
     save_dir: Optional[str] = None,
     task_text: str = "",
 ) -> Dict[str, Any]:
-    """
-    Execute a list of Minecraft /commands (e.g. /fill, /setblock, /summon) and
-    return screenshots from multiple perspectives.
-
-    Calls create_env(commands=[...]) to rebuild the scene on the server, then
-    resets and captures screenshots.  No env_id is forwarded — the server
-    renders entirely from the commands list.
+    """Execute Minecraft /commands, rebuild the scene, and return screenshots.
 
     Args:
-        handle:              SandboxHandle.
-        commands:            List of Minecraft command strings (e.g. "/fill ~0 ~0 ~0 ~5 ~0 ~5 stone").
-        wait_steps_per_cmd:  (unused, kept for API compatibility)
-        settle_steps:        Noop steps after reset to let the world settle.
-        perspectives:        List of perspectives to capture.
-                             Supported: "first_person", "overhead", "inventory",
-                             "north", "south", "east", "west".
-                             Defaults to ["first_person"].
-        save_dir:            Optional directory to save PNG files.
-        task_text:           Optional task description string forwarded to create_env.
-
-    Returns:
-        Dict with keys matching requested perspectives, each containing a
-        base64 PNG string. Also includes "saved_paths" mapping perspective→path.
+        handle:           SandboxHandle.
+        commands:         Non-empty list of Minecraft command strings.
+        settle_steps:     Noop steps after reset to let the world settle.
+        perspectives:     Perspectives to capture (default: ["first_person"]).
+        save_dir:         Optional directory to save PNG files.
+        task_text:        Task description forwarded to create_env.
     """
     if perspectives is None:
         perspectives = ["first_person"]
@@ -491,18 +286,6 @@ def execute_commands(
     save_dir = save_dir or handle["tmp_dir"]
     os.makedirs(save_dir, exist_ok=True)
 
-    # --- Rebuild the scene via create_env(commands=[...]) ---
-    # Two cases:
-    #  1. Lazy handle (LazyMCBenchSandboxEnv): call initialize() which performs
-    #     sandbox_start (first time) + create_env in one step, mirroring
-    #     eval_benchmark.py's MineRLBenchmarkEnv._init_remote_env().
-    #  2. Pre-started handle (MineRLSandboxEnv): call sandbox_tool.create_env()
-    #     directly to rebuild the scene (existing behaviour).
-    #
-    # IMPORTANT: commands must be a non-empty list.
-    # The server interprets commands=None as "use env_id for gym.make()" which
-    # requires the 'minerl' package on the server — and our sandbox server does NOT
-    # have minerl installed.  Never send an empty/None commands list to the server.
     if not commands:
         raise ValueError(
             "execute_minecraft_commands requires a non-empty 'commands' list. "
@@ -514,11 +297,9 @@ def execute_commands(
     print(f"  [SandboxTool] create_env with {len(commands)} commands...")
     try:
         if isinstance(env, LazyMCBenchSandboxEnv):
-            # Lazy path: sandbox_start (first call only) + create_env in one step
             env.initialize(commands=commands, task_text=task_text or None)
         else:
-            # Pre-started path: mirror eval_benchmark.py's MineRLBenchmarkEnv._init_remote_env exactly
-            response = env.sandbox_tool.create_env(
+            response = env.create_env(
                 env='MinecraftSim',
                 obs_size=[128, 128],
                 render_size=[640, 360],
@@ -538,7 +319,6 @@ def execute_commands(
         print(f"  [SandboxTool] create_env / initialize failed: {e}")
         raise
 
-    # reset_env to get the initial observation (scene is now built)
     try:
         obs, _ = env.reset()
         handle["last_pov"] = obs["pov"]
@@ -547,7 +327,6 @@ def execute_commands(
         print(f"  [SandboxTool] reset_env failed: {e}")
         raise
 
-    # Let the world settle (noop steps)
     if settle_steps > 0:
         pov = _step_noop(env, settle_steps)
         handle["last_pov"] = pov
@@ -556,7 +335,6 @@ def execute_commands(
     saved_paths: Dict[str, str] = {}
     ts = int(time.time() * 1000)
 
-    # --- Capture requested perspectives ---
     for persp in perspectives:
         cfg = _PERSPECTIVE_CONFIGS.get(persp)
         if cfg is None:
@@ -597,39 +375,20 @@ def execute_commands(
 
 def _look_straight(env, target_pitch: float = 0.0, target_yaw_delta: float = 0.0,
                     steps: int = 20) -> np.ndarray:
-    """
-    Use camera actions to move the view toward (target_pitch, +target_yaw_delta).
-    First resets pitch to 0 by looking up maximally, then adjusts.
-
-    MineRL camera action: [pitch_delta, yaw_delta] in degrees per step.
-    Positive pitch_delta = look more down. Positive yaw_delta = turn right.
-    Pitch is clamped to [-90, 90].
-
-    Strategy:
-      1. Send one large camera=[-180, 0] step to slam pitch to -90 (straight up)
-      2. Send one large camera=[90 + target_pitch, target_yaw_delta] to reach target
-      3. One settle noop
-    Total: 3 HTTP requests regardless of target_pitch.
-    """
-    obs = None
-    # Step 1: slam pitch all the way up with a single large delta (-180 clamps to -90)
+    """Snap camera to (target_pitch, +target_yaw_delta) in 3 HTTP requests."""
     a = dict(_NOOP_ACTION)
     a["camera"] = [-180.0, 0.0]
-    obs, _, _, _, _ = env.step(a)
-    # Step 2: one large step to reach target pitch from -90
-    remaining_pitch = 90.0 + target_pitch   # delta to reach target from -90
+    env.step(a)
+    remaining_pitch = 90.0 + target_pitch
     a = dict(_NOOP_ACTION)
     a["camera"] = [remaining_pitch, target_yaw_delta]
-    obs, _, _, _, _ = env.step(a)
-    # Step 3: one settle noop
+    env.step(a)
     obs, _, _, _, _ = env.step(dict(_NOOP_ACTION))
     return obs["pov"]
 
 
 def _capture_first_person(handle: SandboxHandle, save_path: str) -> str:
-    """Capture first-person view after straightening the camera to pitch=0."""
     env = handle["env"]
-    # Straighten camera: look ahead horizontally (pitch 0)
     pov = _look_straight(env, target_pitch=0.0, target_yaw_delta=0.0)
     handle["last_pov"] = pov
     _save_rgb(pov, save_path)
@@ -639,12 +398,10 @@ def _capture_first_person(handle: SandboxHandle, save_path: str) -> str:
 def _capture_inventory(handle: SandboxHandle, save_path: str) -> str:
     """Open inventory, capture, close."""
     env = handle["env"]
-    # Open inventory
     action = dict(_NOOP_ACTION)
     action["inventory"] = 1
     obs, _, _, _, _ = env.step(action)
     pov = obs["pov"]
-    # Close inventory
     _step_noop(env, 2)
     _save_rgb(pov, save_path)
     handle["last_pov"] = pov
@@ -660,16 +417,14 @@ def _capture_overhead(
     env = handle["env"]
     spawn = handle.get("spawn_pos", {"x": 0.0, "y": 64.0, "z": 0.0})
 
-    # Estimate scene bbox from commands for positioning
     cam_y = spawn["y"] + 40
     cam_x = spawn["x"]
     cam_z = spawn["z"]
 
     if commands:
         try:
-            from ..utils import _estimate_scene_bbox
+            from benchmark_gen.utils import _estimate_scene_bbox
             min_x, max_x, min_y, max_y, min_z, max_z = _estimate_scene_bbox(commands)
-            # scene commands use relative coords (~), add spawn offset
             cx = spawn["x"] + (min_x + max_x) / 2.0
             cz = spawn["z"] + (min_z + max_z) / 2.0
             span = max(max_x - min_x, max_z - min_z)
@@ -680,26 +435,21 @@ def _capture_overhead(
             pass
 
     try:
-        # Switch to spectator
         sp_action = dict(_NOOP_ACTION)
         sp_action["chat"] = "/gamemode spectator @s"
         env.step(sp_action)
         _step_noop(env, 1)
 
-        # Teleport to overhead position using absolute coords + pitch 90 (straight down)
         tp_action = dict(_NOOP_ACTION)
         tp_action["chat"] = f"/tp @s {cam_x:.1f} {cam_y:.1f} {cam_z:.1f} 0 90"
         env.step(tp_action)
         _step_noop(env, 1)
 
-        # Force camera to look straight down using camera actions
-        # (in case /tp yaw/pitch args were ignored by the server)
         pov = _look_straight(env, target_pitch=90.0, target_yaw_delta=0.0)
         handle["last_pov"] = pov
         _save_rgb(pov, save_path)
         b64 = _rgb_to_b64png(pov)
 
-        # Return to survival
         surv_action = dict(_NOOP_ACTION)
         surv_action["chat"] = "/gamemode survival @s"
         env.step(surv_action)
@@ -718,33 +468,14 @@ def _capture_cardinal(
     pitch: float = 10.0,
     commands: Optional[List[str]] = None,
 ) -> Optional[str]:
-    """
-    Capture the scene from the agent's current spawn position looking in the
-    given cardinal direction (yaw).  No teleport away, no spectator mode —
-    the agent stays in place and just turns to face the requested direction.
-
-    Args:
-        handle:    SandboxHandle.
-        save_path: Where to save the PNG.
-        yaw:       Target camera yaw in degrees (Minecraft: 0=south, 90=west,
-                   180=north, 270=east). This is the FACING direction.
-        pitch:     Camera pitch in degrees (positive = looking slightly down,
-                   0 = horizontal). Default 10° gives a natural eye-level look.
-        commands:  Unused (kept for API compatibility).
-
-    Returns:
-        Base64 PNG string, or None on failure.
-    """
+    """Rotate in-place to the given yaw/pitch and capture."""
     env = handle["env"]
     try:
-        # Rotate in-place: keep current XYZ with ~ ~ ~, only set yaw+pitch.
         tp_action = dict(_NOOP_ACTION)
         tp_action["chat"] = f"/tp @s ~ ~ ~ {yaw:.1f} {pitch:.1f}"
         env.step(tp_action)
         _step_noop(env, 1)
 
-        # Force exact camera orientation via camera actions (reliable even if
-        # /tp yaw/pitch args are ignored by the server build).
         pov = _look_straight(env, target_pitch=pitch, target_yaw_delta=0.0)
         handle["last_pov"] = pov
         _save_rgb(pov, save_path)
@@ -761,24 +492,7 @@ def execute_agent_action(
     repeat: int = 1,
     save_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Execute one agent action (MinerRL action dict) for `repeat` steps.
-
-    This allows agents like SceneDesigner or Validator to directly control
-    the Minecraft player and observe results (e.g. navigate to inspect a spot).
-
-    Args:
-        handle:   SandboxHandle.
-        action:   MinerRL action dict (keys: forward, attack, camera, chat, …).
-        repeat:   Number of simulation steps to repeat the action.
-        save_dir: Directory to save per-step screenshots. None = tmp_dir.
-
-    Returns:
-        Dict with:
-          "frames_b64": list of base64 PNG per step,
-          "saved_paths": list of file paths,
-          "last_frame_b64": final frame as base64 PNG.
-    """
+    """Execute one MinerRL action dict for `repeat` steps and return frames."""
     env = handle["env"]
     save_dir = save_dir or handle["tmp_dir"]
     os.makedirs(save_dir, exist_ok=True)
@@ -815,25 +529,7 @@ def run_agent_episode(
     max_steps: int = 10,
     save_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Run a DefaultAgent (lumine-client) for up to max_steps steps in the sandbox.
-
-    Allows Validator / MilestoneAgent to verify that a task is actually achievable
-    by observing an AI agent attempting it.
-
-    Args:
-        handle:          SandboxHandle.
-        task_text:       Task description for the agent.
-        provider_config: Dict with keys: base_url, api_key, model.
-        max_steps:       Max agent decision steps.
-        save_dir:        Directory to save frames.
-
-    Returns:
-        Dict with:
-          "steps": list of {thought, action_text, frame_b64, step_idx},
-          "final_frame_b64": last frame,
-          "total_steps": int.
-    """
+    """Run a DefaultAgent for up to max_steps steps and return frames + logs."""
     from mc_agent import MinerRLActionSpace, DefaultContextBuilder, OpenAIProvider, DefaultAgent
 
     save_dir = save_dir or handle["tmp_dir"]
@@ -842,7 +538,6 @@ def run_agent_episode(
     model = provider_config.get("model") or os.getenv("AGENT_MODEL")
     if not model:
         raise ValueError("[run_agent_episode] Model name is required. Pass it via provider_config['model'] or set AGENT_MODEL env var.")
-    # Strip provider prefix (openai/, litellm/, azure/) — OpenAI client doesn't need it
     for _pfx in ("openai/", "litellm/", "azure/"):
         if model.startswith(_pfx):
             model = model[len(_pfx):]
@@ -930,26 +625,8 @@ def run_agent_episode(
     }
 
 
-# ---------------------------------------------------------------------------
-# Convenience: build autogen-compatible tool function signatures
-# ---------------------------------------------------------------------------
-
 def make_execute_commands_tool(handle: SandboxHandle, default_log_dir: Optional[str] = None):
-    """
-    Return a closure that AutoGen can call as a tool.
-
-    Args:
-        handle:          SandboxHandle.
-        default_log_dir: If set, screenshots are saved to
-                         ``<default_log_dir>/logs/execute_commands_<ts>/``
-                         when the caller does not supply a save_dir.
-
-    Usage (in agent tool_calls):
-        result = execute_commands_tool(
-            commands=["/fill ~-5 ~0 ~-5 ~5 ~5 ~5 minecraft:oak_log"],
-            perspectives=["first_person", "overhead"],
-        )
-    """
+    """Return an AutoGen-compatible closure for execute_commands."""
     def execute_commands_tool(
         commands: List[str],
         perspectives: List[str] = None,
@@ -977,15 +654,7 @@ def make_execute_commands_tool(handle: SandboxHandle, default_log_dir: Optional[
 
 
 def make_agent_action_tool(handle: SandboxHandle, default_log_dir: Optional[str] = None):
-    """
-    Return a closure for single-action execution.
-
-    Args:
-        handle:          SandboxHandle.
-        default_log_dir: If set, per-step screenshots are saved to
-                         ``<default_log_dir>/logs/agent_action_<ts>/``
-                         when the caller does not supply a save_dir.
-    """
+    """Return an AutoGen-compatible closure for execute_agent_action."""
     def agent_action_tool(
         action: Dict[str, Any],
         repeat: int = 1,
@@ -1004,23 +673,9 @@ def make_agent_action_tool(handle: SandboxHandle, default_log_dir: Optional[str]
 
 
 def make_screenshot_tool(handle: SandboxHandle, default_log_dir: Optional[str] = None):
-    """
-    Return a closure for taking screenshots.
-
-    Args:
-        handle:          SandboxHandle.
-        default_log_dir: If set, screenshots are saved to
-                         ``<default_log_dir>/logs/`` when save_path is not supplied.
-    """
+    """Return an AutoGen-compatible closure for take_screenshot."""
     def screenshot_tool(save_path: str = None) -> Dict[str, Any]:
-        """
-        Take a screenshot of the current Minecraft view.
-
-        Returns:
-            Dict with:
-              "first_person": base64 PNG string of the current view.
-              "saved_paths":  {"first_person": "<path>"}
-        """
+        """Take a screenshot of the current Minecraft view."""
         resolved_save_path = save_path
         if resolved_save_path is None and default_log_dir:
             os.makedirs(default_log_dir, exist_ok=True)
@@ -1036,18 +691,7 @@ def make_run_agent_tool(
     default_log_dir: Optional[str] = None,
     agent_model: Optional[str] = None,
 ):
-    """
-    Return a closure for running an AI agent episode.
-
-    Args:
-        handle:          SandboxHandle.
-        default_log_dir: If set, per-step agent frames are saved to
-                         ``<default_log_dir>/logs/run_agent_<ts>/``
-                         when the caller does not supply a save_dir.
-agent_model:     Default LLM model name (provider prefix will be stripped
-before passing to the OpenAI client).  Falls back to
-AGENT_MODEL env var (required — no built-in default).
-    """
+    """Return an AutoGen-compatible closure for run_agent_episode."""
     def run_agent_tool(
         task_text: str,
         max_steps: int = 10,
@@ -1065,7 +709,6 @@ AGENT_MODEL env var (required — no built-in default).
         _raw_model = model or agent_model or os.getenv("AGENT_MODEL")
         if not _raw_model:
             raise ValueError("[run_agent_tool] Model name is required. Pass it via the 'model' arg, agent_model factory param, or set AGENT_MODEL env var.")
-        # Strip provider prefix (openai/, litellm/, azure/) — OpenAI client doesn't need it
         for _pfx in ("openai/", "litellm/", "azure/"):
             if _raw_model.startswith(_pfx):
                 _raw_model = _raw_model[len(_pfx):]
@@ -1079,11 +722,7 @@ AGENT_MODEL env var (required — no built-in default).
     return run_agent_tool
 
 
-# ---------------------------------------------------------------------------
-# Preview Scene in Sandbox
-# ---------------------------------------------------------------------------
-
-_PREVIEW_MAX_STEPS = 20  # hard cap for scene-designer free-roam exploration
+_PREVIEW_MAX_STEPS = 20
 
 
 def preview_scene_in_sandbox(
@@ -1095,47 +734,10 @@ def preview_scene_in_sandbox(
     save_dir: Optional[str] = None,
     agent_model: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Build a Minecraft scene and explore it with an AI agent — identical logic to
-    eval_benchmark.py's ``_run_benchmark``.
+    """Build a scene and explore it with an AI agent (mirrors eval_benchmark.py logic).
 
-    Execution flow (mirrors eval_benchmark.py exactly):
-      1. **Build**: call create_env(commands=[...]) to rebuild the scene on the server.
-      2. **Reset**: env.reset() → get the first observation frame.
-      3. **Settle**: run ``loading_steps`` noop steps (same as eval_benchmark.py's
-         ``loading_command_steps``) to let init commands fully apply.
-         The final noop frame is saved as the **initial screenshot**.
-      4. **Explore**: run the DefaultAgent for up to ``max_walk_steps`` steps.
-         Each step: agent.get_action(frame_buffer, thought_history, action_history,
-         current_step) → env.step(action) → append frame.
-         This is identical to eval_benchmark.py's main agent loop.
-
-    No extra spectator-camera screenshots, no teleports, no overhead views.
-    The agent sees only what a real player would see, and autonomously decides
-    where to walk and look.
-
-    Args:
-        handle:         SandboxHandle (lazy or pre-started).
-        commands:       Minecraft /commands to build the scene (/fill, /setblock, etc.).
-        explore_prompt: Task description for the exploration agent.
-                        Defaults to a generic scene-observation prompt.
-        max_walk_steps: Hard cap on total agent exploration steps (default 20).
-        loading_steps:  Noop steps after reset to let commands settle (default 20,
-                        same as eval_benchmark.py's --loading-command-steps).
-save_dir:       Directory to save all PNG frames.
-agent_model:    LLM model name (e.g. "openai/gpt-5.1"). Falls back to
-AGENT_MODEL env var (required — no built-in default).
-
-    Returns:
-        Dict with:
-          "initial_frame":    {"b64": str, "path": str} — frame after settle
-          "explore_frames":   list of {"step": int, "b64": str, "path": str,
-                                        "thought": str, "action_text": str}
-          "all_frames":       unified list of {"phase": "initial"|"explore",
-                                               "label": str, "b64": str, "path": str}
-          "total_steps":      int — actual number of exploration steps executed
-          "saved_dir":        str
-          "commands_executed": int
+    Returns dict with initial_frame, explore_frames, all_frames,
+    total_steps, saved_dir, commands_executed.
     """
     from collections import deque
 
@@ -1146,13 +748,12 @@ AGENT_MODEL env var (required — no built-in default).
 
     env = handle["env"]
 
-    # ── Step 1: Build scene via create_env ───────────────────────────────────
     print(f"  [Preview] Building scene: {len(commands)} commands...")
     try:
         if isinstance(env, LazyMCBenchSandboxEnv):
             env.initialize(commands=commands if commands else None, task_text=None)
         else:
-            response = env.sandbox_tool.create_env(
+            response = env.create_env(
                 env='MinecraftSim',
                 obs_size=[128, 128],
                 render_size=[640, 360],
@@ -1171,7 +772,6 @@ AGENT_MODEL env var (required — no built-in default).
     except Exception as e:
         print(f"  [Preview] create_env failed: {e}")
 
-    # ── Step 2: Reset env ────────────────────────────────────────────────────
     try:
         obs, _ = env.reset()
         pov = obs["pov"]
@@ -1181,9 +781,6 @@ AGENT_MODEL env var (required — no built-in default).
         print(f"  [Preview] reset failed: {e}")
         pov = handle.get("last_pov")
 
-    # ── Step 3: Settle (loading_steps noops, same as eval_benchmark.py) ──────
-    # eval_benchmark.py uses agent.get_default_action(is_call_failed=False) which returns
-    # a plain NOOP action — identical to _NOOP_ACTION defined at the top of this file.
     print(f"  [Preview] Settling: {loading_steps} noop steps...")
     for _s in range(loading_steps):
         try:
@@ -1194,7 +791,6 @@ AGENT_MODEL env var (required — no built-in default).
             break
     print(f"  [Preview] Settle done. Saving initial frame...")
 
-    # Save the post-settle frame as the initial screenshot
     initial_path = os.path.join(preview_dir, "initial.png")
     _save_rgb(pov, initial_path)
     initial_b64 = _rgb_to_b64png(pov)
@@ -1207,7 +803,6 @@ AGENT_MODEL env var (required — no built-in default).
         "path": initial_path,
     }]
 
-    # ── Step 4: AI agent exploration (same loop as eval_benchmark.py) ────────
     explore_frames: List[Dict[str, Any]] = []
     total_steps = 0
 
@@ -1218,8 +813,7 @@ AGENT_MODEL env var (required — no built-in default).
         "block placement, structures, and any issues with the scene design."
     )
 
-    print(f"  [Preview] Starting agent exploration "
-          f"(max {max_walk_steps} steps)...")
+    print(f"  [Preview] Starting agent exploration (max {max_walk_steps} steps)...")
 
     try:
         from mc_agent import DefaultAgent, MinerRLActionSpace, DefaultContextBuilder, OpenAIProvider
@@ -1229,7 +823,6 @@ AGENT_MODEL env var (required — no built-in default).
         _model = agent_model or os.getenv("AGENT_MODEL")
         if not _model:
             raise ValueError("[preview_scene_in_sandbox] Model name is required. Pass agent_model or set AGENT_MODEL env var.")
-        # Strip provider prefix (openai/, litellm/, azure/) — OpenAI client doesn't need it
         for _pfx in ("openai/", "litellm/", "azure/"):
             if _model.startswith(_pfx):
                 _model = _model[len(_pfx):]
@@ -1244,18 +837,15 @@ AGENT_MODEL env var (required — no built-in default).
         )
         agent.load_system_prompt(_observe_prompt)
 
-        # Frame buffer (maxlen=3, same as eval_benchmark.py FRAME_BUFFER_SIZE=3)
         frame_buffer: deque = deque(maxlen=3)
         frame_buffer.append(pov)
         thought_history: List[str] = []
         action_history:  List[Dict[str, Any]] = []
 
-        # ── Main agent loop — identical to eval_benchmark.py _run_benchmark ──
         for step_idx in range(max_walk_steps):
             print(f"  [Preview] --- Step {step_idx + 1}/{max_walk_steps} ---")
 
             frames = list(frame_buffer)
-            # Pad to 3 frames if buffer not yet full (same as eval_benchmark.py)
             while len(frames) < 3:
                 frames.insert(0, np.array(frames[0], copy=True))
 
@@ -1323,8 +913,7 @@ AGENT_MODEL env var (required — no built-in default).
     except Exception as e:
         print(f"  [Preview] Agent exploration failed: {e}")
 
-    print(f"  [Preview] Done: {total_steps} exploration steps, "
-          f"{len(all_frames)} total frames saved.")
+    print(f"  [Preview] Done: {total_steps} exploration steps, {len(all_frames)} total frames saved.")
 
     return {
         "initial_frame":     initial_frame,
@@ -1341,23 +930,7 @@ def make_preview_scene_tool(
     default_log_dir: Optional[str] = None,
     agent_model: Optional[str] = None,
 ):
-    """
-    Return an AutoGen-compatible closure for ``preview_scene_in_sandbox``.
-
-    Mirrors eval_benchmark.py exactly:
-      1. Build scene via create_env(commands=[...]).
-      2. reset() → loading_steps noops → save one initial frame.
-      3. DefaultAgent explores for up to max_walk_steps steps autonomously.
-
-    Args:
-        handle:          SandboxHandle.
-default_log_dir: Base directory for saving preview files.
-agent_model:     LLM model name (e.g. "openai/gpt-5.1"). Falls back to
-AGENT_MODEL env var (required — no built-in default).
-
-    Returns:
-        A callable that AutoGen can register as a tool function.
-    """
+    """Return an AutoGen-compatible closure for preview_scene_in_sandbox."""
     def preview_scene_tool(
         commands: List[str],
         explore_prompt: str = None,
@@ -1365,25 +938,7 @@ AGENT_MODEL env var (required — no built-in default).
         loading_steps: int = 20,
         save_dir: str = None,
     ) -> Dict[str, Any]:
-        """
-        Build the Minecraft scene and explore it with an AI agent.
-
-        Identical to eval_benchmark.py's _run_benchmark loop:
-          - create_env(commands) → reset() → loading_steps noops → save initial frame
-          - Agent loop: get_action(frame_buffer, thoughts, actions) → env.step → save frame
-
-        Args:
-            commands:       List of Minecraft /commands to build the scene.
-            explore_prompt: Task description for the exploration agent.
-                            Defaults to a generic scene-observation prompt.
-            max_walk_steps: Hard cap on total agent steps (default 20).
-            loading_steps:  Noop steps after reset to let commands settle (default 20).
-            save_dir:       Optional override for save directory.
-
-        Returns:
-            Dict with initial_frame, explore_frames, all_frames,
-            total_steps, saved_dir, commands_executed.
-        """
+        """Build the Minecraft scene and explore it with an AI agent."""
         resolved_save_dir = save_dir
         if resolved_save_dir is None and default_log_dir:
             resolved_save_dir = os.path.join(

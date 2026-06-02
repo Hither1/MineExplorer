@@ -13,10 +13,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
-# ---------------------------------------------------------------------------
-# Milestone evaluation
-# ---------------------------------------------------------------------------
-
 def _inventory_count(state: Dict[str, Any], item: str) -> int:
     """Get the count of an item in the inventory from state."""
     inventory = state.get("inventory", {})
@@ -54,7 +50,6 @@ def evaluate_milestone_rule(
     params = rule["params"]
     coordinate_frame = str(params.get("coordinate_frame", ""))
 
-    # Resolve coordinate origin
     origin = _to_vec3(coordinate_origin) if coordinate_origin else (0.0, 0.0, 0.0)
 
     if rule_type == "inventory_has":
@@ -194,12 +189,10 @@ def attach_judge_queries_to_action(
                 min_vec = _to_vec3(params.get("min", [0, 0, 0]))
                 max_vec = _to_vec3(params.get("max", [0, 0, 0]))
 
-                # Convert spawn-relative to world coordinates
                 if coordinate_frame == "spawn_relative":
                     min_vec = _add_vec3(min_vec, origin)
                     max_vec = _add_vec3(max_vec, origin)
 
-                # Convert world to player-relative
                 box = {
                     "min": [min_vec[0] - player_pos[0], min_vec[1] - player_pos[1], min_vec[2] - player_pos[2]],
                     "max": [max_vec[0] - player_pos[0], max_vec[1] - player_pos[1], max_vec[2] - player_pos[2]],
@@ -212,7 +205,6 @@ def attach_judge_queries_to_action(
                     elif kind == "mob":
                         mob_boxes.append(box)
                 elif rule_type == "position_inside_box":
-                    # Position check can use voxel boxes
                     voxel_boxes.append(box)
 
     if voxel_boxes:
@@ -222,10 +214,6 @@ def attach_judge_queries_to_action(
 
     return result
 
-
-# ---------------------------------------------------------------------------
-# String helpers
-# ---------------------------------------------------------------------------
 
 def strip_thinking(text: str) -> str:
     """Remove <think>...</think> blocks from LLM output."""
@@ -297,17 +285,12 @@ def _extract_brace_object(text: str) -> Optional[dict]:
     except json.JSONDecodeError:
         pass
 
-    # Remove trailing commas before } or ]
     cleaned = re.sub(r",\s*([}\]])", r"\1", raw)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         return None
 
-
-# ---------------------------------------------------------------------------
-# Validation helpers
-# ---------------------------------------------------------------------------
 
 def _to_scalar(value: Any) -> Any:
     return value.item() if hasattr(value, "item") else value
@@ -494,10 +477,6 @@ def parse_task_selection(text: str) -> Tuple[Optional[List[str]], str]:
     return selected_tasks, reasoning
 
 
-# ---------------------------------------------------------------------------
-# Fallback / debug logging
-# ---------------------------------------------------------------------------
-
 def save_fallback_response(
     fallback_dir: str,
     sample_idx: int,
@@ -530,10 +509,6 @@ def save_fallback_response(
     print(f"  [FALLBACK] Saved to {fallback_file}")
 
 
-# ---------------------------------------------------------------------------
-# Scene ID / benchmark saving
-# ---------------------------------------------------------------------------
-
 def make_scene_id(idx: int) -> str:
     """Create a zero-padded directory-safe ID for the benchmark entry."""
     return f"{idx:04d}"
@@ -545,11 +520,6 @@ def save_benchmark_sample(
     benchmark_dir: str,
     mode: str = "single",
     tool_log_staging_dir: Optional[str] = None,
-    render_preview: bool = False,
-    preview_minerl_env_id: str = "MineStudio-simple-run_and_explore",
-    preview_loading_steps: int = 60,
-    preview_render_size: Optional[List[int]] = None,
-    preview_seed: int = 0,
 ) -> Optional[str]:
     """
     Save a benchmark sample.
@@ -558,7 +528,6 @@ def save_benchmark_sample(
       metadata.json           - core fields (same schema for single and multi-agent)
       reasoning_graph.json    - dependency DAG
       reasoning_graph.png     - auto-rendered graph visualization
-      scene_preview.png       - rendered screenshot from remote sandbox (if render_preview=True)
       [multi-agent only]
       debate_log.json         - truncated debate messages
       agent_conversation_log.json - full conversation with tool-call image refs
@@ -570,11 +539,6 @@ def save_benchmark_sample(
         benchmark_dir:        Root output directory.
         mode:                 "single" or "multi" — controls which extra files are saved.
         tool_log_staging_dir: Temp dir (multi-agent only) to move tool screenshots from.
-        render_preview:       If True, launch a remote sandbox to capture scene_preview.png.
-        preview_minerl_env_id: MineRL env ID sent to server for preview rendering.
-        preview_loading_steps: Number of no-op steps to wait for init commands to apply.
-        preview_render_size:  [H, W] render resolution for the preview, default [640, 360].
-        preview_seed:         Random seed for the preview env.
 
     Returns the output directory path, or None if the sample is invalid.
     """
@@ -595,7 +559,6 @@ def save_benchmark_sample(
     out_dir = Path(benchmark_dir) / scene_id / mode_dir_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── metadata.json ─────────────────────────────────────────────────────
     metadata: Dict[str, Any] = {
         "id": scene_id,
         "sample_idx": sample_idx,
@@ -606,7 +569,6 @@ def save_benchmark_sample(
         "milestones": result.get("milestones"),
     }
 
-    # Populate scene fields only when scene_design is available
     if scene_design is not None:
         metadata.update({
             "scene_name": scene_design.get("scene_name", ""),
@@ -619,20 +581,17 @@ def save_benchmark_sample(
             "design_notes": scene_design.get("design_notes", ""),
         })
 
-    # Mark partial/failed results
     if is_partial:
         metadata["partial"] = True
         metadata["failure_reason"] = result.get("failure_reason", "Unknown failure")
         print(f"  [WARN] Saving partial multi-agent result: {metadata['failure_reason']}")
 
-    # Include debate_log inline for multi-agent mode (mirrors existing schema)
     if mode == "multi" and result.get("debate_log"):
         metadata["debate_log"] = result["debate_log"]
 
     with open(out_dir / "metadata.json", "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-    # ── reasoning_graph.json + reasoning_graph.png ────────────────────────
     if result.get("reasoning_graph"):
         with open(out_dir / "reasoning_graph.json", "w", encoding="utf-8") as f:
             json.dump(result["reasoning_graph"], f, indent=2, ensure_ascii=False)
@@ -642,12 +601,10 @@ def save_benchmark_sample(
         else:
             print("  [WARN] Could not render reasoning_graph.png (matplotlib/networkx missing?)")
 
-    # ── milestones.json ───────────────────────────────────────────────────
     if result.get("milestones"):
         with open(out_dir / "milestones.json", "w", encoding="utf-8") as f:
             json.dump(result["milestones"], f, indent=2, ensure_ascii=False)
 
-    # ── Multi-agent extra files ───────────────────────────────────────────
     if mode == "multi":
         if result.get("debate_log"):
             with open(out_dir / "debate_log.json", "w", encoding="utf-8") as f:
@@ -662,36 +619,8 @@ def save_benchmark_sample(
             with open(out_dir / "tool_call_log.json", "w", encoding="utf-8") as f:
                 json.dump(tool_call_log, f, indent=2, ensure_ascii=False)
 
-        # Move staging tool logs + scene_map into output dir
         if tool_log_staging_dir:
             _move_staging_dir(tool_log_staging_dir, str(out_dir))
-
-    # ── Scene preview screenshot (optional, only when scene_design exists) ────
-    if render_preview and scene_design is not None:
-        commands = scene_design.get("commands", [])
-        task_text = scene_design.get("task_text", "")
-        if commands:
-            # Use scene_name directly as the `name` field in yaml_config.
-            # The server looks up task_configs/simple/<name>.yaml, so pass the
-            # bare scene_name (e.g. "donkey_statue_shrine"), NOT the full
-            # "MineStudio-simple-<name>" form.
-            _sn = scene_design.get("scene_name", "").strip()
-            effective_scene_name = _sn if _sn else "run_and_explore"
-            print(f"  [Preview] Rendering scene screenshot ({len(commands)} commands)...")
-            print(f"  [Preview] Using scene_name='{effective_scene_name}' for yaml_config name")
-            ok = render_scene_screenshot(
-                commands=commands,
-                task_text=task_text,
-                out_dir=str(out_dir),
-                minerl_env_id=effective_scene_name,
-                loading_steps=preview_loading_steps,
-                render_size=preview_render_size,
-                seed=preview_seed,
-            )
-            if not ok:
-                print("  [Preview] Screenshot capture failed (skipped).")
-        else:
-            print("  [Preview] No commands found in scene_design, skipping preview.")
 
     print(f"  [SAVED] {out_dir}")
     return str(out_dir)
@@ -715,10 +644,6 @@ def _move_staging_dir(staging_dir: str, out_dir: str) -> None:
         except Exception as e:
             print(f"  [WARN] Could not move {sub}/: {e}")
 
-
-# ---------------------------------------------------------------------------
-# Reasoning graph rendering
-# ---------------------------------------------------------------------------
 
 def render_reasoning_graph(out_dir: str, reasoning_graph: Dict[str, Any]) -> bool:
     """
@@ -750,8 +675,6 @@ def render_reasoning_graph(out_dir: str, reasoning_graph: Dict[str, Any]) -> boo
     if not raw_nodes:
         return False
 
-    # Normalise nodes: accept both str list and dict list
-    # e.g. ["find_sand", "mine_sand"]  or  [{"id": "A", "task": "find_sand"}, ...]
     def _node_id(n: Any) -> str:
         if isinstance(n, str):
             return n
@@ -761,7 +684,6 @@ def render_reasoning_graph(out_dir: str, reasoning_graph: Dict[str, Any]) -> boo
 
     nodes: List[str] = [_node_id(n) for n in raw_nodes]
 
-    # ── Build DiGraph ────────────────────────────────────────────────────
     try:
         import networkx as nx
         G = nx.DiGraph()
@@ -774,14 +696,12 @@ def render_reasoning_graph(out_dir: str, reasoning_graph: Dict[str, Any]) -> boo
         # Fallback: no networkx, treat as a chain
         G = None  # type: ignore
 
-    # ── Compute layered layout ───────────────────────────────────────────
     NODE_W = 2.4
     NODE_H = 0.70
     H_GAP  = 2.4   # horizontal gap between layers
     V_GAP  = 1.2   # vertical gap between nodes in the same layer
 
     if G is not None and len(G.nodes) > 0:
-        # Layer assignment: longest-path layering
         try:
             layer_of: Dict[str, int] = {}
             for node in nx.topological_sort(G):
@@ -792,17 +712,14 @@ def render_reasoning_graph(out_dir: str, reasoning_graph: Dict[str, Any]) -> boo
     else:
         layer_of = {n: i for i, n in enumerate(nodes)}
 
-    # Group nodes per layer
     layers: Dict[int, List[str]] = {}
     for node, layer in layer_of.items():
         layers.setdefault(layer, []).append(node)
 
     n_layers = max(layers.keys(), default=0) + 1
-    # Sort within each layer (alphabetically for determinism)
     for layer in layers.values():
         layer.sort()
 
-    # Assign (x, y) positions
     node_pos: Dict[str, tuple] = {}
     for layer_idx, layer_nodes in sorted(layers.items()):
         n_in_layer = len(layer_nodes)
@@ -811,7 +728,6 @@ def render_reasoning_graph(out_dir: str, reasoning_graph: Dict[str, Any]) -> boo
             cy = -(rank - (n_in_layer - 1) / 2.0) * (NODE_H + V_GAP)
             node_pos[node] = (cx, cy)
 
-    # ── Canvas sizing ────────────────────────────────────────────────────
     all_x = [p[0] for p in node_pos.values()]
     all_y = [p[1] for p in node_pos.values()]
     min_x = min(all_x) - NODE_W * 0.6
@@ -835,35 +751,30 @@ def render_reasoning_graph(out_dir: str, reasoning_graph: Dict[str, Any]) -> boo
     ]
     badge_symbols = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"]
 
-    # ── Draw nodes ───────────────────────────────────────────────────────
     node_color_map: Dict[str, str] = {}
     for idx, node in enumerate(nodes):
         color = NODE_COLORS[idx % len(NODE_COLORS)]
         node_color_map[node] = color
         cx, cy = node_pos[node]
 
-        # Shadow
         ax.add_patch(mpatches.FancyBboxPatch(
             (cx - NODE_W / 2 + 0.07, cy - NODE_H / 2 - 0.08),
             NODE_W, NODE_H,
             boxstyle="round,pad=0.12",
             facecolor="#B0BAC8", edgecolor="none", alpha=0.45, zorder=2,
         ))
-        # Main box
         ax.add_patch(mpatches.FancyBboxPatch(
             (cx - NODE_W / 2, cy - NODE_H / 2),
             NODE_W, NODE_H,
             boxstyle="round,pad=0.12",
             facecolor=color, edgecolor="white", linewidth=2.2, zorder=3,
         ))
-        # Badge
         badge = badge_symbols[idx] if idx < len(badge_symbols) else str(idx + 1)
         ax.text(
             cx - NODE_W / 2 + 0.24, cy + NODE_H / 2 - 0.16,
             badge, ha="center", va="center",
             fontsize=9, color="white", fontweight="bold", alpha=0.95, zorder=4,
         )
-        # Label
         label = "\n".join(textwrap.wrap(node, width=22))
         ax.text(
             cx, cy, label,
@@ -872,8 +783,6 @@ def render_reasoning_graph(out_dir: str, reasoning_graph: Dict[str, Any]) -> boo
             color="white", linespacing=1.3, zorder=4,
         )
 
-    # ── Draw edges ───────────────────────────────────────────────────────
-    # Track parallel edges to offset arcs so they don't overlap
     edge_count: Dict[tuple, int] = {}
 
     for e in edges:
@@ -885,22 +794,17 @@ def render_reasoning_graph(out_dir: str, reasoning_graph: Dict[str, Any]) -> boo
         sx, sy = node_pos[src]
         dx, dy = node_pos[dst]
 
-        # Arc radius increases for each parallel edge between the same pair
         pair = (src, dst)
         rad_idx = edge_count.get(pair, 0)
         edge_count[pair] = rad_idx + 1
         rad = 0.0 + rad_idx * 0.25
 
-        # Determine attachment points on node borders
-        # Source: right-center or bottom-center depending on relative position
         if abs(dx - sx) >= abs(dy - sy):
-            # Predominantly horizontal
             x0 = sx + NODE_W / 2 if dx > sx else sx - NODE_W / 2
             y0 = sy
             x1 = dx - NODE_W / 2 if dx > sx else dx + NODE_W / 2
             y1 = dy
         else:
-            # Predominantly vertical
             x0 = sx
             y0 = sy - NODE_H / 2 if dy < sy else sy + NODE_H / 2
             x1 = dx
@@ -919,9 +823,7 @@ def render_reasoning_graph(out_dir: str, reasoning_graph: Dict[str, Any]) -> boo
             zorder=3,
         )
 
-        # Edge reason label (midpoint of the arc)
         if reason:
-            # Approximate midpoint of curved arc
             mx = (x0 + x1) / 2 - rad * (y1 - y0) * 0.5
             my = (y0 + y1) / 2 + rad * (x1 - x0) * 0.5
             wrapped = "\n".join(textwrap.wrap(reason, width=24))
@@ -951,10 +853,6 @@ def render_reasoning_graph(out_dir: str, reasoning_graph: Dict[str, Any]) -> boo
     print(f"  [VIZ] Reasoning graph saved: {out_path}")
     return True
 
-
-# ---------------------------------------------------------------------------
-# Minecraft scene rendering via luminescent-server (HTTP API)
-# ---------------------------------------------------------------------------
 
 def render_minecraft_scene_via_server(
     out_dir: str,
@@ -1043,7 +941,6 @@ def render_minecraft_scene_via_server(
             print(f"  [SERVER_RENDER] Failed to save image to {path}: {e}")
             return False
 
-    # ── 1. Create environment ────────────────────────────────────────────────
     print(f"  [SERVER_RENDER] Connecting to {base_url}, creating env '{env_id}'...")
     create_resp = _post("create_env", {"env": env_id}, timeout=600)
     if create_resp is None or create_resp.get("status") != 0:
@@ -1052,7 +949,6 @@ def render_minecraft_scene_via_server(
         return None
     print(f"  [SERVER_RENDER] Env created.")
 
-    # ── 2. Reset environment ─────────────────────────────────────────────────
     print("  [SERVER_RENDER] Resetting environment...")
     reset_resp = _post("reset_env", {}, timeout=180)
     if reset_resp is None or reset_resp.get("status") != 0:
@@ -1060,7 +956,6 @@ def render_minecraft_scene_via_server(
         print(f"  [SERVER_RENDER] reset_env failed: {msg}")
         return None
 
-    # ── 3. Execute each command via chat action ──────────────────────────────
     noop_action = {
         "ESC": 0, "attack": 0, "back": 0, "camera": [0, 0],
         "drop": 0, "forward": 0, "hotbar.1": 0, "hotbar.2": 0,
@@ -1073,7 +968,6 @@ def render_minecraft_scene_via_server(
     print(f"  [SERVER_RENDER] Executing {len(commands)} scene commands via chat...")
     last_step_resp = None
     for idx, cmd in enumerate(commands):
-        # Send command as a chat action (MineRL chat handler executes /commands)
         chat_action = dict(noop_action)
         chat_action["chat"] = cmd
         step_resp = _post("step", {"action": chat_action}, timeout=60)
@@ -1084,20 +978,17 @@ def render_minecraft_scene_via_server(
             last_step_resp = step_resp
             print(f"  [SERVER_RENDER] Command [{idx+1}/{len(commands)}] OK")
 
-        # Wait a few no-op steps for the world to update
         for _ in range(wait_steps_after_cmd):
             step_resp = _post("step", {"action": noop_action}, timeout=30)
             if step_resp and step_resp.get("status") == 0:
                 last_step_resp = step_resp
 
-    # ── 4. Let the environment settle ────────────────────────────────────────
     print(f"  [SERVER_RENDER] Settling ({settle_steps} no-op steps)...")
     for _ in range(settle_steps):
         step_resp = _post("step", {"action": noop_action}, timeout=30)
         if step_resp and step_resp.get("status") == 0:
             last_step_resp = step_resp
 
-    # ── 5. Capture and save screenshot ──────────────────────────────────────
     snapshot_path = None
     if last_step_resp and last_step_resp.get("screenshot"):
         img = _b64_to_pil(last_step_resp["screenshot"])
@@ -1107,7 +998,6 @@ def render_minecraft_scene_via_server(
                 snapshot_path = str(snapshot_file)
                 print(f"  [SERVER_RENDER] Saved scene_preview.png ({img.size})")
     else:
-        # Fallback: try reset again to get a fresh screenshot
         print("  [SERVER_RENDER] No screenshot from last step, trying reset for snapshot...")
         reset_resp2 = _post("reset_env", {}, timeout=120)
         if reset_resp2 and reset_resp2.get("screenshot"):
@@ -1122,7 +1012,6 @@ def render_minecraft_scene_via_server(
         print("  [SERVER_RENDER] Could not capture screenshot.")
         return None
 
-    # ── 6. Try to capture an overhead (spectator) view ───────────────────────
     try:
         min_x, max_x, min_y, max_y, min_z, max_z = _estimate_scene_bbox(commands)
         cx = (min_x + max_x) / 2.0
@@ -1131,7 +1020,6 @@ def render_minecraft_scene_via_server(
         cam_height_offset = max(15.0, min(60.0, span * 0.8))
         cam_y = max_y + cam_height_offset
 
-        # Switch to spectator and teleport
         spectator_action = dict(noop_action)
         spectator_action["chat"] = "/gamemode spectator @s"
         _post("step", {"action": spectator_action}, timeout=30)
@@ -1140,17 +1028,14 @@ def render_minecraft_scene_via_server(
         tp_action["chat"] = f"/tp @s ~{cx:.1f} ~{cam_y:.1f} ~{cz:.1f}"
         _post("step", {"action": tp_action}, timeout=30)
 
-        # Settle after teleport
         for _ in range(4):
             step_resp = _post("step", {"action": noop_action}, timeout=30)
 
-        # Look down (pitch toward ground) — send camera pitch steps
         pitch_action = dict(noop_action)
         for _ in range(6):
             pitch_action["camera"] = [15.0, 0.0]
             step_resp = _post("step", {"action": pitch_action}, timeout=30)
 
-        # Final no-op to capture
         final_resp = _post("step", {"action": noop_action}, timeout=30)
         if final_resp and final_resp.get("screenshot"):
             img = _b64_to_pil(final_resp["screenshot"])
@@ -1162,7 +1047,6 @@ def render_minecraft_scene_via_server(
                         f"(cam ~{cx:.0f},{cam_y:.0f},{cz:.0f}, span={span:.0f})"
                     )
 
-        # Return to survival mode
         survival_action = dict(noop_action)
         survival_action["chat"] = "/gamemode survival @s"
         _post("step", {"action": survival_action}, timeout=30)
@@ -1172,10 +1056,6 @@ def render_minecraft_scene_via_server(
 
     return snapshot_path
 
-
-# ---------------------------------------------------------------------------
-# Minecraft scene rendering
-# ---------------------------------------------------------------------------
 
 def _estimate_scene_bbox(
     commands: List[str],
@@ -1227,166 +1107,3 @@ def _estimate_scene_bbox(
         max_z += 5
 
     return min_x, max_x, min_y, max_y, min_z, max_z
-
-
-def render_minecraft_scene(
-    out_dir: str,
-    scene_design: Dict[str, Any],
-    server_url: Optional[str] = None,
-) -> Optional[str]:
-    """
-    Execute scene commands and save screenshots.
-
-    Rendering priority:
-      1. luminescent-server (remote HTTP API) — if ``server_url`` is provided or
-         the environment variable ``LUMINESCENT_SERVER_URL`` is set.
-      2. Local MinecraftSim (minestudio) — fallback when no server is available.
-
-    Args:
-        out_dir:     Output directory for screenshots.
-        scene_design: Dict with "commands", "task_text", "scene_name".
-        server_url:  URL of the luminescent-server, e.g. "http://10.x.x.x:8000".
-                     If None, falls back to the LUMINESCENT_SERVER_URL env var,
-                     and then to local MinecraftSim.
-
-    Returns:
-        Path to scene_preview.png, or None on failure.
-    """
-    # Resolve server URL: argument > env var > None (local fallback)
-    resolved_server_url = server_url or os.environ.get("LUMINESCENT_SERVER_URL", "").strip() or None
-
-    if resolved_server_url:
-        print(f"  [RENDER] Using luminescent-server at {resolved_server_url}")
-        result = render_minecraft_scene_via_server(
-            out_dir=out_dir,
-            scene_design=scene_design,
-            server_url=resolved_server_url,
-        )
-        if result is not None:
-            return result
-        print("  [RENDER] luminescent-server render failed; falling back to local MinecraftSim.")
-
-    commands: List[str] = scene_design.get("commands", [])
-    task_text: str = scene_design.get("task_text", "")
-    scene_name: str = scene_design.get("scene_name", "scene")
-
-    if not commands:
-        print("  [RENDER] No commands to execute.")
-        return None
-
-    try:
-        import cv2
-        import numpy as _np
-        from minestudio.simulator import MinecraftSim
-        from minestudio.simulator.callbacks import JudgeResetCallback, RecordCallback
-        from minestudio.simulator.callbacks.callback import MinecraftCallback
-
-        class DynamicSceneCallback(MinecraftCallback):
-            def __init__(self, cmds: List[str], task_name: str, task_text_str: str):
-                self._cmds = cmds
-                self._task_name = task_name
-                self._task_text = task_text_str
-
-            def after_reset(self, sim, obs, info):
-                for cmd in self._cmds:
-                    try:
-                        obs, _, _, info = sim.env.execute_cmd(cmd)
-                    except Exception as e:
-                        print(f"    [WARN] Command failed: {cmd!r} — {e}")
-                for _ in range(6):
-                    obs, _, _, info = sim.env.step(sim.env.action_space.no_op())
-                obs, info = sim._wrap_obs_info(obs, info)
-                obs["task"] = {
-                    "name": self._task_name,
-                    "text": self._task_text,
-                }
-                return obs, info
-
-        out_path = Path(out_dir)
-        record_dir = str(out_path / "video")
-
-        sim = MinecraftSim(
-            action_type="env",
-            obs_size=(512, 512),
-            callbacks=[
-                DynamicSceneCallback(
-                    cmds=commands,
-                    task_name=scene_name,
-                    task_text_str=task_text,
-                ),
-                JudgeResetCallback(20),
-                RecordCallback(
-                    record_path=record_dir,
-                    fps=20,
-                    frame_type="obs",
-                    recording=False,
-                ),
-            ],
-        )
-
-        obs, info = sim.reset()
-
-        snapshot_path = out_path / "scene_preview.png"
-        bgr = cv2.cvtColor(obs["image"], cv2.COLOR_RGB2BGR)
-        cv2.imwrite(str(snapshot_path), bgr)
-        print("  [RENDER] Saved scene_preview.png")
-
-        action = sim.noop_action()
-        action["inventory"] = 1
-        obs, _, _, _, _ = sim.step(action)
-        inv_path = out_path / "scene_inventory.png"
-        cv2.imwrite(str(inv_path), cv2.cvtColor(obs["image"], cv2.COLOR_RGB2BGR))
-        print("  [RENDER] Saved scene_inventory.png")
-
-        action["inventory"] = 1
-        sim.step(action)
-
-        try:
-            min_x, max_x, min_y, max_y, min_z, max_z = _estimate_scene_bbox(commands)
-            cx = (min_x + max_x) / 2.0
-            cz = (min_z + max_z) / 2.0
-            span = max(max_x - min_x, max_z - min_z)
-            cam_height_offset = max(15.0, min(60.0, span * 0.8))
-            cam_y = max_y + cam_height_offset
-
-            tp_cmd = f"/tp @s ~{cx:.1f} ~{cam_y:.1f} ~{cz:.1f}"
-            sim.env.execute_cmd("/gamemode spectator @s")
-            sim.env.execute_cmd(tp_cmd)
-
-            noop = sim.env.action_space.no_op()
-            for _ in range(4):
-                obs_raw, _, _, info_raw = sim.env.step(noop)
-
-            pitch_per_step = 15.0
-            steps_needed = int(90.0 / pitch_per_step)
-            cam_action = sim.noop_action()
-            for _ in range(steps_needed):
-                cam_action["camera"] = _np.array([pitch_per_step, 0.0], dtype=_np.float32)
-                obs_raw2, _, _, _, _ = sim.step(cam_action)
-
-            cam_action["camera"] = _np.array([0.0, 0.0], dtype=_np.float32)
-            obs, _, _, _, _ = sim.step(cam_action)
-
-            overview_path = out_path / "scene_overview.png"
-            cv2.imwrite(str(overview_path), cv2.cvtColor(obs["image"], cv2.COLOR_RGB2BGR))
-            print(
-                f"  [RENDER] Saved scene_overview.png  "
-                f"(cam @~{cx:.0f},{cam_y:.0f},{cz:.0f}, span={span:.0f})"
-            )
-
-            sim.env.execute_cmd("/gamemode survival @s")
-            sim.env.execute_cmd("/tp @s ~0 ~0 ~0")
-
-        except Exception as ov_err:
-            print(f"  [RENDER] Aerial overview skipped: {ov_err}")
-
-        sim.close()
-        return str(snapshot_path)
-
-    except ImportError as e:
-        print(f"  [RENDER] MinecraftSim not available: {e}")
-        print("  [RENDER] Please run this script in the 'mcu' conda environment.")
-        return None
-    except Exception as e:
-        print(f"  [RENDER] Error during rendering: {e}")
-        return None

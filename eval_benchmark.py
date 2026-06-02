@@ -55,10 +55,8 @@ class MineRLBenchmarkEnv(MineRLSandboxEnv):
         logger.info(f"[BenchmarkEnv] task: {self._task_text[:100]}")
 
     def _init_remote_env(self) -> None:
-        if not self.sandbox_tool:
-            raise RuntimeError("sandbox_tool not initialised.")
         logger.info(f"Sending /create_env with {len(self._commands_list)} commands...")
-        response = self.sandbox_tool.create_env(
+        response = self.create_env(
             env='MinecraftSim',
             obs_size=[128, 128],
             render_size=[640, 360],
@@ -86,7 +84,6 @@ except ImportError:
     _HAS_MILESTONE_CHECKER = False
 
     class MilestoneChecker:
-        """Stub when benchmark_gen is not available."""
         def __init__(self, milestones): self._milestones = milestones
         def reset(self, info): pass
         def check(self, info): return []
@@ -100,12 +97,10 @@ except ImportError:
         def from_metadata(cls, path): return cls([])
 
 
-# Global flag to track shutdown request
 _shutdown_requested = False
 
 
 def _signal_handler(signum, frame):
-    """Handle SIGINT by setting global shutdown flag."""
     global _shutdown_requested
     _shutdown_requested = True
     logger.warning("\n[INTERRUPT] Shutdown requested, finishing current step and closing sandbox...")
@@ -169,11 +164,9 @@ def _run_benchmark(
     _all_done_logged: bool = False
     long_term_memory: str = ""
 
-    # Register signal handler for graceful shutdown
     original_sigint_handler = signal.signal(signal.SIGINT, _signal_handler)
 
     try:
-        # Reset
         has_loading = loading_command_steps > 0
         obs, info = env.reset(save_frame=not has_loading)
         frame_buffer.append(obs["pov"])
@@ -209,7 +202,6 @@ def _run_benchmark(
 
             logger.info(f"[{run_id}] --- Step {step + 1}/{max_steps} ---")
 
-            # Check for interrupt with shorter timeout
             try:
                 thought, action, memory_update = agent.get_action(
                     list(frame_buffer), list(thought_history), list(action_history), step + 1,
@@ -264,10 +256,7 @@ def _run_benchmark(
         logger.warning(f"[{run_id}] KeyboardInterrupt received, shutting down...")
         step_error = "interrupted_by_user"
     finally:
-        # Restore original signal handler
         signal.signal(signal.SIGINT, original_sigint_handler)
-
-        # Always close the environment to release sandbox
         logger.info(f"[{run_id}] Closing sandbox environment...")
         try:
             env.close()
@@ -275,7 +264,6 @@ def _run_benchmark(
         except Exception as close_err:
             logger.warning(f"[{run_id}] env.close() raised: {close_err}")
 
-    # Build final status even if interrupted
     final_status = []
     for ms in checker._milestones:
         mid = ms.get("milestone_id", "")
@@ -312,7 +300,6 @@ def _run_benchmark(
 
 
 def _worker_eval(worker_args: dict) -> dict:
-    """Picklable worker for parallel benchmark evaluation."""
     import signal as _signal
     _signal.signal(_signal.SIGINT, _signal.SIG_IGN)
 
@@ -353,10 +340,7 @@ def eval_benchmark(
     limit: Optional[int] = typer.Option(None, "--limit",
                                         help="Limit number of scenarios to evaluate"),
 ):
-    """Evaluate all benchmark scenarios in the specified directory.
-
-    Scans for metadata.json files in <benchmark_dir>/<scene>/multi-agent/ structure.
-    """
+    """Evaluate all benchmark scenarios in benchmark_dir."""
     logger.info(f"--- Starting evaluation (model={model}) ---")
 
     bench_path = Path(benchmark_dir)
@@ -365,7 +349,6 @@ def eval_benchmark(
     if not bench_path.exists():
         raise FileNotFoundError(f"Benchmark directory not found: {bench_path}")
 
-    # Discover all metadata.json files
     metadata_entries: List[tuple] = []
     for scene_dir in sorted(d for d in bench_path.iterdir() if d.is_dir() and not d.name.startswith("_")):
         meta_path = scene_dir / "multi-agent" / "metadata.json"
@@ -376,7 +359,6 @@ def eval_benchmark(
         logger.warning(f"No metadata.json found under {bench_path}")
         return
 
-    # Apply limit if specified
     if limit and limit > 0:
         metadata_entries = metadata_entries[:limit]
 
@@ -486,7 +468,6 @@ def eval_benchmark(
                         summary = _make_error_summary(scene_num, exc)
                         all_results.append(summary)
 
-    # Aggregated summary
     total = len(all_results)
     done = sum(1 for r in all_results if r.get("all_milestones_done"))
     ms_done = sum(r.get("milestones_completed", 0) for r in all_results)

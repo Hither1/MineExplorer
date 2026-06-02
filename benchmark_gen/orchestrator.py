@@ -1,40 +1,3 @@
-"""
-agents/orchestrator.py
-
-AutoGen-Based Multi-Agent Benchmark Orchestrator
-=================================================
-
-Replaces the hand-rolled orchestrator with a proper AutoGen GroupChat so that
-agents collaborate from round 1 with real multi-turn conversation.
-
-Architecture
-------------
-Five ConversableAgents + one UserProxyAgent (Orchestrator):
-
-  Orchestrator (UserProxy)   – drives the conversation, injects tasks/tools
-  TaskSelectorAgent          – picks k atomic tasks, builds DAG
-  SceneDesignerAgent         – designs Minecraft scene, uses sandbox tools
-  MilestoneAgent             – designs rule-based milestones, uses sandbox
-  CommonSenseAgent           – checks for Minecraft-specific knowledge issues
-  ValidatorAgent             – validates DAG + milestones, uses sandbox
-
-Conversation flow (GroupChat with custom speaker selector):
-  Round 0 (Init):
-    Orchestrator → TaskSelectorAgent: "Select k tasks from candidates"
-    TaskSelectorAgent → ALL: task list + DAG
-    SceneDesignerAgent → ALL: scene design (calls sandbox tool, then reports)
-    CommonSenseAgent → ALL: early feedback on sandbox report
-    MilestoneAgent → ALL: final milestones JSON (direct, no inquiry)
-  Round 1..N (Debate):
-    CommonSenseAgent → ALL: inspection report + critiques
-    ValidatorAgent → ALL: validation report + critiques
-    TaskSelectorAgent → ALL: revisions (if any)
-    SceneDesignerAgent → ALL: revisions (if any)
-    MilestoneAgent → ALL: revisions (if any)
-  Termination:
-    Orchestrator detects JSON convergence; extracts final outputs.
-"""
-
 from __future__ import annotations
 
 import json
@@ -45,9 +8,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# ---------------------------------------------------------------------------
-# AutoGen import (pyautogen / autogen-agentchat)
-# ---------------------------------------------------------------------------
 try:
     import autogen
     from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent
@@ -57,7 +17,12 @@ except ImportError as _e:
         f"Original error: {_e}"
     )
 
-from ..utils import (
+_BENCHMARK_GEN_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _BENCHMARK_GEN_DIR.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from benchmark_gen.utils import (
     extract_json_object,
     validate_scene_design,
     validate_reasoning_graph,
@@ -67,7 +32,7 @@ from ..utils import (
     save_benchmark_sample,
     render_reasoning_graph,
 )
-from .sandbox_tools import (
+from benchmark_gen.sandbox_tools import (
     SandboxHandle,
     lazy_setup_sandbox,
     LazyMCBenchSandboxEnv,
@@ -82,13 +47,12 @@ from .sandbox_tools import (
     _PREVIEW_MAX_STEPS,
 )
 
-from .wiki_tool import make_wiki_tools
+from benchmark_gen.wiki_tool import make_wiki_tools
 
 BENCHMARK_GEN_DIR = Path(__file__).resolve().parent    # benchmark_gen/
 FALLBACK_DIR = BENCHMARK_GEN_DIR / "fallback"
 _PROMPTS_DIR = BENCHMARK_GEN_DIR / "prompts"
 
-# Agent system prompts — loaded from benchmark_gen/prompts/
 def _read_prompt(name: str) -> str:
     with open(_PROMPTS_DIR / name, "r", encoding="utf-8") as _f:
         return _f.read().strip()
@@ -99,11 +63,7 @@ _MILESTONE_SYS      = _read_prompt("milestone_system.txt")
 _COMMONSENSE_SYS    = _read_prompt("commonsense_system.txt")
 _VALIDATOR_SYS      = _read_prompt("validator_system.txt")
 
-# ---------------------------------------------------------------------------
-# Conversation order constants (module-level so _run_groupchat can reference them)
-# ---------------------------------------------------------------------------
-
-# Init phase: fixed order of agent turns from the very first message
+# Init phase: fixed order of agent turns
 INIT_ORDER: List[str] = [
     "TaskSelectorAgent",   # 0: select tasks + build DAG
     "SceneDesignerAgent",  # 1: design scene + call preview_scene_in_sandbox
@@ -112,7 +72,7 @@ INIT_ORDER: List[str] = [
     "MilestoneAgent",      # 4: output final milestones directly (NO questions first)
 ]
 
-# Debate phase: repeated N times after the init phase
+# Debate phase: repeated N times
 DEBATE_ORDER: List[str] = [
     "CommonSenseAgent",    # 0: inspect
     "ValidatorAgent",      # 1: validate graph
@@ -125,10 +85,6 @@ DEBATE_ORDER: List[str] = [
     "ValidatorAgent",      # 8: re-validate
 ]
 
-
-# ---------------------------------------------------------------------------
-# Tool call logging wrapper
-# ---------------------------------------------------------------------------
 
 class _LoggingToolWrapper:
     """
@@ -187,21 +143,17 @@ class _LoggingToolWrapper:
 
         result = self._fn(*args, **kwargs)
 
-        # ── Extract image data from result ───────────────────────────────
-        # Collect (perspective_name, b64_png, saved_path) tuples
-        image_entries: List[Dict] = []  # [{"perspective": str, "b64": str, "path": str}]
+        image_entries: List[Dict] = []
         image_paths: List[str] = []
 
         if isinstance(result, dict):
             saved_paths = result.get("saved_paths", {})
-            # Map perspective → saved path
             path_map: Dict[str, str] = {}
             if isinstance(saved_paths, dict):
                 path_map = {k: v for k, v in saved_paths.items() if v}
             elif isinstance(saved_paths, list):
                 path_map = {f"frame_{i}": p for i, p in enumerate(saved_paths) if p}
 
-            # Per-perspective base64 data (execute_commands returns these at top level)
             _KNOWN_PERSPECTIVES = {
                 "first_person", "overhead", "inventory",
                 "north", "south", "east", "west"
@@ -214,7 +166,6 @@ class _LoggingToolWrapper:
                     if saved_path:
                         image_paths.append(saved_path)
 
-            # Handle preview_scene_in_sandbox result (all_frames list)
             all_frames = result.get("all_frames", [])
             if all_frames and not image_entries:
                 for frame in all_frames:
@@ -226,7 +177,6 @@ class _LoggingToolWrapper:
                         if path:
                             image_paths.append(path)
 
-            # Also handle execute_agent_action / run_agent_episode
             if not image_entries:
                 frames_b64 = result.get("frames_b64", [])
                 for i, b64 in enumerate(frames_b64):
@@ -235,7 +185,6 @@ class _LoggingToolWrapper:
                         image_entries.append({"perspective": f"frame_{i}", "b64": b64, "path": sp})
                         if sp:
                             image_paths.append(sp)
-                # steps from run_agent_episode
                 for step in result.get("steps", []):
                     if isinstance(step, dict):
                         b64 = step.get("frame_b64", "")
@@ -252,7 +201,6 @@ class _LoggingToolWrapper:
         elif isinstance(result, str) and result.endswith(".png"):
             image_paths = [result]
 
-        # ── Build text summary for the LLM (tool result content) ─────────
         text_summary = _build_tool_result_summary(
             tool_name=self.name,
             kwargs=safe_kwargs,
@@ -261,11 +209,9 @@ class _LoggingToolWrapper:
             raw_result=result,
         )
 
-        # ── Assign global call index ─────────────────────────────────────
         self._call_counter[0] += 1
         call_idx = self._call_counter[0]
 
-        # ── Record in tool_call_log ──────────────────────────────────────
         record = {
             "call_idx": call_idx,
             "timestamp": ts,
@@ -281,10 +227,6 @@ class _LoggingToolWrapper:
             "tool_use_subdir": None,  # filled in below if tool_use_dir is set
         }
 
-        # ── Write tool_use/ per-call subfolder ───────────────────────────
-        # Each call gets its own numbered subdirectory:
-        #   tool_use/001_SceneDesignerAgent_execute_minecraft_commands_143022/
-        # Inside: call_info.json + copies of all screenshot files.
         tool_use_subdir_rel: Optional[str] = None
         if self._tool_use_dir:
             try:
@@ -300,7 +242,6 @@ class _LoggingToolWrapper:
                 subdir_path = Path(self._tool_use_dir) / subdir_name
                 subdir_path.mkdir(parents=True, exist_ok=True)
 
-                # Copy screenshot files into the subdir
                 copied_files: List[str] = []
                 for img_path in image_paths:
                     if img_path and Path(img_path).is_file():
@@ -352,7 +293,6 @@ class _LoggingToolWrapper:
 
         self._log.append(record)
 
-        # ── Record in visual_log (for multimodal injection) ───────────────
         if image_entries:
             self._visual_log.append({
                 "timestamp": ts,
@@ -370,8 +310,6 @@ class _LoggingToolWrapper:
         ) if image_entries else "none"
         print(f"  [ToolLog] {ts} | {self._agent_name} → {self.name} | images: [{images_str}]")
 
-        # ── Return text summary so AutoGen injects it as tool result text ─
-        # The actual images are injected separately by _VisualToolAgent
         return text_summary
 
 
@@ -472,10 +410,6 @@ def _build_tool_result_summary(
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# ImageAwareConversableAgent — injects images after tool calls
-# ---------------------------------------------------------------------------
-
 class _VisualToolAgent(ConversableAgent):
     """
     A ConversableAgent subclass that, after executing a tool call, injects
@@ -524,13 +458,7 @@ class _VisualToolAgent(ConversableAgent):
         # Pending image entries waiting to be injected on the next generate_oai_reply call
         self._pending_image_entries: List[Dict] = []
 
-        # ── Patch reply_func_list so our generate_oai_reply override is called ─
-        # AutoGen registers ConversableAgent.generate_oai_reply (unbound parent
-        # class function) in _reply_func_list during __init__.  When AutoGen later
-        # calls reply_func(self, ...) it invokes the *parent* implementation directly,
-        # bypassing our subclass override entirely.  We fix this by replacing the
-        # entry with a reference to THIS class's generate_oai_reply so that the
-        # Bedrock-Claude assistant-prefill guard actually fires.
+        # Patch so our generate_oai_reply override is called instead of the parent's
         from autogen import ConversableAgent as _CA
         for entry in self._reply_func_list:
             if entry.get("reply_func") is _CA.generate_oai_reply:
@@ -577,7 +505,6 @@ class _VisualToolAgent(ConversableAgent):
         time this method is called, so inserting image messages here does NOT
         break the tool_calls → tool ordering required by the OpenAI API.
         """
-        # ── Flush pending images into oai_messages ───────────────────────
         if self._pending_image_entries:
             pending = list(self._pending_image_entries)
             self._pending_image_entries.clear()
@@ -586,8 +513,6 @@ class _VisualToolAgent(ConversableAgent):
                 images = entry.get("image_entries", [])
                 if not images:
                     continue
-                # For preview_scene_in_sandbox, subsample frames to avoid 413 errors.
-                # Keep: initial frame + up to MAX_PREVIEW_FRAMES evenly-spaced steps.
                 images = _subsample_preview_frames(images, entry.get("tool", ""))
                 multimodal_content = _build_multimodal_content(
                     images, entry.get("text_summary", "")
@@ -623,18 +548,7 @@ class _VisualToolAgent(ConversableAgent):
                     f"{persp_list}"
                 )
 
-        # ── Bedrock Claude "assistant prefill" guard ─────────────────────
-        # Bedrock Claude rejects requests where the last message has role='assistant'
-        # (it treats that as "assistant prefill" and returns HTTP 400).
-        # This can happen when the same agent is called multiple times in a row
-        # (tool-call intercept returns the same speaker for consecutive turns) and
-        # the previous turn ended with the agent's own text reply (role=assistant).
-        # Solution: if the messages list ends with an assistant message, append a
-        # minimal user acknowledgement so the conversation ends with a user turn.
-        #
-        # NOTE: AutoGen passes messages=None here; we must resolve it ourselves
-        # before checking, then pass the resolved list to super() so the guard
-        # actually fires.
+        # Bedrock Claude rejects requests ending with role='assistant'; append a user ack if needed.
         if messages is None and sender is not None:
             messages = self._oai_messages.get(sender)
         if messages and messages[-1].get("role") == "assistant":
@@ -648,19 +562,11 @@ class _VisualToolAgent(ConversableAgent):
                 "to satisfy Bedrock Claude 'no assistant prefill' constraint."
             )
 
-        # ── Image history pruning guard (avoid 413 Request Entity Too Large) ──
-        # Each sandbox preview injects 20+ large base64 PNG images.  After
-        # multiple tool calls the accumulated images can easily exceed the
-        # proxy/gateway request-body size limit (typically 10-50 MB).
-        # Strategy: keep the images only in the *most recent* SandboxVision
-        # message; replace images in all earlier SandboxVision messages with a
-        # compact text placeholder so the context is preserved without the bulk.
+        # Prune old SandboxVision images to avoid 413 payload limit.
         if messages:
             messages = _prune_old_vision_images(messages)
 
-        # ── Rate-limit retry loop ────────────────────────────────────────
-        # If the upstream API returns HTTP 429 (rate limit exceeded) we wait
-        # 60 seconds and retry rather than crashing the whole generation run.
+        # Rate-limit retry (HTTP 429): wait 60s and retry up to 10 times.
         import time as _time
         _max_retries = 10
         _retry_wait  = 60  # seconds
@@ -882,10 +788,6 @@ def _prune_old_vision_images(messages: List[Dict]) -> List[Dict]:
     return pruned
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _build_llm_config(
     model: str,
     api_key: str,
@@ -918,38 +820,6 @@ def _build_llm_config(
         "timeout": 600,
     }
 
-
-def _extract_final_json_block(text: str, key: str) -> Optional[Dict]:
-    """Find last occurrence of a JSON block containing `key`."""
-    matches = list(re.finditer(r"\{", text))
-    for m in reversed(matches):
-        candidate = text[m.start():]
-        obj = extract_json_object(candidate)
-        if isinstance(obj, dict) and key in obj:
-            return obj
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Sandbox screenshot → message content helper
-# ---------------------------------------------------------------------------
-
-def _b64_image_message(b64: str, caption: str = "") -> List[Dict]:
-    """Build a multimodal message content list with an image."""
-    content = [
-        {
-            "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{b64}"},
-        }
-    ]
-    if caption:
-        content.append({"type": "text", "text": caption})
-    return content
-
-
-# ---------------------------------------------------------------------------
-# BenchmarkOrchestrator
-# ---------------------------------------------------------------------------
 
 class BenchmarkOrchestrator:
     """
@@ -998,18 +868,14 @@ class BenchmarkOrchestrator:
         # Sandbox handle (shared across agents per sample)
         self._sandbox: Optional[SandboxHandle] = None
 
-    # ------------------------------------------------------------------
-    # Sandbox lifecycle
-    # ------------------------------------------------------------------
-
     def _start_sandbox(self, sample_idx: int) -> Optional[SandboxHandle]:
         """Create a lazy SandboxHandle for this sample.
 
         The sandbox resource is NOT allocated here.  Instead, a
-        ``LazyMCBenchSandboxEnv`` is created which only holds the pssdk
-        credentials.  The actual ``sandbox_start + create_env`` call happens
-        the first time SceneDesignerAgent calls ``preview_scene_in_sandbox``
-        (or ``execute_minecraft_commands``) and passes a ``commands`` list.
+        ``LazyMCBenchSandboxEnv`` is created which only reads MC_SANDBOX_URL.
+        The actual ``create_env`` call happens the first time SceneDesignerAgent
+        calls ``preview_scene_in_sandbox`` (or ``execute_minecraft_commands``)
+        and passes a ``commands`` list.
 
         This matches the user's requirement:
           1. Tools are registered (sandbox not yet started).
@@ -1037,10 +903,6 @@ class BenchmarkOrchestrator:
             except Exception:
                 pass
             self._sandbox = None
-
-    # ------------------------------------------------------------------
-    # Post-chat scene capture (using live sandbox, no MinecraftSim needed)
-    # ------------------------------------------------------------------
 
     def _capture_final_scene_views(
         self,
@@ -1103,10 +965,6 @@ class BenchmarkOrchestrator:
 
         return result
 
-    # ------------------------------------------------------------------
-    # LLM config builders
-    # ------------------------------------------------------------------
-
     def _llm_config(self, role: str) -> Dict[str, Any]:
         return _build_llm_config(
             model=self.api_model,
@@ -1114,10 +972,6 @@ class BenchmarkOrchestrator:
             base_url=self.api_base_url,
             temperature=self.temperatures[role],
         )
-
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
 
     def generate_sample(
         self,
@@ -1158,10 +1012,6 @@ class BenchmarkOrchestrator:
                 log_dir=log_dir or render_out_dir,
             )
 
-            # ── Post-chat: capture final scene map while sandbox is still live ──
-            # Capture first_person + overhead views of the fully-built scene so
-            # the user can always see what the designed scene looks like, without
-            # requiring MinecraftSim / mcu environment.
             if result is not None and self._sandbox is not None:
                 scene_snap_dir = log_dir or render_out_dir or sandbox_tmp
                 if scene_snap_dir:
@@ -1172,10 +1022,6 @@ class BenchmarkOrchestrator:
             return result
         finally:
             self._stop_sandbox()
-
-    # ------------------------------------------------------------------
-    # GroupChat construction and execution
-    # ------------------------------------------------------------------
 
     def _run_groupchat(
         self,
@@ -1188,16 +1034,10 @@ class BenchmarkOrchestrator:
     ) -> Optional[Dict[str, Any]]:
         """Build agents, run GroupChat, extract result."""
 
-        # ── Shared tool-call log ─────────────────────────────────────────
-        # Shared list that all _LoggingToolWrapper instances append records to.
         tool_call_log: List[Dict] = []
-        # visual_log: shared list where wrappers record image data for injection
         visual_log: List[Dict] = []
-        # visual_message_log: records all injected multimodal messages for conversation log
         visual_message_log: List[Dict] = []
 
-        # Determine where to save tool-call screenshots
-        # (prefer log_dir / sandbox_tmp / tmp_dir fallback)
         tool_log_dir = (
             log_dir
             or sandbox_tmp
@@ -1205,23 +1045,16 @@ class BenchmarkOrchestrator:
         )
         os.makedirs(tool_log_dir, exist_ok=True)
 
-        # tool_use/ staging directory: each tool call gets its own numbered subfolder here.
-        # After successful generation it is moved into <scene_id>/tool_use/ by save_benchmark_sample.
         tool_use_staging_dir = os.path.join(tool_log_dir, "tool_use")
         os.makedirs(tool_use_staging_dir, exist_ok=True)
 
-        # Shared call counter — mutable int wrapped in a list so all wrappers share one counter.
         shared_call_counter: List[int] = [0]
 
-        # ── Build tool functions (sandbox-aware) ────────────────────────
         tools_scene: List[Dict] = []
         tools_milestone: List[Dict] = []
         tools_validator: List[Dict] = []
 
         if self._sandbox is not None:
-            # Build AutoGen-compatible tool specs
-            # Pass tool_log_dir so every screenshot is saved under
-            # <tool_log_dir>/logs/<tool_name>_<ts>/ automatically.
             _cmd_tool_raw = make_execute_commands_tool(self._sandbox, default_log_dir=tool_log_dir)
             _shot_tool_raw = make_screenshot_tool(self._sandbox, default_log_dir=tool_log_dir)
             _act_tool_raw = make_agent_action_tool(self._sandbox, default_log_dir=tool_log_dir)
@@ -1229,18 +1062,9 @@ class BenchmarkOrchestrator:
             _preview_tool_raw = make_preview_scene_tool(
                 self._sandbox,
                 default_log_dir=tool_log_dir,
-                agent_model=self.api_model,  # use same model as orchestrator (e.g. "openai/gpt-5.1")
+                agent_model=self.api_model,
             )
 
-            # ── Create ONE shared wrapper per tool ──────────────────────────
-            # Using separate per-agent wrappers caused "Function X not found"
-            # errors when the speaker selector handed the turn to an agent that
-            # didn't have the tool registered in its own function_map.
-            # A single shared instance is registered into EVERY agent that should
-            # have access to that tool, so whichever agent is selected by the
-            # GroupChat speaker can always execute the function.
-            # The agent_label is set to "[auto]" — the actual caller's name is
-            # logged by the _LoggingToolWrapper based on who triggered the call.
             def _wrap_shared(name: str, fn):
                 return _LoggingToolWrapper(
                     name, fn, tool_call_log, tool_log_dir, "[auto]",
@@ -1249,14 +1073,12 @@ class BenchmarkOrchestrator:
                     call_counter=shared_call_counter,
                 )
 
-            # Shared callable instances — registered into multiple agents below
             _cmd_shared     = _wrap_shared("execute_minecraft_commands", _cmd_tool_raw)
             _shot_shared    = _wrap_shared("take_screenshot",             _shot_tool_raw)
             _act_shared     = _wrap_shared("execute_agent_action",        _act_tool_raw)
             _run_shared     = _wrap_shared("run_agent_episode",            _run_tool_raw)
             _preview_shared = _wrap_shared("preview_scene_in_sandbox",    _preview_tool_raw)
 
-            # Aliases (kept for clarity in tools_* lists below)
             _cmd_scene     = _cmd_shared
             _shot_scene    = _shot_shared
             _act_scene     = _act_shared
@@ -1271,7 +1093,6 @@ class BenchmarkOrchestrator:
             _act_val    = _act_shared
             _run_val    = _run_shared
 
-            # Register as autogen function tools (name + description + callable)
             tools_scene = [
                 {
                     "name": "preview_scene_in_sandbox",
@@ -1422,22 +1243,12 @@ class BenchmarkOrchestrator:
                 },
             ]
 
-        # ── System prompts ───────────────────────────────────────────────
         task_selector_sys = self._build_task_selector_system()
         scene_designer_sys = self._build_scene_designer_system(tools_scene)
         milestone_sys = self._build_milestone_system(tools_milestone)
         commonsense_sys = self._build_commonsense_system()
         validator_sys = self._build_validator_system(tools_validator)
 
-        # ── Create ConversableAgents ─────────────────────────────────────
-        # Total scheduled turns per agent across the whole conversation:
-        # INIT_ORDER has 5 steps + DEBATE_ORDER has 9 steps per round.
-        # SceneDesignerAgent gets up to 2 turns in INIT + 2 per debate round.
-        # MilestoneAgent gets 1 turn in INIT + 1 per debate round (direct output, no inquiry).
-        # Each substep can consume at most a few extra tool turns on top of the
-        # agent's own text reply.  SceneDesignerAgent and ValidatorAgent (sandbox/move
-        # tools) are capped at 1 extra turn each; all other agents at 5 extra turns.
-        # Use the larger cap (5) for the headroom formula to stay safe.
         _total_substeps = len(INIT_ORDER) + self.max_debate_rounds * len(DEBATE_ORDER)
         _agent_max_reply = _total_substeps * (5 + 1) + 10
 
@@ -1584,11 +1395,6 @@ class BenchmarkOrchestrator:
             is_termination_msg=lambda msg: False,
         )
 
-        # ── GroupChat setup ──────────────────────────────────────────────
-        # max_round: each substep can consume at most a few extra tool turns.
-        # SceneDesignerAgent/ValidatorAgent are capped at 1; others at 5.
-        # Use the larger cap (5) for the formula so there is always enough room.
-        # This ensures MilestoneAgent always gets its turn.
         _total_substeps = len(INIT_ORDER) + self.max_debate_rounds * len(DEBATE_ORDER)
         max_round = _total_substeps * (5 + 1) + 20
 
@@ -1607,7 +1413,6 @@ class BenchmarkOrchestrator:
             llm_config=self._llm_config("task_selector"),  # manager uses same LLM for routing
         )
 
-        # ── Kick off conversation ────────────────────────────────────────
         candidate_list_str = "\n".join(
             f"  {i+1}. {t}" for i, t in enumerate(candidate_tasks)
         )
@@ -1620,7 +1425,6 @@ class BenchmarkOrchestrator:
             clear_history=True,
         )
 
-        # ── Extract results from conversation history ────────────────────
         return self._extract_result(
             groupchat.messages,
             candidate_tasks,
@@ -1628,10 +1432,6 @@ class BenchmarkOrchestrator:
             tool_call_log=tool_call_log,
             visual_message_log=visual_message_log,
         )
-
-    # ------------------------------------------------------------------
-    # Tool registration helper
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _build_tool_schemas(tools: List[Dict]) -> List[Dict]:
@@ -1708,7 +1508,6 @@ class BenchmarkOrchestrator:
                 },
                 "required": ["task_text"],
             },
-            # ── Wiki tools (used by CommonSenseAgent) ────────────────────────
             "wiki_list_categories": {
                 "type": "object",
                 "properties": {},
@@ -1750,7 +1549,6 @@ class BenchmarkOrchestrator:
                 },
                 "required": ["category", "names"],
             },
-            # ── Sandbox tools ─────────────────────────────────────────────────
             "preview_scene_in_sandbox": {
                 "type": "object",
                 "properties": {
@@ -1897,10 +1695,6 @@ class BenchmarkOrchestrator:
                 except Exception as _e2:
                     print(f"  [Orchestrator] Fallback also failed: {_e2}")
 
-    # ------------------------------------------------------------------
-    # Custom speaker selector (state-machine style)
-    # ------------------------------------------------------------------
-
     def _make_speaker_selector(self, max_debate_rounds: int):
         """
         Returns a speaker_selection_method callable.
@@ -1968,21 +1762,9 @@ class BenchmarkOrchestrator:
 
             phase = state["phase"]
 
-            # ── DONE ─────────────────────────────────────────────────────
-            # Returning None terminates the GroupChat cleanly.
             if phase == "done":
                 return None
 
-            # ── Tool-call / Tool-result intercept ────────────────────────
-            # If the last GroupChat message is either:
-            #   • a pending tool_calls request (the agent hasn't executed it yet), OR
-            #   • a tool result (the agent needs to summarise the result)
-            # … then return the SAME speaker so it can handle its own tool calls
-            # and write its final text reply before we advance to the next step.
-            #
-            # Safety valve: if the same agent has already consumed _MAX_TOOL_TURNS_PER_SUBSTEP
-            # extra turns at the current substep, forcibly advance rather than allowing it
-            # to loop indefinitely (e.g. SceneDesignerAgent calling preview repeatedly).
             if _last_message_needs_same_speaker(groupchat):
                 _limit = _TOOL_TURN_LIMIT.get(
                     last_speaker.name, _TOOL_TURN_LIMIT_DEFAULT
@@ -2002,7 +1784,6 @@ class BenchmarkOrchestrator:
                         "forcing substep advance to unblock next agent."
                     )
 
-            # ── INIT phase ───────────────────────────────────────────────
             if phase == "init":
                 step = state["substep"]
                 if step < len(INIT_ORDER):
@@ -2027,7 +1808,6 @@ class BenchmarkOrchestrator:
                         print("  [Speaker] → DONE (no debate rounds)")
                         return None
 
-            # ── DEBATE phase ─────────────────────────────────────────────
             if phase == "debate":
                 step = state["substep"]
                 if step < len(DEBATE_ORDER):
@@ -2056,10 +1836,6 @@ class BenchmarkOrchestrator:
             return None
 
         return selector
-
-    # ------------------------------------------------------------------
-    # Initial message
-    # ------------------------------------------------------------------
 
     def _build_init_message(
         self,
@@ -2164,12 +1940,7 @@ Output a JSON block with:
 Begin!
 """.strip()
 
-    # ------------------------------------------------------------------
-    # System prompt builders
-    # ------------------------------------------------------------------
-
     def _build_task_selector_system(self) -> str:
-        # Use the agent module's SYSTEM_PROMPT (already contains full instructions)
         return _TASK_SELECTOR_SYS
 
     def _build_scene_designer_system(self, tools: List[Dict]) -> str:
@@ -2235,10 +2006,6 @@ Begin!
             f"- **{t['name']}**: {t['description']}" for t in tools
         )
         return base + tool_desc
-
-    # ------------------------------------------------------------------
-    # Result extraction from conversation history
-    # ------------------------------------------------------------------
 
     def _extract_result(
         self,
@@ -2357,7 +2124,6 @@ Begin!
         n_visual = len(visual_entries)
         if n_visual:
             self._log(f"Conversation log includes {n_visual} injected visual messages.")
-        # ── Task selection ───────────────────────────────────────────────
         selected_tasks, selection_reasoning, dependency_graph = None, "", None
         for text in reversed(by_agent.get("TaskSelectorAgent", [])):
             obj = extract_json_object(text)
@@ -2398,7 +2164,6 @@ Begin!
                 },
             }
 
-        # ── Scene design ─────────────────────────────────────────────────
         scene_design = None
         sandbox_findings_log: List[str] = []  # collect all sandbox_findings from SceneDesigner
 
@@ -2483,7 +2248,6 @@ Begin!
 
         ordered_tasks = scene_design.get("atomic_tasks_ordered", selected_tasks)
 
-        # ── Milestones ───────────────────────────────────────────────────
         milestones = None
         milestone_texts = by_agent.get("MilestoneAgent", [])
         self._log(f"MilestoneAgent produced {len(milestone_texts)} messages.")
@@ -2527,7 +2291,6 @@ Begin!
                 f"ordered_tasks={ordered_tasks}"
             )
             self._log(failure_reason)
-            # ── Fallback: save conversation history for debugging ─────────
             save_fallback_response(
                 str(FALLBACK_DIR),
                 sample_idx,
@@ -2591,10 +2354,6 @@ Begin!
                 ),
             },
         }
-
-    # ------------------------------------------------------------------
-    # Logging
-    # ------------------------------------------------------------------
 
     def _log(self, msg: str) -> None:
         if self.verbose:

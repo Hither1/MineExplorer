@@ -1,23 +1,39 @@
-# Minecraft Benchmark 生成与评测
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Jometeorie/MineExplorer/main/figures/longcat-logo-full-20260504.png" alt="LongCat Logo" width="300"/>
+</div>
 
-## 1. 环境安装
+# MineExplorer: Evaluating Open-World Exploration of MLLM Agents in Minecraft
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Jometeorie/MineExplorer/main/figures/minecraft_bench.png" alt="LongCat Logo" width="300"/>
+</div>
+
+[![arXiv](https://img.shields.io/badge/arXiv-2605.30931-b31b1b.svg)](https://arxiv.org/abs/2605.30931)
+
+MineExplorer is a benchmark for evaluating the open-world exploration capabilities of multimodal large language model (MLLM) agents in Minecraft. We first filter atomic tasks whose solutions rely heavily on Minecraft-specific knowledge to better reflect general open-world reasoning, then organize the benchmark around a ReAct-style capability formulation and compose atomic tasks into implicit multi-hop tasks. To construct reliable instances, MineExplorer uses a multi-agent synthesis workflow that jointly designs task graphs, sandbox scenes, and rule-based milestone evaluators. Experiments show that open-world exploration remains challenging: strong models handle many single-hop tasks but degrade sharply when hidden prerequisites must be coordinated over longer trajectories, and larger models or thinking modes do not consistently translate into better performance.
+
+---
+
+## 1. Environment Setup
+
+Install the required Python packages:
 
 ```bash
-pip install gymnasium numpy requests pillow loguru python-dotenv typer fastapi uvicorn pydantic imageio imageio-ffmpeg mt-paas-sandbox-python-sdk==1.0.8
+pip install gymnasium numpy requests pillow loguru python-dotenv typer fastapi uvicorn pydantic imageio imageio-ffmpeg
 ```
+
+Set the required environment variables:
 
 ```bash
-export AGENT_API_KEY="xxx"
-export AGENT_API_BASE="https://aigc.sankuai.com/v1/openai/native"
-export FRIDAY_SANDBOX_TOKEN="xxx"
-export FRIDAY_SANDBOX_ENDPOINT="https://model.sankuai.com/sandboxGateway/system/587"
+export AGENT_API_KEY="your_api_key"
+export AGENT_API_BASE="https://your-api-endpoint/v1/openai/native"
 ```
 
-## 2. 生成Benchmark
+---
 
-使用`generate_benchmark.py`生成Minecraft评测任务。其中`benchmark_shuffled`是论文中用于评测的benchmark，包括1跳-4跳的各种评测任务
+## 2. Generating the Benchmark
 
-生成benchmark的方法如下：
+Use `generate_benchmark.py` to generate Minecraft evaluation tasks. The `benchmark` directory contains the benchmark used in the paper, covering single-hop to 4-hop tasks.
 
 ```bash
 python generate_benchmark.py multi \
@@ -29,39 +45,39 @@ python generate_benchmark.py multi \
     --output benchmark_new
 ```
 
-### 主要参数说明
+### Key Arguments
 
-| 参数 | 说明 |
-|------|------|
-| `multi`/`single` | 多智能体/单智能体生成benchmark，论文中采用多智能体，效果更好，但因为需要和沙盒交互，生成benchmark速度很慢 |
-| `--model` | 模型名称 |
-| `--num-samples` | 生成样本数量 |
-| `--k-min/--k-max` | 每个样本的子任务数量范围，例如如果希望全部都是单跳任务就设置为1 |
-| `--candidate-num` | 候选原子任务数量 |
-| `--output` | 输出目录 |
+| Argument | Description |
+|----------|-------------|
+| `multi` / `single` | Multi-agent or single-agent benchmark generation. The paper uses multi-agent mode, which produces more reliable instances but is slower due to sandbox interaction. |
+| `--model` | Model name to use for generation |
+| `--num-samples` | Number of samples to generate |
+| `--k-min` / `--k-max` | Range of subtask hops per sample (e.g., set both to `1` for single-hop tasks only) |
+| `--candidate-num` | Number of candidate atomic tasks |
+| `--output` | Output directory |
 
-### 输出结构
+### Output Structure
 
 ```
 benchmark_new/
 ├── 0000/
 │   └── multi-agent/
-│       ├── metadata.json        # 场景配置
-│       ├── milestones.json      # 里程碑定义
-│       ├── reasoning_graph.json # 依赖图
-│       └── debate_log.json      # 聊天日志
+│       ├── metadata.json        # Scene configuration
+│       ├── milestones.json      # Milestone definitions
+│       ├── reasoning_graph.json # Dependency graph
+│       └── debate_log.json      # Agent dialogue log
 ├── 0001/
 │   └── multi-agent/
 │       └── ...
 ```
 
-## 3. 评测Benchmark
+---
 
-使用`eval_benchmark.py`在生成的benchmark上运行智能体并评估表现。
+## 3. Evaluating the Benchmark
 
-### 评测策略
+Use `eval_benchmark.py` to run an agent on the generated benchmark and evaluate its performance.
 
-1. 调用Sankuai API
+### Using an OpenAI-compatible API
 
 ```bash
 python eval_benchmark.py \
@@ -72,14 +88,17 @@ python eval_benchmark.py \
     --resume
 ```
 
-2. 本地bllm服务
+### Using a Local vLLM Service
 
-使用前先挂起vllm：
+Start the vLLM server first:
+
 ```bash
 python -m vllm.entrypoints.openai.api_server \
     --model Qwen2.5-7B \
     --port 8000
 ```
+
+Then run evaluation:
 
 ```bash
 python eval_benchmark.py \
@@ -87,30 +106,62 @@ python eval_benchmark.py \
     --benchmark-dir benchmark_new \
     --output-dir results \
     --num-workers 10 \
-    --use-vllm \
+    --use-vllm
 ```
 
-### 通用参数说明
+### Common Arguments
 
-| 参数 | 说明 |
-|------|------|
-| `--model` | 评测使用的模型 |
-| `--benchmark-dir` | benchmark目录路径 |
-| `--output-dir` | 输出目录 |
-| `--num-workers` | 并行开启的沙盒任务数 |
-| `--resume` | 断点续传（跳过已完成的） |
-| `--limit` | 限制评测样本数量（测试用） |
+| Argument | Description |
+|----------|-------------|
+| `--model` | Model to use for evaluation |
+| `--benchmark-dir` | Path to the benchmark directory |
+| `--output-dir` | Directory to save results |
+| `--num-workers` | Number of parallel sandbox workers |
+| `--resume` | Resume from checkpoint (skip completed tasks) |
+| `--limit` | Limit number of evaluation samples (for testing) |
 
-### 输出结构
+### Output Structure
 
 ```
 results/
 └── aws.claude-opus-4.6/
     ├── 0000/
-    │   ├── result.json       # 评测结果
-    │   ├── episode.mp4       # 视频回放
-    │   └── messages/         # 对话记录
+    │   ├── result.json       # Evaluation result
+    │   ├── episode.mp4       # Episode replay video
+    │   └── messages/         # Conversation logs
     ├── 0001/
     │   └── ...
-    └── eval_summary.json     # 汇总统计
+    └── eval_summary.json     # Aggregated statistics
 ```
+
+---
+
+## Results
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Jometeorie/MineExplorer/main/figures/results.png" alt="Benchmark Results" width="900"/>
+</div>
+
+---
+
+## Citation
+
+If you find this work useful, please cite:
+
+```bibtex
+@misc{ju2026mineexplorerevaluatingopenworldexploration,
+      title={MineExplorer: Evaluating Open-World Exploration of MLLM Agents in Minecraft}, 
+      author={Tianjie Ju and Yueqing Sun and Zheng Wu and Wei Zhang and Yaqi Huo and Xi Su and Qi Gu and Xunliang Cai and Gongshen Liu and Zhuosheng Zhang},
+      year={2026},
+      eprint={2605.30931},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2605.30931}, 
+}
+```
+
+---
+
+## License
+
+This project is released under the [MIT License](LICENSE).

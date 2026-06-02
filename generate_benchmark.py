@@ -13,18 +13,14 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 DEFAULT_API_KEY = os.getenv("AGENT_API_KEY", "")
-DEFAULT_API_BASE = os.getenv("AGENT_API_BASE", "https://aigc.sankuai.com/v1/openai/native")
+DEFAULT_API_BASE = os.getenv("AGENT_API_BASE", "")  # Set AGENT_API_BASE in ~/.zshrc
 
 TASK_ANALYSIS_PATH = _BENCHMARK_GEN / "task_analysis.json"
 BENCHMARK_DIR = _SCRIPT_DIR / "benchmark"
 
 
 def _next_start_idx(benchmark_dir: str) -> int:
-    """Return the next available folder index in benchmark_dir.
-
-    Scans for directories whose names are zero-padded 4-digit numbers
-    (e.g. 0000, 0001, ...) and returns max_existing + 1, or 0 if none found.
-    """
+    """Return max existing 4-digit folder index + 1, or 0 if none found."""
     p = Path(benchmark_dir)
     if not p.exists():
         return 0
@@ -37,12 +33,7 @@ def _next_start_idx(benchmark_dir: str) -> int:
 
 
 def _worker_single(worker_args: dict) -> str | None:
-    """Picklable worker for parallel single-agent generation.
-
-    Generates exactly ONE sample at the given index and returns the output
-    directory path, or None if generation failed.  Each worker runs in its
-    own subprocess so there is no shared state between workers.
-    """
+    """Subprocess worker: generate one single-agent sample, return output dir or None."""
     import sys
     from pathlib import Path as _Path
 
@@ -60,7 +51,6 @@ def _worker_single(worker_args: dict) -> str | None:
         batch_size=1,
     )
 
-    # generate() with num_samples=1 returns a list of at most 1 path
     results = single_agent.generate(
         llm=llm,
         task_analysis_path=worker_args["task_analysis_path"],
@@ -73,7 +63,6 @@ def _worker_single(worker_args: dict) -> str | None:
         max_new_tokens=worker_args["max_new_tokens"],
         max_retries=worker_args["max_retries"],
         seed=worker_args["seed"],
-        render_preview=worker_args["render_preview"],
         candidate_tasks=worker_args["candidate_tasks"],
         start_idx=worker_args["sample_idx"],
     )
@@ -119,15 +108,11 @@ def cmd_single(args: argparse.Namespace) -> None:
             max_new_tokens=args.max_new_tokens,
             max_retries=args.max_retries,
             seed=args.seed,
-            render_preview=args.render_preview,
             candidate_tasks=candidate_tasks,
             start_idx=start_idx,
         )
     else:
 
-        # each worker generates exactly 1 sample at a pre-assigned index.
-        # The main process waits for the whole batch to finish before starting
-        # the next batch, so index assignment is always conflict-free.
         effective_workers = min(num_workers, args.num_samples)
         mp_ctx = __import__("multiprocessing").get_context("spawn")
 
@@ -148,7 +133,6 @@ def cmd_single(args: argparse.Namespace) -> None:
             "temperature": args.temperature,
             "max_new_tokens": args.max_new_tokens,
             "max_retries": args.max_retries,
-            "render_preview": args.render_preview,
             "candidate_tasks": candidate_tasks,
         }
 
@@ -180,8 +164,6 @@ def cmd_single(args: argparse.Namespace) -> None:
                     except Exception as exc:
                         print(f"  [ERROR] index={idx:04d}  {exc}")
 
-            # Advance past ALL reserved slots (successful or not) so the next
-            # batch always uses fresh indices that don't overlap with this batch.
             next_idx += batch_size
             remaining -= batch_size
 
@@ -189,11 +171,7 @@ def cmd_single(args: argparse.Namespace) -> None:
 
 
 def _worker_multi(worker_args: dict) -> str | None:
-    """Picklable worker for parallel multi-agent generation.
-
-    Generates exactly ONE sample at the given index.
-    Returns the output directory path, or None on failure.
-    """
+    """Subprocess worker: generate one multi-agent sample, return output dir or None."""
     import sys
     from pathlib import Path as _Path
 
@@ -217,7 +195,6 @@ def _worker_multi(worker_args: dict) -> str | None:
         max_retries=worker_args["max_retries"],
         seed=worker_args["seed"],
         candidate_tasks=worker_args["candidate_tasks"],
-        render_preview=worker_args["render_preview"],
         sandbox_tmp_dir=worker_args["sandbox_tmp_dir"],
         start_idx=worker_args["sample_idx"],
     )
@@ -233,7 +210,6 @@ def cmd_multi(args: argparse.Namespace) -> None:
         print("[ERROR] AGENT_API_KEY not set.")
         sys.exit(1)
 
-    # Strip provider prefixes (openai/, litellm/, azure/) — orchestrator expects bare name
     model = args.model
     for prefix in ("openai/", "litellm/", "azure/"):
         if model.startswith(prefix):
@@ -268,7 +244,6 @@ def cmd_multi(args: argparse.Namespace) -> None:
             max_retries=args.max_retries,
             seed=args.seed,
             candidate_tasks=candidate_tasks,
-            render_preview=args.render_preview,
             sandbox_tmp_dir=args.sandbox_tmp_dir,
             start_idx=start_idx,
         )
@@ -294,7 +269,6 @@ def cmd_multi(args: argparse.Namespace) -> None:
             "max_debate_rounds": args.max_debate_rounds,
             "max_retries": args.max_retries,
             "candidate_tasks": candidate_tasks,
-            "render_preview": args.render_preview,
         }
 
         while remaining > 0:
@@ -308,7 +282,6 @@ def cmd_multi(args: argparse.Namespace) -> None:
                 job = dict(base_job)
                 job["sample_idx"] = next_idx + i
                 job["seed"] = (args.seed + next_idx + i) if args.seed is not None else None
-                # Each worker gets its own sandbox_tmp_dir to avoid screenshot collisions.
                 job["sandbox_tmp_dir"] = f"{args.sandbox_tmp_dir}_b{batch_num}_w{i}"
                 batch_jobs.append(job)
 
@@ -334,11 +307,7 @@ def cmd_multi(args: argparse.Namespace) -> None:
 
 
 def _worker_both(worker_args: dict) -> tuple | None:
-    """Picklable worker for parallel both-mode generation.
-
-    Generates exactly ONE (single, multi) pair at the given index.
-    Returns (single_dir, multi_dir) on success, or None on failure.
-    """
+    """Subprocess worker: generate one (single, multi) pair, return (single_dir, multi_dir) or None."""
     import random
     import shutil
     import sys
@@ -369,7 +338,6 @@ def _worker_both(worker_args: dict) -> tuple | None:
     max_retries = worker_args["max_retries"]
     seed = worker_args["seed"]
     fixed_candidates = worker_args["candidate_tasks"]
-    render_preview = worker_args["render_preview"]
     sandbox_tmp_dir = worker_args["sandbox_tmp_dir"]
 
     if seed is not None:
@@ -398,7 +366,6 @@ def _worker_both(worker_args: dict) -> tuple | None:
     benchmark_path.mkdir(parents=True, exist_ok=True)
     fallback_dir = str(benchmark_path / "_fallback")
 
-    # Retry loop: try up to max_retries*10 times to get one successful pair.
     max_attempts = max_retries * 10
     for attempt in range(1, max_attempts + 1):
         if fixed_candidates:
@@ -429,7 +396,6 @@ def _worker_both(worker_args: dict) -> tuple | None:
             sample_idx=sample_idx,
             benchmark_dir=benchmark_dir,
             mode="single",
-            render_preview=render_preview,
         )
         if single_dir is None:
             continue
@@ -454,7 +420,6 @@ def _worker_both(worker_args: dict) -> tuple | None:
             benchmark_dir=benchmark_dir,
             mode="multi",
             tool_log_staging_dir=str(attempt_log_dir),
-            render_preview=render_preview if not is_partial else False,
         )
         if multi_dir is None or is_partial:
             shutil.rmtree(str(attempt_log_dir), ignore_errors=True)
@@ -466,17 +431,7 @@ def _worker_both(worker_args: dict) -> tuple | None:
 
 
 def cmd_both(args: argparse.Namespace) -> None:
-    """Run single then multi **on the same candidate list** for each sample.
-
-    For each index we:
-      1. Draw one candidate task list (and k value) at random.
-      2. Run the single-agent dialogue on that candidate list.
-      3. Run the multi-agent debate on the *same* candidate list.
-    Both results are saved under the same index directory:
-      benchmark/0000/single-agent/
-      benchmark/0000/multi-agent/
-    This ensures a fair, controlled comparison between the two modes.
-    """
+    """Run single-agent then multi-agent on the same candidate list per sample."""
     import random
     import shutil
     from pathlib import Path as _Path
@@ -491,7 +446,6 @@ def cmd_both(args: argparse.Namespace) -> None:
         print("[ERROR] AGENT_API_KEY not set.")
         sys.exit(1)
 
-    # Strip provider prefixes for multi-agent orchestrator
     multi_model = args.model
     for prefix in ("openai/", "litellm/", "azure/"):
         if multi_model.startswith(prefix):
@@ -586,7 +540,6 @@ def cmd_both(args: argparse.Namespace) -> None:
                 sample_idx=global_idx,
                 benchmark_dir=benchmark_dir,
                 mode="single",
-                render_preview=args.render_preview,
             )
             if single_dir is None:
                 print("  [SKIP] Saving single-agent result failed, skipping this attempt.")
@@ -628,7 +581,6 @@ def cmd_both(args: argparse.Namespace) -> None:
                 benchmark_dir=benchmark_dir,
                 mode="multi",
                 tool_log_staging_dir=str(attempt_log_dir),
-                render_preview=args.render_preview if not is_partial else False,
             )
             if multi_dir is None:
                 print(f"  [WARN] Saving multi-agent result failed; single already saved at {single_dir}.")
@@ -667,7 +619,6 @@ def cmd_both(args: argparse.Namespace) -> None:
             "max_debate_rounds": args.max_debate_rounds,
             "max_retries": args.max_retries,
             "candidate_tasks": fixed_candidates,
-            "render_preview": args.render_preview,
         }
 
         while remaining > 0:
@@ -729,21 +680,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
                         help=f"Path to task_analysis.json (default: {TASK_ANALYSIS_PATH}).")
     parser.add_argument("--output", default=None,
                         help=f"Output directory (default: {BENCHMARK_DIR}).")
-    parser.add_argument("--render-preview", action="store_true", default=False,
-                        help="Capture a scene_preview.png from the sandbox after generation.")
     parser.add_argument("--resume", action="store_true", default=False,
-                        help=(
-                            "Resume generation: scan the output directory for existing "
-                            "zero-padded folders (0000, 0001, …) and start numbering "
-                            "from max+1.  E.g. if 0000 and 0001 already exist, the next "
-                            "sample will be saved as 0002."
-                        ))
+                        help="Resume from max existing index + 1.")
     parser.add_argument("--num-workers", type=int, default=1,
-                        help=(
-                            "Number of parallel worker processes for generation.  "
-                            "Each worker runs independently so there are no conflicts "
-                            "between instances.  Default 1 = sequential."
-                        ))
+                        help="Number of parallel worker processes (default 1 = sequential).")
 
 
 def main() -> None:
@@ -754,7 +694,6 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
-    # single
     p_single = subparsers.add_parser("single", help="Single-agent dialogue (fast).",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     _add_common_args(p_single)
@@ -763,7 +702,6 @@ def main() -> None:
     p_single.add_argument("--candidate-tasks", nargs="+", default=None,
                           help="Manually specify candidate task names (skips random sampling).")
 
-    # multi
     p_multi = subparsers.add_parser("multi", help="Multi-agent AutoGen debate (higher quality).",
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     _add_common_args(p_multi)
@@ -774,7 +712,6 @@ def main() -> None:
     p_multi.add_argument("--sandbox-tmp-dir", default="/tmp/benchmark_gen_sandbox",
                          help="Temp directory for sandbox screenshots.")
 
-    # both
     p_both = subparsers.add_parser("both", help="Run single then multi on the same candidates.",
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     _add_common_args(p_both)

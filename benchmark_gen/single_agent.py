@@ -19,19 +19,11 @@ BENCHMARK_GEN_DIR = Path(__file__).resolve().parent
 PROMPTS_DIR = BENCHMARK_GEN_DIR / "prompts"
 
 
-# ---------------------------------------------------------------------------
-# Prompt loading
-# ---------------------------------------------------------------------------
-
 def load_prompt(name: str) -> str:
     path = PROMPTS_DIR / f"{name}.txt"
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
-
-# ---------------------------------------------------------------------------
-# Task pool
-# ---------------------------------------------------------------------------
 
 def load_easy_tasks(task_analysis_path: str) -> List[str]:
     """Return all atomic task names where requires_domain_knowledge == 'No'."""
@@ -43,19 +35,13 @@ def load_easy_tasks(task_analysis_path: str) -> List[str]:
     ]
 
 
-# ---------------------------------------------------------------------------
-# Validation helpers
-# ---------------------------------------------------------------------------
-
 def _validate_full_response(data: Optional[Dict[str, Any]], expected_k: int) -> bool:
     """Return True if the single-turn response contains all required fields."""
     if not isinstance(data, dict):
         return False
-    # selected_tasks
     selected = data.get("selected_tasks")
     if not isinstance(selected, list) or len(selected) != expected_k:
         return False
-    # scene fields
     if not validate_scene_design({
         "scene_name": data.get("scene_name"),
         "scene_description": data.get("scene_description"),
@@ -65,19 +51,13 @@ def _validate_full_response(data: Optional[Dict[str, Any]], expected_k: int) -> 
         "design_notes": data.get("design_notes"),
     }):
         return False
-    # reasoning graph
     if not validate_reasoning_graph(data.get("reasoning_graph")):
         return False
-    # milestones
     ordered = data.get("atomic_tasks_ordered", selected)
     if not validate_milestones({"milestones": data.get("milestones")}, ordered):
         return False
     return True
 
-
-# ---------------------------------------------------------------------------
-# Single-turn generation
-# ---------------------------------------------------------------------------
 
 def run_single_turn(
     llm: LLMClient,
@@ -91,14 +71,7 @@ def run_single_turn(
     max_new_tokens: int = 8192,
     max_retries: int = 2,
 ) -> Optional[Dict[str, Any]]:
-    """
-    Send a single user message and parse the full benchmark JSON from the response.
-
-    Returns a result dict with keys:
-        selected_tasks, selection_reasoning,
-        scene_design (dict), reasoning_graph (dict), milestones (dict)
-    or None on failure.
-    """
+    """Send one LLM turn and parse full benchmark JSON. Returns result dict or None."""
     candidate_list_str = "\n".join(
         f"  {i + 1}. {t}" for i, t in enumerate(candidate_tasks)
     )
@@ -117,7 +90,6 @@ def run_single_turn(
     resp = llm.chat([messages], temperature=temperature, max_new_tokens=max_new_tokens)[0]
     data = extract_json_object(resp)
 
-    # ── Retry loop ───────────────────────────────────────────────────────
     retry_messages = list(messages) + [{"role": "assistant", "content": resp}]
     for attempt in range(max_retries):
         if _validate_full_response(data, k):
@@ -153,7 +125,6 @@ def run_single_turn(
             )
         return None
 
-    # ── Unpack into the same result shape used by save_benchmark_sample ──
     ordered_tasks = data.get("atomic_tasks_ordered", data["selected_tasks"])
 
     scene_design = {
@@ -182,10 +153,6 @@ def run_single_turn(
     }
 
 
-# ---------------------------------------------------------------------------
-# Main generation loop
-# ---------------------------------------------------------------------------
-
 def generate(
     llm: LLMClient,
     task_analysis_path: str,
@@ -198,27 +165,11 @@ def generate(
     max_new_tokens: int = 8192,
     max_retries: int = 2,
     seed: Optional[int] = None,
-    render_preview: bool = False,
-    preview_minerl_env_id: str = "MineStudio-simple-run_and_explore",
-    preview_loading_steps: int = 60,
-    preview_render_size: Optional[List[int]] = None,
-    preview_seed: int = 0,
     candidate_tasks: Optional[List[str]] = None,
     start_idx: int = 0,
 ) -> List[str]:
-    """
-    Generate `num_samples` benchmark samples using single-agent (single-turn) mode.
-
-    Args:
-        render_preview:        If True, capture a scene_preview.png from remote sandbox after saving.
-        preview_minerl_env_id: MineRL env ID to use for preview sandbox.
-        preview_loading_steps: No-op steps to wait for init commands to apply.
-        preview_render_size:   [H, W] render resolution for preview, default [640, 360].
-        preview_seed:          Random seed for the preview env.
-        candidate_tasks:       If provided, use these tasks directly instead of random sampling.
-                               k is forced to len(candidate_tasks) in this case.
-
-    Returns a list of output directory paths for successfully generated samples.
+    """Generate num_samples samples in single-agent (single-turn) mode.
+    Returns a list of output directory paths.
     """
     if seed is not None:
         random.seed(seed)
@@ -226,7 +177,6 @@ def generate(
     system_prompt = load_prompt("bench_system")
     single_round_prompt = load_prompt("bench_single_round")
 
-    # If the caller provided a fixed candidate list, skip random sampling.
     fixed_candidates: Optional[List[str]] = list(candidate_tasks) if candidate_tasks else None
     if fixed_candidates:
         easy_tasks = fixed_candidates
@@ -280,11 +230,6 @@ def generate(
             sample_idx=start_idx + len(generated_dirs),
             benchmark_dir=benchmark_dir,
             mode="single",
-            render_preview=render_preview,
-            preview_minerl_env_id=preview_minerl_env_id,
-            preview_loading_steps=preview_loading_steps,
-            preview_render_size=preview_render_size,
-            preview_seed=preview_seed,
         )
         if out_dir is None:
             continue
