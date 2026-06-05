@@ -24,8 +24,8 @@ from env.render import RenderWrapper
 from mc_agent import DefaultAgent, MinerRLActionSpace, OpenAIProvider, VLLMProvider, DefaultContextBuilder
 
 FRAME_BUFFER_SIZE = 20
-MAX_STEPS = 300
-# MAX_STEPS = 1800
+# MAX_STEPS = 50
+MAX_STEPS = 1800
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 AGENT_API_BASE = os.getenv("AGENT_API_BASE", "")
 if not AGENT_API_KEY:
@@ -39,14 +39,14 @@ app = typer.Typer(help="Evaluate benchmark scenarios")
 class MineRLBenchmarkEnv(MineRLSandboxEnv):
     """MineRLSandboxEnv that builds the scene from a benchmark metadata.json."""
 
-    def __init__(self, metadata_path: str):
+    def __init__(self, metadata_path: str, use_friday: bool = False):
         meta_path = Path(metadata_path)
         if not meta_path.exists():
             raise FileNotFoundError(f"Metadata not found: {meta_path}")
         with open(meta_path, "r", encoding="utf-8") as f:
             self._metadata = json.load(f)
         self._parse_metadata()
-        super().__init__(env_id=self._scene_name)
+        super().__init__(env_id=self._scene_name, use_friday=use_friday)
 
     def _parse_metadata(self) -> None:
         self._commands_list = self._metadata.get("commands", [])
@@ -117,6 +117,7 @@ def _run_benchmark(
     use_vllm: bool = False,
     vllm_url: str = "http://localhost:8000/v1",
     frame_size: int = FRAME_BUFFER_SIZE,
+    use_friday: bool = False,
 ) -> Dict[str, Any]:
     """Run one benchmark scenario and save results."""
     global _shutdown_requested
@@ -139,7 +140,7 @@ def _run_benchmark(
     else:
         checker = MilestoneChecker([])
 
-    _base_env = MineRLBenchmarkEnv(metadata_path=metadata_path)
+    _base_env = MineRLBenchmarkEnv(metadata_path=metadata_path, use_friday=use_friday)
     if use_vllm:
         _provider = VLLMProvider(model_name=model, base_url=vllm_url)
     else:
@@ -370,6 +371,7 @@ def _worker_eval(worker_args: dict) -> dict:
         use_vllm=worker_args.get("use_vllm", False),
         vllm_url=worker_args.get("vllm_url", "http://localhost:8000/v1"),
         frame_size=worker_args.get("frame_size", FRAME_BUFFER_SIZE),
+        use_friday=worker_args.get("use_friday", False),
     )
 
 
@@ -394,6 +396,8 @@ def eval_benchmark(
                                     help="Number of parallel workers"),
     limit: Optional[int] = typer.Option(None, "--limit",
                                         help="Limit number of scenarios to evaluate"),
+    use_friday: bool = typer.Option(False, "--use-friday",
+                                    help="Use Friday platform sandbox instead of local Docker"),
 ):
     """Evaluate all benchmark scenarios in benchmark_dir."""
     logger.info(f"--- Starting evaluation (model={model}) ---")
@@ -464,6 +468,7 @@ def eval_benchmark(
                     max_steps=max_steps,
                     use_vllm=use_vllm,
                     vllm_url=vllm_url,
+                    use_friday=use_friday,
                 )
             except Exception as e:
                 logger.error(f"[ERROR] {scene_num}: {e}")
@@ -505,6 +510,7 @@ def eval_benchmark(
                     "max_steps": max_steps,
                     "use_vllm": use_vllm,
                     "vllm_url": vllm_url,
+                    "use_friday": use_friday,
                     "_scene_num": scene_num,
                 })
 

@@ -44,6 +44,7 @@ def generate(
     candidate_tasks: Optional[List[str]] = None,
     start_idx: int = 0,
     extremely_hard: bool = False,
+    use_friday: bool = False,
 ) -> List[str]:
     """Generate num_samples benchmark samples using AutoGen multi-agent debate.
     Returns a list of output directory paths.
@@ -76,6 +77,7 @@ def generate(
         sandbox_tmp_dir=sandbox_tmp_dir,
         extremely_hard=extremely_hard,
         verbose=True,
+        use_friday=use_friday,
     )
 
     benchmark_path = Path(benchmark_dir)

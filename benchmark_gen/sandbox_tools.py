@@ -31,6 +31,7 @@ class LazyMCBenchSandboxEnv:
         self,
         sandbox_config: Optional[Dict[str, Any]] = None,
         env_id: str = "MinecraftSim",
+        use_friday: bool = False,
     ) -> None:
         self.env_id = env_id
         self._ready = False
@@ -40,9 +41,10 @@ class LazyMCBenchSandboxEnv:
 
         cfg = sandbox_config or {}
         endpoint = cfg.get("endpoint") or None
-        self.sandbox_tool = _SCT(endpoint=endpoint)
-        self.server_address: Optional[str] = self.sandbox_tool.server_address
-        print(f"  [LazySandbox] HTTP sandbox client created – server: {self.server_address}")
+        self.sandbox_tool = _SCT(endpoint=endpoint, use_friday=use_friday)
+        self.server_address: Optional[str] = getattr(self.sandbox_tool, "server_address", None)
+        mode = "Friday" if use_friday else "Docker"
+        print(f"  [LazySandbox] HTTP sandbox client created – mode: {mode}, server: {self.server_address}")
 
     def initialize(
         self,
@@ -158,10 +160,11 @@ class LazyMCBenchSandboxEnv:
 def lazy_setup_sandbox(
     tmp_dir: str = "/tmp/mcbench_sandbox",
     sandbox_config: Optional[Dict[str, Any]] = None,
+    use_friday: bool = False,
 ) -> SandboxHandle:
     """Create a SandboxHandle with lazy initialization (create_env on first use)."""
     os.makedirs(tmp_dir, exist_ok=True)
-    lazy_env = LazyMCBenchSandboxEnv(sandbox_config=sandbox_config)
+    lazy_env = LazyMCBenchSandboxEnv(sandbox_config=sandbox_config, use_friday=use_friday)
     handle: SandboxHandle = {
         "env": lazy_env,
         "default_action": dict(_NOOP_ACTION),

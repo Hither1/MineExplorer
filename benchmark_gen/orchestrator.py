@@ -849,6 +849,7 @@ class BenchmarkOrchestrator:
         sandbox_tmp_dir: str = "/tmp/mcbench_sandbox",
         extremely_hard: bool = False,
         verbose: bool = True,
+        use_friday: bool = False,
     ):
         self.api_model = api_model
         self.api_key = api_key
@@ -866,6 +867,7 @@ class BenchmarkOrchestrator:
         self.sandbox_tmp_dir = sandbox_tmp_dir
         self.extremely_hard = extremely_hard
         self.verbose = verbose
+        self.use_friday = use_friday
 
         # Sandbox handle (shared across agents per sample)
         self._sandbox: Optional[SandboxHandle] = None
@@ -891,7 +893,7 @@ class BenchmarkOrchestrator:
         os.makedirs(tmp, exist_ok=True)
         try:
             print("  [Sandbox] Creating lazy sandbox handle (sandbox NOT yet started)...")
-            handle = lazy_setup_sandbox(tmp_dir=tmp)
+            handle = lazy_setup_sandbox(tmp_dir=tmp, use_friday=self.use_friday)
             print("  [Sandbox] Lazy sandbox handle ready – will start on first tool call.")
             return handle
         except Exception as e:

@@ -7,14 +7,13 @@ from typing import Any, Dict, List, Optional
 import requests
 
 
+DOCKER_SANDBOX_DEFAULT_URL = "http://localhost:8000"
+
+
 def _get_server_address() -> str:
     addr = os.getenv("MC_SANDBOX_URL", "").rstrip("/")
     if not addr:
-        raise ValueError(
-            "MC_SANDBOX_URL environment variable is not set. "
-            "Please add 'export MC_SANDBOX_URL=http://<host>:<port>' to ~/.zshrc "
-            "and restart your shell (or run: source ~/.zshrc)."
-        )
+        return DOCKER_SANDBOX_DEFAULT_URL
     return addr
 
 
@@ -27,11 +26,12 @@ class SandboxClusterTool:
     """
 
     def __init__(self, endpoint: Optional[str] = None, token: Optional[str] = None,
-                 session_id: Optional[str] = None):
+                 session_id: Optional[str] = None, use_friday: bool = False):
         friday_token = token or os.getenv("FRIDAY_SANDBOX_TOKEN", "")
         friday_endpoint = endpoint or os.getenv("FRIDAY_SANDBOX_ENDPOINT", "")
 
-        self.use_friday_platform = bool(friday_token and friday_endpoint)
+        # 默认走 Docker；仅当显式传入 use_friday=True 时才走 Friday 平台
+        self.use_friday_platform = use_friday and bool(friday_token and friday_endpoint)
 
         if self.use_friday_platform:
             # pip install mt-paas-sandbox-python-sdk==1.1.0
@@ -50,10 +50,8 @@ class SandboxClusterTool:
             self.session_id: str = self._friday_tool.session_id
             self._friday_tool.sandbox_start()
         else:
-            self.server_address = (
-                (endpoint or _get_server_address()) if not friday_endpoint
-                else friday_endpoint
-            ).rstrip("/")
+            # Docker 模式：忽略 friday_endpoint，始终走 MC_SANDBOX_URL 或默认 Docker 地址
+            self.server_address = (endpoint or _get_server_address()).rstrip("/")
             # 每个实例拥有独立的 session_id，确保并发时服务端可路由到正确实例
             self.session_id: str = session_id or str(uuid.uuid4())
 

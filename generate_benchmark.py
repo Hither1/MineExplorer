@@ -198,6 +198,7 @@ def _worker_multi(worker_args: dict) -> str | None:
         sandbox_tmp_dir=worker_args["sandbox_tmp_dir"],
         start_idx=worker_args["sample_idx"],
         extremely_hard=worker_args.get("extremely_hard", False),
+        use_friday=worker_args.get("use_friday", False),
     )
     return results[0] if results else None
 
@@ -231,6 +232,8 @@ def cmd_multi(args: argparse.Namespace) -> None:
           f"output={benchmark_dir}  num_workers={num_workers}"
           + ("  [EXTREMELY HARD MODE]" if extremely_hard else ""))
 
+    use_friday = getattr(args, "use_friday", False)
+
     if num_workers <= 1:
 
         generated = multi_agent.generate(
@@ -250,6 +253,7 @@ def cmd_multi(args: argparse.Namespace) -> None:
             sandbox_tmp_dir=args.sandbox_tmp_dir,
             start_idx=start_idx,
             extremely_hard=extremely_hard,
+            use_friday=use_friday,
         )
     else:
 
@@ -274,6 +278,7 @@ def cmd_multi(args: argparse.Namespace) -> None:
             "max_retries": args.max_retries,
             "candidate_tasks": candidate_tasks,
             "extremely_hard": extremely_hard,
+            "use_friday": use_friday,
         }
 
         while remaining > 0:
@@ -359,15 +364,16 @@ def _worker_both(worker_args: dict) -> tuple | None:
 
     llm = LLMClient(api_key=api_key, base_url=api_base, model=single_model, batch_size=1)
     orchestrator = BenchmarkOrchestrator(
-        api_model=multi_model,
-        api_key=api_key,
-        api_base_url=api_base,
-        max_debate_rounds=max_debate_rounds,
-        max_retries=max_retries,
-        sandbox_tmp_dir=sandbox_tmp_dir,
-        extremely_hard=extremely_hard,
-        verbose=True,
-    )
+            api_model=multi_model,
+            api_key=api_key,
+            api_base_url=api_base,
+            max_debate_rounds=max_debate_rounds,
+            max_retries=max_retries,
+            sandbox_tmp_dir=sandbox_tmp_dir,
+            extremely_hard=extremely_hard,
+            verbose=True,
+            use_friday=worker_args.get("use_friday", False),
+        )
 
     benchmark_path = _Path(benchmark_dir)
     benchmark_path.mkdir(parents=True, exist_ok=True)
@@ -473,6 +479,8 @@ def cmd_both(args: argparse.Namespace) -> None:
           f"output={benchmark_dir}  num_workers={num_workers}"
           + ("  [EXTREMELY HARD MODE]" if extremely_hard else ""))
 
+    use_friday = getattr(args, "use_friday", False)
+
     if num_workers <= 1:
 
         llm = LLMClient(api_key=api_key, base_url=api_base, model=args.model, batch_size=1)
@@ -500,6 +508,7 @@ def cmd_both(args: argparse.Namespace) -> None:
             sandbox_tmp_dir=args.sandbox_tmp_dir,
             extremely_hard=extremely_hard,
             verbose=True,
+            use_friday=use_friday,
         )
 
         benchmark_path = _Path(benchmark_dir)
@@ -630,6 +639,7 @@ def cmd_both(args: argparse.Namespace) -> None:
             "max_retries": args.max_retries,
             "candidate_tasks": fixed_candidates,
             "extremely_hard": getattr(args, "extremely_hard", False),
+            "use_friday": use_friday,
         }
 
         while remaining > 0:
@@ -725,6 +735,8 @@ def main() -> None:
                          help="Manually specify candidate task names.")
     p_multi.add_argument("--sandbox-tmp-dir", default="/tmp/benchmark_gen_sandbox",
                          help="Temp directory for sandbox screenshots.")
+    p_multi.add_argument("--use-friday", action="store_true", default=False,
+                         help="Use Friday platform sandbox instead of local Docker.")
 
     p_both = subparsers.add_parser("both", help="Run single then multi on the same candidates.",
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -737,6 +749,8 @@ def main() -> None:
                         help="Manually specify candidate task names.")
     p_both.add_argument("--sandbox-tmp-dir", default="/tmp/benchmark_gen_sandbox",
                         help="Temp directory for sandbox screenshots.")
+    p_both.add_argument("--use-friday", action="store_true", default=False,
+                        help="Use Friday platform sandbox instead of local Docker.")
 
     args = parser.parse_args()
     if args.mode == "single":

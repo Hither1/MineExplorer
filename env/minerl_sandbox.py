@@ -13,14 +13,16 @@ from gymnasium import spaces
 from loguru import logger
 
 
+DOCKER_SANDBOX_DEFAULT_URL = "http://localhost:8000"
+
+
 def _get_server_address() -> str:
     addr = os.getenv("MC_SANDBOX_URL", "").rstrip("/")
     if not addr:
-        raise ValueError(
-            "MC_SANDBOX_URL environment variable is not set. "
-            "Please add 'export MC_SANDBOX_URL=http://<host>:<port>' to ~/.zshrc "
-            "and restart your shell (or run: source ~/.zshrc)."
+        logger.info(
+            f"MC_SANDBOX_URL not set, falling back to Docker default: {DOCKER_SANDBOX_DEFAULT_URL}"
         )
+        return DOCKER_SANDBOX_DEFAULT_URL
     return addr
 
 
@@ -46,14 +48,16 @@ class MineRLSandboxEnv(gym.Env):
     metadata = {'render_modes': ['human']}
 
     def __init__(self, server_address: Optional[str] = None, env_id: str = "MineRLBasaltFindCave-v0",
-                 sandbox_config: Optional[dict] = None, session_id: Optional[str] = None):
+                 sandbox_config: Optional[dict] = None, session_id: Optional[str] = None,
+                 use_friday: bool = False):
         super(MineRLSandboxEnv, self).__init__()
         self.env_id = env_id
         self.sandbox_tool = None
 
         friday_token = os.getenv("FRIDAY_SANDBOX_TOKEN", "")
         friday_endpoint = server_address or os.getenv("FRIDAY_SANDBOX_ENDPOINT", "")
-        self.use_friday_platform = bool(friday_token and friday_endpoint)
+        # 默认走 Docker；仅当显式传入 use_friday=True 时才走 Friday 平台
+        self.use_friday_platform = use_friday and bool(friday_token and friday_endpoint)
 
         if self.use_friday_platform:
             # pip install mt-paas-sandbox-python-sdk==1.1.0
