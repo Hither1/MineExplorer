@@ -25,6 +25,7 @@ from mc_agent import DefaultAgent, MinerRLActionSpace, OpenAIProvider, VLLMProvi
 
 FRAME_BUFFER_SIZE = 20
 MAX_STEPS = 300
+# MAX_STEPS = 1800
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 AGENT_API_BASE = os.getenv("AGENT_API_BASE", "")
 if not AGENT_API_KEY:
@@ -161,6 +162,8 @@ def _run_benchmark(
     thought_history: List[str] = []
     action_history: List[Dict] = []
     _frame_completed: Dict[str, Optional[int]] = {}
+    _presatisfied_ids: set = set()
+    _frame_offset: int = 0
     _all_done_logged: bool = False
     long_term_memory: str = ""
 
@@ -190,6 +193,29 @@ def _run_benchmark(
 
         checker.reset(info)
         agent.load_system_prompt(task_desc)
+
+        # Record the frame count right after the loading phase so that
+        # frame_completed values are reported relative to the agent's first
+        # real action step (frame 1 = first agent step).
+        _frame_offset: int = env.frame_count
+
+        # Perform a baseline check immediately after reset to identify any
+        # milestones whose rules are already satisfied at spawn (before the
+        # agent takes any action).  These are treated as "pre-satisfied" and
+        # will NOT be counted as completed — they are excluded via a blocklist
+        # so that _frame_completed is only set when the agent genuinely
+        # triggers the condition during gameplay.
+        _baseline_check = checker.check(info)
+        _presatisfied_ids: set = set()
+        for _bms in _baseline_check:
+            if _bms.get("completed") and not _bms.get("no_milestone"):
+                _presatisfied_ids.add(_bms["milestone_id"])
+                logger.warning(
+                    f"[{run_id}] Milestone '{_bms['milestone_id']}' already satisfied at spawn "
+                    f"(will NOT be counted as completed by the agent)."
+                )
+        # Reset the checker state so those pre-satisfied flags don't persist
+        checker.reset(info)
 
         step_error: Optional[str] = None
         step = -1
@@ -237,9 +263,13 @@ def _run_benchmark(
             milestone_status = checker.check(info)
             for ms in milestone_status:
                 mid = ms["milestone_id"]
+                # Skip milestones that were already satisfied at spawn
+                if mid in _presatisfied_ids:
+                    continue
                 if ms.get("completed") and mid not in _frame_completed:
-                    _frame_completed[mid] = env.frame_count
-                    logger.success(f"[{run_id}] Milestone '{mid}' completed at step {step + 1}")
+                    # frame_completed is 1-indexed from the first agent step
+                    _frame_completed[mid] = env.frame_count - _frame_offset
+                    logger.success(f"[{run_id}] Milestone '{mid}' completed at step {step + 1} (frame {_frame_completed[mid]})")
 
             if not _all_done_logged and checker.num_completed() > 0 and checker.all_done():
                 _all_done_logged = True
@@ -268,12 +298,36 @@ def _run_benchmark(
     for ms in checker._milestones:
         mid = ms.get("milestone_id", "")
         completed_frame = _frame_completed.get(mid)
+        presatisfied = mid in _presatisfied_ids
         final_status.append({
             "milestone_id": mid,
             "task": ms.get("task", ""),
-            "completed": completed_frame is not None,
-            "frame_completed": completed_frame if completed_frame is not None else -1,
+            # A milestone is only "completed" if the agent triggered it during
+            # gameplay (frame_completed recorded) and it was not already
+            # satisfied at spawn.
+            "completed": completed_frame is not None and not presatisfied,
+            "frame_completed": completed_frame if (completed_frame is not None and not presatisfied) else -1,
+            # Extra diagnostic field so callers can see which milestones were
+            # already satisfied before the agent started.
+            "presatisfied_at_spawn": presatisfied,
         })
+
+    # Compute milestones_completed / all_milestones_done using only the
+    # corrected _frame_completed dict (excludes pre-satisfied milestones).
+    trackable_mids = {
+        ms.get("milestone_id", "")
+        for ms in checker._milestones
+        if len(ms.get("rules", [])) > 0
+    }
+    corrected_completed = sum(
+        1 for mid in trackable_mids
+        if mid in _frame_completed and mid not in _presatisfied_ids
+    )
+    corrected_trackable = len(trackable_mids)
+    corrected_all_done = (
+        corrected_trackable > 0
+        and corrected_completed == corrected_trackable
+    )
 
     total_steps = step + 1 if step >= 0 else 0
     summary: Dict[str, Any] = {
@@ -283,10 +337,11 @@ def _run_benchmark(
         "mode": "multi-agent",
         "metadata_path": str(meta_path),
         "total_steps": total_steps,
-        "milestones_completed": checker.num_completed(),
-        "milestones_trackable": checker.num_trackable(),
+        "milestones_completed": corrected_completed,
+        "milestones_trackable": corrected_trackable,
         "milestones_total": len(checker._milestones),
-        "all_milestones_done": checker.all_done(),
+        "milestones_presatisfied": len(_presatisfied_ids),
+        "all_milestones_done": corrected_all_done,
         "milestone_status": final_status,
     }
     if step_error:

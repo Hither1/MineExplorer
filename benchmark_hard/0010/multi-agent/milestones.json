@@ -1,0 +1,214 @@
+{
+  "milestones": [
+    {
+      "task": "find birch_wood",
+      "milestone_id": "find_birch_wood",
+      "description": "Uses position_near_with_facing because this is a find/locate task. Birch wood logs are at spawn-relative (0,0,-4) inside the enclosed single-entrance birch corridor. Max distance of 3 ensures the player has physically entered the corridor (entrance at z=-2, target at z=-4). From spawn at origin (distance=4), the player cannot satisfy this without walking at least 1 block north into the corridor.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              0,
+              0,
+              -4
+            ],
+            "max_distance": 3,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "find brown_concrete",
+      "milestone_id": "find_brown_concrete",
+      "description": "Uses position_near_with_facing because this is a find/locate task. The brown concrete structure is at spawn-relative (4,1,0) forming the entrance to the fully enclosed east corridor. Max distance of 3 ensures the player has walked toward the east branch (target is ~4.1 blocks from spawn, so player must move at least 1 block east).",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              4,
+              1,
+              0
+            ],
+            "max_distance": 3,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "mine stone_bricks",
+      "milestone_id": "mine_stone_bricks",
+      "description": "Uses inventory_has because mining stone bricks with a diamond pickaxe drops stone_bricks items into inventory. Player must mine at least 2 blocks from the wall at (-3, 0-2, -1 to 1) to create a 2-high passage into the sealed cobweb chamber. Stone bricks always drop themselves when mined with any pickaxe.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "stone_bricks",
+            "min_count": 2
+          }
+        }
+      ]
+    },
+    {
+      "task": "find birch_pressure_plate",
+      "milestone_id": "find_birch_pressure_plate",
+      "description": "Uses position_near_with_facing because this is a find/locate task. The birch pressure plate is at spawn-relative (0,0,-8) at the far end of the enclosed birch corridor. Max distance of 3 ensures the player has walked deep into the corridor (8 blocks from spawn, must be within 3 of target meaning at least at z=-5).",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              0,
+              0,
+              -8
+            ],
+            "max_distance": 3,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "find cobweb",
+      "milestone_id": "find_cobweb",
+      "description": "Uses position_near_with_facing because this is a find/locate task. Cobwebs are at spawn-relative (-5,1,0) inside the sealed cobweb chamber. Max distance of 2 ensures the player is physically inside the chamber (past the stone_brick wall at x=-3). At distance 2 from (-5,1,0), the player's x-coordinate must be at most -3, meaning they have passed through the mined wall. This enforces the mine_stone_bricks dependency at the milestone level.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              -5,
+              1,
+              0
+            ],
+            "max_distance": 2,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "find quartz_slab",
+      "milestone_id": "find_quartz_slab",
+      "description": "Uses position_near_with_facing because this is a find/locate task. The quartz slab is at spawn-relative (8,0,0) inside the fully enclosed east corridor. Max distance of 3 ensures the player has navigated through the brown concrete tunnel and reached the quartz room section. At distance 3 from (8,0,0), player must be at x>=5 minimum, confirming passage through the concrete structure.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              8,
+              0,
+              0
+            ],
+            "max_distance": 3,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "craft to yellow_wool",
+      "milestone_id": "craft_yellow_wool",
+      "description": "Uses inventory_has because crafting yellow_wool results in the item appearing in inventory. The full crafting chain is: pick dandelion from cobweb room → craft dandelion to yellow_dye (1:1 in 2x2 grid) → craft yellow_dye + white_wool to yellow_wool (shapeless in 2x2 grid). Player starts with white_wool but NO yellow_dye or yellow_wool. The dandelion in the cobweb room is the ONLY yellow dye source in the scene, enforcing the find_cobweb dependency.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "yellow_wool",
+            "min_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "task": "craft to acacia_button",
+      "milestone_id": "craft_acacia_button",
+      "description": "Uses count_in_box_at_least with kind=block to check for a placed acacia_button block near the iron door. This is chosen over inventory_has because the player must PLACE the button on the wall adjacent to the iron door to open it (consuming the button from inventory). If we only checked inventory, the milestone would fail after placement. The generous box (-7,0,-4) to (-5,2,-2) covers all wall surfaces adjacent to the iron door where the player might place the button.",
+      "rules": [
+        {
+          "type": "count_in_box_at_least",
+          "params": {
+            "kind": "block",
+            "object": "acacia_button",
+            "min": [
+              -7,
+              0,
+              -4
+            ],
+            "max": [
+              -5,
+              2,
+              -2
+            ],
+            "min_count": 1,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "mine slime_block",
+      "milestone_id": "mine_slime_block",
+      "description": "Uses inventory_has because slime_block drops itself when broken (instant break, no tool required). The slime blocks at (11,0,0) and (11,1,0) form a 2-high barrier in the fully enclosed east corridor. Player must mine at least one to create a passable opening toward the sugar cane.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "slime_block",
+            "min_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "task": "mine honey_block",
+      "milestone_id": "mine_honey_block",
+      "description": "Uses inventory_has because honey_block drops itself when broken (no tool required, slightly slow break). The honey blocks at (13,0,0) and (13,1,0) form the second 2-high barrier in the enclosed east corridor. Player must mine at least one to reach the sugar cane beyond.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "honey_block",
+            "min_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "task": "mine_sugar_cane",
+      "milestone_id": "mine_sugar_cane",
+      "description": "Uses inventory_has because sugar_cane drops as an item when broken (instant break, no tool needed). The sugar cane at (15,0,0) is past both the slime and honey barriers in the enclosed east corridor. Having sugar_cane in inventory confirms the player navigated through both barriers and harvested it.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "sugar_cane",
+            "min_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "task": "sell Blue Dye",
+      "milestone_id": "sell_blue_dye",
+      "description": "Uses inventory_has to check for emerald because the shepherd villager's custom trade (1 blue_dye → 1 emerald) results in an emerald appearing in inventory. Player starts with no emeralds. To complete this task, the player must: (1) access cobweb room to get blue_dye from chest, (2) craft and place acacia_button to open iron door, (3) reach villager, (4) complete trade. Having an emerald confirms the entire dependency chain was completed.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "emerald",
+            "min_count": 1
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -197,6 +197,7 @@ def _worker_multi(worker_args: dict) -> str | None:
         candidate_tasks=worker_args["candidate_tasks"],
         sandbox_tmp_dir=worker_args["sandbox_tmp_dir"],
         start_idx=worker_args["sample_idx"],
+        extremely_hard=worker_args.get("extremely_hard", False),
     )
     return results[0] if results else None
 
@@ -220,13 +221,15 @@ def cmd_multi(args: argparse.Namespace) -> None:
     benchmark_dir = args.output or str(BENCHMARK_DIR)
     candidate_tasks = list(args.candidate_tasks) if args.candidate_tasks else None
     num_workers = getattr(args, "num_workers", 1)
+    extremely_hard = getattr(args, "extremely_hard", False)
 
     start_idx = _next_start_idx(benchmark_dir) if getattr(args, "resume", False) else 0
     if args.resume:
         print(f"[multi] --resume: continuing from index {start_idx:04d}")
 
     print(f"[multi] model={model}  samples={args.num_samples}  "
-          f"output={benchmark_dir}  num_workers={num_workers}")
+          f"output={benchmark_dir}  num_workers={num_workers}"
+          + ("  [EXTREMELY HARD MODE]" if extremely_hard else ""))
 
     if num_workers <= 1:
 
@@ -246,6 +249,7 @@ def cmd_multi(args: argparse.Namespace) -> None:
             candidate_tasks=candidate_tasks,
             sandbox_tmp_dir=args.sandbox_tmp_dir,
             start_idx=start_idx,
+            extremely_hard=extremely_hard,
         )
     else:
 
@@ -269,6 +273,7 @@ def cmd_multi(args: argparse.Namespace) -> None:
             "max_debate_rounds": args.max_debate_rounds,
             "max_retries": args.max_retries,
             "candidate_tasks": candidate_tasks,
+            "extremely_hard": extremely_hard,
         }
 
         while remaining > 0:
@@ -339,6 +344,7 @@ def _worker_both(worker_args: dict) -> tuple | None:
     seed = worker_args["seed"]
     fixed_candidates = worker_args["candidate_tasks"]
     sandbox_tmp_dir = worker_args["sandbox_tmp_dir"]
+    extremely_hard = worker_args.get("extremely_hard", False)
 
     if seed is not None:
         random.seed(seed)
@@ -359,6 +365,7 @@ def _worker_both(worker_args: dict) -> tuple | None:
         max_debate_rounds=max_debate_rounds,
         max_retries=max_retries,
         sandbox_tmp_dir=sandbox_tmp_dir,
+        extremely_hard=extremely_hard,
         verbose=True,
     )
 
@@ -456,13 +463,15 @@ def cmd_both(args: argparse.Namespace) -> None:
     benchmark_dir = args.output or str(BENCHMARK_DIR)
     fixed_candidates = list(args.candidate_tasks) if args.candidate_tasks else None
     num_workers = getattr(args, "num_workers", 1)
+    extremely_hard = getattr(args, "extremely_hard", False)
 
     start_idx = _next_start_idx(benchmark_dir) if getattr(args, "resume", False) else 0
     if args.resume:
         print(f"[both] --resume: continuing from index {start_idx:04d}")
 
     print(f"[both] model={args.model}  samples={args.num_samples}  "
-          f"output={benchmark_dir}  num_workers={num_workers}")
+          f"output={benchmark_dir}  num_workers={num_workers}"
+          + ("  [EXTREMELY HARD MODE]" if extremely_hard else ""))
 
     if num_workers <= 1:
 
@@ -489,6 +498,7 @@ def cmd_both(args: argparse.Namespace) -> None:
             max_debate_rounds=args.max_debate_rounds,
             max_retries=args.max_retries,
             sandbox_tmp_dir=args.sandbox_tmp_dir,
+            extremely_hard=extremely_hard,
             verbose=True,
         )
 
@@ -619,6 +629,7 @@ def cmd_both(args: argparse.Namespace) -> None:
             "max_debate_rounds": args.max_debate_rounds,
             "max_retries": args.max_retries,
             "candidate_tasks": fixed_candidates,
+            "extremely_hard": getattr(args, "extremely_hard", False),
         }
 
         while remaining > 0:
@@ -684,6 +695,9 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
                         help="Resume from max existing index + 1.")
     parser.add_argument("--num-workers", type=int, default=1,
                         help="Number of parallel worker processes (default 1 = sequential).")
+    parser.add_argument("--extremely-hard", action="store_true", default=False,
+                        help="Generate extremely hard long-horizon tasks requiring exploration "
+                             "and at least 2 minutes of interaction.")
 
 
 def main() -> None:

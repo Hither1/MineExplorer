@@ -75,7 +75,29 @@ def evaluate_milestone_rule(
         if coordinate_frame == "spawn_relative":
             target = _add_vec3(target, origin)
         max_dist = float(params.get("max_distance", 5.0))
-        return _distance(pos, target) <= max_dist
+        # Distance check
+        if _distance(pos, target) > max_dist:
+            return False
+        # Facing check: verify the player is looking toward the target
+        facing_tolerance = float(params.get("facing_tolerance", 360.0))
+        if facing_tolerance < 360.0:
+            # player_pos dict may contain yaw (horizontal, degrees) and pitch (vertical, degrees)
+            # Minecraft yaw: 0=south, -90/270=east, 90/-270=west, 180/-180=north
+            player_pos_dict = state.get("player_pos", {})
+            yaw_deg = float(player_pos_dict.get("yaw", 0.0))
+            # Direction vector from player to target (horizontal plane only)
+            dx = target[0] - pos[0]
+            dz = target[2] - pos[2]
+            if abs(dx) < 1e-6 and abs(dz) < 1e-6:
+                # Player is standing exactly on the target — accept any facing
+                return True
+            # Expected yaw: atan2(-dx, dz) gives Minecraft-convention yaw in radians
+            expected_yaw_deg = math.degrees(math.atan2(-dx, dz))
+            # Normalise both angles to [-180, 180]
+            diff = (yaw_deg - expected_yaw_deg + 180.0) % 360.0 - 180.0
+            if abs(diff) > facing_tolerance / 2.0:
+                return False
+        return True
 
     if rule_type == "count_in_box_at_least":
         kind = params["kind"]  # "block" or "mob"

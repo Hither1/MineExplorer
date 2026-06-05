@@ -847,6 +847,7 @@ class BenchmarkOrchestrator:
         temperature_validator: float = 0.2,
         max_retries: int = 2,
         sandbox_tmp_dir: str = "/tmp/mcbench_sandbox",
+        extremely_hard: bool = False,
         verbose: bool = True,
     ):
         self.api_model = api_model
@@ -863,6 +864,7 @@ class BenchmarkOrchestrator:
         }
         self.max_retries = max_retries
         self.sandbox_tmp_dir = sandbox_tmp_dir
+        self.extremely_hard = extremely_hard
         self.verbose = verbose
 
         # Sandbox handle (shared across agents per sample)
@@ -1946,6 +1948,16 @@ Begin!
     def _build_scene_designer_system(self, tools: List[Dict]) -> str:
         """Build SceneDesigner system prompt, appending sandbox tool descriptions if available."""
         base = _SCENE_DESIGNER_SYS
+
+        # Append extremely-hard mode instruction when requested
+        if self.extremely_hard:
+            base = base + (
+                "\n\nYou MUST design a very challenging long-horizon task. Requirements:\n"
+                "- The task must require significant exploration of the scene before the player\n"
+                "  can locate all objectives — do NOT place key items in plain sight at spawn.\n"
+                "- The overall task should take a skilled player **at least 2 minutes** of continuous.\n"
+            )
+
         if not tools:
             return base + (
                 "\n\n## Sandbox Tools\n"

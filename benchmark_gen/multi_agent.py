@@ -43,6 +43,7 @@ def generate(
     seed: Optional[int] = None,
     candidate_tasks: Optional[List[str]] = None,
     start_idx: int = 0,
+    extremely_hard: bool = False,
 ) -> List[str]:
     """Generate num_samples benchmark samples using AutoGen multi-agent debate.
     Returns a list of output directory paths.
@@ -73,6 +74,7 @@ def generate(
         temperature_validator=temperature_validator,
         max_retries=max_retries,
         sandbox_tmp_dir=sandbox_tmp_dir,
+        extremely_hard=extremely_hard,
         verbose=True,
     )
 

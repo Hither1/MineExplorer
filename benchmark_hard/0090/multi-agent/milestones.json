@@ -1,0 +1,194 @@
+{
+  "milestones": [
+    {
+      "task": "find spruce_sapling",
+      "milestone_id": "find_spruce_sapling",
+      "description": "Uses position_near_with_facing because this is a find/locate task. Spruce saplings are at (-10, 0, -10) relative to spawn on podzol blocks. Player must navigate near them and face their direction to confirm visual observation. Max distance 16 allows detection from a reasonable viewing range.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              -10,
+              0,
+              -10
+            ],
+            "max_distance": 16,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "find peony",
+      "milestone_id": "find_peony",
+      "description": "Uses position_near_with_facing because this is a find/locate task. Peony flowers are at (8, 0, -8) relative to spawn, properly placed as two-block tall flowers. Player must navigate near the flower garden and face toward the peonies to observe them.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              8,
+              0,
+              -8
+            ],
+            "max_distance": 16,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "sell Yellow Dye",
+      "milestone_id": "sell_yellow_dye",
+      "description": "Uses inventory_has to check emerald count >= 9. Player starts with 8 emeralds. The revised DAG enforces this is the FIRST sell task (via edge from find peony), so selling 12 yellow dye to the shepherd yields +1 emerald (total 9). No emeralds can be spent before this because 'trade for Leather Boots' depends on all sells completing first per DAG ordering.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "emerald",
+            "min_count": 9
+          }
+        }
+      ]
+    },
+    {
+      "task": "find spruce_stairs",
+      "milestone_id": "find_spruce_stairs",
+      "description": "Uses position_near_with_facing because this is a find/locate task. Spruce stairs are at (-8, 0, 6) inside the spruce building (back wall interior stairs facing north). Max distance reduced to 7 to ensure the player is at or inside the building doorway at (-7,0,2), not just passing by outside. Facing tolerance 60 degrees ensures they're looking toward the stairs.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              -8,
+              0,
+              6
+            ],
+            "max_distance": 7,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "sell Raw Cod",
+      "milestone_id": "sell_raw_cod",
+      "description": "Uses inventory_has to check emerald count >= 10. The revised DAG enforces ordering: sell Yellow Dye (8→9) → sell Raw Cod (9→10). Selling 6 cod to the fisherman at (8,0,-5) yields +1 emerald. Since the leather boots trade (costing 4 emeralds) is downstream of all sells per DAG, the cumulative count is reliable.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "emerald",
+            "min_count": 10
+          }
+        }
+      ]
+    },
+    {
+      "task": "sell Carrot",
+      "milestone_id": "sell_carrot",
+      "description": "Uses inventory_has to check emerald count >= 11. The revised DAG enforces ordering: sell Yellow Dye (8→9) → sell Raw Cod (9→10) → sell Carrot (10→11). Selling 22 carrots to the farmer at (-10,0,-7) yields +1 emerald. This is the last sell before the leather boots trade can occur per DAG constraints.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "emerald",
+            "min_count": 11
+          }
+        }
+      ]
+    },
+    {
+      "task": "find iron_trapdoor",
+      "milestone_id": "find_iron_trapdoor",
+      "description": "Uses position_near_with_facing because this is a find/locate task. The iron trapdoor is at (-7, 0, 5) inside the spruce building floor, set to open=true with an adjacent lever at (-6,1,5). Max distance 5 ensures the player is inside the building standing near/over the trapdoor. The tight distance prevents triggering from outside.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              -7,
+              0,
+              5
+            ],
+            "max_distance": 5,
+            "facing_tolerance": 60,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "trade for Leather Boots",
+      "milestone_id": "trade_leather_boots",
+      "description": "Uses inventory_has because trading for leather boots results in the item appearing in the player's inventory. The player does not start with leather boots. The leatherworker at (-8,0,4) sells leather boots for 4 emeralds. The DAG ensures the player has 11 emeralds (from 3 sells) before this trade, leaving 7 after purchase.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "leather_boots",
+            "min_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "task": "mine pink_terracotta",
+      "milestone_id": "mine_pink_terracotta",
+      "description": "Uses inventory_has because mining pink terracotta with an iron pickaxe drops the block as an item into the player's inventory. The player does not start with any pink terracotta. Five pink terracotta blocks are in the basement at y=-3. Mining at least one confirms task completion.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "pink_terracotta",
+            "min_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "task": "hunt a horse",
+      "milestone_id": "hunt_horse",
+      "description": "Uses count_in_box_at_most with kind=mob because hunting a horse means killing it. The horse is at (-8, 0, 12) with NoAI:1b in a fully enclosed fence pen. Box is generous (min=[-20,-5,-5] max=[10,5,25]) covering the entire scene area to prevent false positives from the horse somehow leaving the detection zone. With NoAI and enclosed pen, the horse stays put until killed.",
+      "rules": [
+        {
+          "type": "count_in_box_at_most",
+          "params": {
+            "kind": "mob",
+            "object": "horse",
+            "min": [
+              -20,
+              -5,
+              -5
+            ],
+            "max": [
+              10,
+              5,
+              25
+            ],
+            "max_count": 0,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "use cauldron",
+      "milestone_id": "use_cauldron",
+      "description": "Uses inventory_has because using a water-filled cauldron (level=3) at (-6,-3,4) with a glass bottle produces a water bottle (item ID 'potion') in the player's inventory. The player is given 3 glass bottles. Right-clicking the cauldron with a glass bottle creates a water bottle, confirming cauldron interaction.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "potion",
+            "min_count": 1
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+{
+  "milestones": [
+    {
+      "task": "find cyan_concrete",
+      "milestone_id": "find_cyan_concrete",
+      "description": "Uses position_near_with_facing because this is a find/locate task. The cyan concrete tower is at spawn-relative (8, 0-4, -8). Player must navigate within 6 blocks and face it (45° tolerance), ensuring actual navigation occurred rather than accidental facing from spawn (~11.3 blocks away). This rule type correctly models 'player can see the target' for observation tasks.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              8,
+              2,
+              -8
+            ],
+            "max_distance": 6,
+            "facing_tolerance": 45,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "mine gray_concrete_powder",
+      "milestone_id": "mine_gray_concrete_powder",
+      "description": "Uses inventory_has because mining gray concrete powder drops the block as an item into the player's inventory. The deposit is at (6-8, 0, -5 to -6) plus one block at (9,0,-5). Mining at least 1 block satisfies the task. This is the preferred rule for mine tasks since the mined item ends up in inventory.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "gray_concrete_powder",
+            "min_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "task": "find_mossy_cobblestone_wall",
+      "milestone_id": "find_mossy_cobblestone_wall",
+      "description": "Uses position_near_with_facing because this is a find/locate task. The mossy cobblestone wall gateway is at (-8, 0-3, 2-4). Player must navigate within 5 blocks and face it (45° tolerance). The gateway is ~8.5 blocks from spawn, so max_distance=5 ensures the player actually walked toward it rather than seeing it from spawn.",
+      "rules": [
+        {
+          "type": "position_near_with_facing",
+          "params": {
+            "target": [
+              -8,
+              2,
+              3
+            ],
+            "max_distance": 5,
+            "facing_tolerance": 45,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "mine_sandstone",
+      "milestone_id": "mine_sandstone",
+      "description": "Uses inventory_has because mining sandstone drops the block into the player's inventory. The sandstone quarry is at (-12 to -10, -1 to 1, 1 to 5). Player has a wooden pickaxe for efficient mining. At least 1 sandstone block in inventory proves the task is complete.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "sandstone",
+            "min_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "task": "mine oak_leaves",
+      "milestone_id": "mine_oak_leaves",
+      "description": "Uses count_in_box_at_most because oak leaves broken by hand do NOT reliably drop themselves as items (they drop saplings/apples/nothing instead). We verify the blocking leaves have been removed. The leaves at (2,0,9) and (2,1,9) block the crafting table at (2,0,10). Box [1,0,9] to [3,1,9] covers these blocking positions. max_count=0 means all blocking leaves in this tight area must be cleared to reach the crafting table.",
+      "rules": [
+        {
+          "type": "count_in_box_at_most",
+          "params": {
+            "kind": "block",
+            "object": "oak_leaves",
+            "min": [
+              1,
+              0,
+              9
+            ],
+            "max": [
+              3,
+              1,
+              9
+            ],
+            "max_count": 0,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "craft to acacia_door",
+      "milestone_id": "craft_acacia_door",
+      "description": "Uses inventory_has because crafting an acacia door produces the item in the player's inventory. Requires 6 acacia planks (from quarry chest at -11,2,3) and the crafting table (accessible at 2,0,10 after mining oak leaves). The crafted door appears in inventory. This is the preferred rule for craft tasks.",
+      "rules": [
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "acacia_door",
+            "min_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "task": "attract a pig",
+      "milestone_id": "attract_pig",
+      "description": "Uses count_in_box_at_least because attracting a pig means luring it to a new location. The pig spawns at (5,1,5) inside a cobblestone_wall pen (4-6, 0, 4-6). The detection box [-2,-1,-2] to [3,2,3] is OUTSIDE the pen and does NOT contain the pig's spawn point (5 > 3 on x-axis). The pig must be actively lured with carrots through the pen opening at (5,0,4) and into this box near spawn origin, proving attraction behavior occurred.",
+      "rules": [
+        {
+          "type": "count_in_box_at_least",
+          "params": {
+            "kind": "mob",
+            "object": "pig",
+            "min": [
+              -2,
+              -1,
+              -2
+            ],
+            "max": [
+              3,
+              2,
+              3
+            ],
+            "min_count": 1,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "Hook a pig using fishing rod.",
+      "milestone_id": "hook_pig_fishing_rod",
+      "description": "Uses count_in_box_at_least because hooking a pig with a fishing rod pulls it toward the player. The detection box [8,-1,3] to [11,2,7] is near the fenced reward room — far from both the pig's spawn (5,1,5) and the attract-pig box (max x=3). The pig would never naturally reach this area (it must cross open ground past its pen). The player must hook and pull the pig multiple times with the fishing rod to drag it here, proving the fishing rod interaction occurred.",
+      "rules": [
+        {
+          "type": "count_in_box_at_least",
+          "params": {
+            "kind": "mob",
+            "object": "pig",
+            "min": [
+              8,
+              -1,
+              3
+            ],
+            "max": [
+              11,
+              2,
+              7
+            ],
+            "min_count": 1,
+            "coordinate_frame": "spawn_relative"
+          }
+        }
+      ]
+    },
+    {
+      "task": "eat beef",
+      "milestone_id": "eat_beef",
+      "description": "Uses position_inside_box + inventory_has because eating beef requires: (1) entering the fenced reward room (proving the player placed the acacia door to gain access through the 1x2 opening at 10,0-1,5), and (2) collecting cooked beef from the chest at (12,1,5). The room at [10,0,3] to [13,2,7] is locked behind oak_fence. Having cooked_beef (min 1 of 3 available) proves collection. While this technically checks collection rather than consumption, entering the locked room + having beef validates the full dependency chain was completed.",
+      "rules": [
+        {
+          "type": "position_inside_box",
+          "params": {
+            "min": [
+              10,
+              0,
+              3
+            ],
+            "max": [
+              13,
+              2,
+              7
+            ],
+            "coordinate_frame": "spawn_relative"
+          }
+        },
+        {
+          "type": "inventory_has",
+          "params": {
+            "item": "cooked_beef",
+            "min_count": 1
+          }
+        }
+      ]
+    }
+  ]
+}
