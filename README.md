@@ -12,6 +12,51 @@
 
 MineExplorer is a benchmark for evaluating the open-world exploration capabilities of multimodal large language model (MLLM) agents in Minecraft. We first filter atomic tasks whose solutions rely heavily on Minecraft-specific knowledge to better reflect general open-world reasoning, then organize the benchmark around a ReAct-style capability formulation and compose atomic tasks into implicit multi-hop tasks. To construct reliable instances, MineExplorer uses a multi-agent synthesis workflow that jointly designs task graphs, sandbox scenes, and rule-based milestone evaluators. Experiments show that open-world exploration remains challenging: strong models handle many single-hop tasks but degrade sharply when hidden prerequisites must be coordinated over longer trajectories, and larger models or thinking modes do not consistently translate into better performance.
 
+<table align="center">
+  <tr>
+    <td align="center">
+      <video src="videos/craft_diamond_pickaxe.mp4" width="280" controls></video>
+      <br/><b>Craft Diamond Pickaxe</b>
+    </td>
+    <td align="center">
+      <video src="videos/craft_bed_with_wool.mp4" width="280" controls></video>
+      <br/><b>Craft Bed with Wool</b>
+    </td>
+    <td align="center">
+      <video src="videos/craft_a_door.mp4" width="280" controls></video>
+      <br/><b>Craft a Door</b>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <video src="videos/trade_with_villager.mp4" width="280" controls></video>
+      <br/><b>Trade with Villager</b>
+    </td>
+    <td align="center">
+      <video src="videos/find_diamond_ore.mp4" width="280" controls></video>
+      <br/><b>Find Diamond Ore</b>
+    </td>
+    <td align="center">
+      <video src="videos/trap_a_zombie.mp4" width="280" controls></video>
+      <br/><b>Trap a Zombie</b>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <video src="videos/reach_the_summit.mp4" width="280" controls></video>
+      <br/><b>Reach the Summit</b>
+    </td>
+    <td align="center">
+      <video src="videos/defeat_spider_on_platform.mp4" width="280" controls></video>
+      <br/><b>Defeat Spider on Platform</b>
+    </td>
+    <td align="center">
+      <video src="videos/cook_meat.mp4" width="280" controls></video>
+      <br/><b>Cook Meat</b>
+    </td>
+  </tr>
+</table>
+
 ---
 
 ## 1. Minecraft Sandbox Environment
