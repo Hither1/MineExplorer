@@ -51,10 +51,12 @@ class OpenAIProvider(BaseLLMProvider):
         self,
         api_key: str | None = None,
         api_base: str | None = None,
-        default_model: str = "gpt-5.2-chat"
+        default_model: str = "gpt-5.2-chat",
+        temperature: float = 0.7,
     ) -> None:
         super().__init__(api_key, api_base)
         self.default_model = default_model
+        self.temperature = temperature
 
         if api_base and not api_base.endswith('/'):
             api_base += '/'
@@ -67,12 +69,13 @@ class OpenAIProvider(BaseLLMProvider):
         self,
         messages: list[dict[str, Any]],
         model: str | None = None,
-        temperature: float = 0.7,
+        temperature: float | None = None,
         timeout: int = 60,
         response_format: dict | None = None
     ) -> str:
         logger.info("Querying LLM directly via OpenAI client...")
         model = model if model else self.default_model
+        temperature = temperature if temperature is not None else self.temperature
         # kimi models only accept temperature=1
         if model.startswith("kimi"):
             temperature = 1
@@ -162,9 +165,11 @@ class VLLMProvider(BaseLLMProvider):
         base_url: str = "http://localhost:8000/v1",
         api_key: str = "EMPTY",
         max_images: int | None = None,
+        temperature: float = 0.7,
     ) -> None:
         super().__init__(api_key=api_key, api_base=base_url)
         self.default_model = model_name
+        self.temperature = temperature
 
         if not base_url.endswith("/"):
             base_url += "/"
@@ -192,12 +197,13 @@ class VLLMProvider(BaseLLMProvider):
         self,
         messages: list[dict[str, Any]],
         model: str | None = None,
-        temperature: float = 0.7,
+        temperature: float | None = None,
         timeout: int = 120,
         response_format: dict | None = None,
         max_tokens: int = 4096,
     ) -> str:
         effective_model = model if model else self.default_model
+        temperature = temperature if temperature is not None else self.temperature
 
         if self.max_images is not None:
             messages = _truncate_images(messages, self.max_images)

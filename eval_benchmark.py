@@ -118,6 +118,7 @@ def _run_benchmark(
     vllm_url: str = "http://localhost:8000/v1",
     frame_size: int = FRAME_BUFFER_SIZE,
     use_friday: bool = False,
+    temperature: float = 0.7,
 ) -> Dict[str, Any]:
     """Run one benchmark scenario and save results."""
     global _shutdown_requested
@@ -142,9 +143,9 @@ def _run_benchmark(
 
     _base_env = MineRLBenchmarkEnv(metadata_path=metadata_path, use_friday=use_friday)
     if use_vllm:
-        _provider = VLLMProvider(model_name=model, base_url=vllm_url)
+        _provider = VLLMProvider(model_name=model, base_url=vllm_url, temperature=temperature)
     else:
-        _provider = OpenAIProvider(AGENT_API_KEY, AGENT_API_BASE, model)
+        _provider = OpenAIProvider(AGENT_API_KEY, AGENT_API_BASE, model, temperature=temperature)
     agent = DefaultAgent(
         action_space=MinerRLActionSpace(),
         provider=_provider,
@@ -167,6 +168,7 @@ def _run_benchmark(
     _frame_offset: int = 0
     _all_done_logged: bool = False
     long_term_memory: str = ""
+    termination_reason: str = "max_steps"
 
     original_sigint_handler = signal.signal(signal.SIGINT, _signal_handler)
 
@@ -191,6 +193,16 @@ def _run_benchmark(
             _, noop_action = agent.get_default_action(is_call_failed=False)
             obs, reward, terminated, truncated, info = env.step(noop_action, save_frame=True)
             frame_buffer.append(obs["pov"])
+
+        logger.debug(
+            f"[{run_id}] Pre-reset info keys={list(info.keys())} "
+            f"player_pos={info.get('player_pos')!r}"
+        )
+        if not info.get("player_pos"):
+            logger.warning(
+                f"[{run_id}] Server info has no usable 'player_pos' key "
+                f"(info keys={list(info.keys())}); spawn will default to (0,0,0)."
+            )
 
         checker.reset(info)
         agent.load_system_prompt(task_desc)
@@ -225,6 +237,7 @@ def _run_benchmark(
             if _shutdown_requested:
                 logger.info(f"[{run_id}] Shutdown requested, exiting after step {step}...")
                 step_error = "interrupted_by_user"
+                termination_reason = "interrupted"
                 break
 
             logger.info(f"[{run_id}] --- Step {step + 1}/{max_steps} ---")
@@ -258,10 +271,29 @@ def _run_benchmark(
                 time.sleep(10)
                 continue
 
-            done = terminated or truncated
+            # The remote sandbox does not reliably end the episode when the
+            # agent presses ESC (observed: agent can emit ESC=1 for hundreds
+            # of consecutive steps with server-reported `done` staying False).
+            # Enforce the documented contract ("set ESC=1 to end the episode",
+            # see mc_agent/context.py) on the client side as a safety net.
+            agent_requested_stop = bool(action.get("ESC"))
+            done = terminated or truncated or agent_requested_stop
+
+            if done:
+                if agent_requested_stop and not (terminated or truncated):
+                    termination_reason = "agent_esc"
+                elif terminated:
+                    termination_reason = "env_terminated"
+                elif truncated:
+                    termination_reason = "env_truncated"
+
             frame_buffer.append(obs["pov"])
 
             milestone_status = checker.check(info)
+            logger.debug(
+                f"[{run_id}] step={step + 1} player_pos={info.get('player_pos')!r} "
+                f"rules_passed={[(ms['milestone_id'], ms.get('rules_passed')) for ms in milestone_status]}"
+            )
             for ms in milestone_status:
                 mid = ms["milestone_id"]
                 # Skip milestones that were already satisfied at spawn
@@ -280,7 +312,7 @@ def _run_benchmark(
                 env.save_video_checkpoint()
 
             if done:
-                logger.success(f"[{run_id}] Episode finished.")
+                logger.success(f"[{run_id}] Episode finished ({termination_reason}).")
                 break
 
     except KeyboardInterrupt:
@@ -338,6 +370,7 @@ def _run_benchmark(
         "mode": "multi-agent",
         "metadata_path": str(meta_path),
         "total_steps": total_steps,
+        "termination_reason": termination_reason,
         "milestones_completed": corrected_completed,
         "milestones_trackable": corrected_trackable,
         "milestones_total": len(checker._milestones),
@@ -372,6 +405,7 @@ def _worker_eval(worker_args: dict) -> dict:
         vllm_url=worker_args.get("vllm_url", "http://localhost:8000/v1"),
         frame_size=worker_args.get("frame_size", FRAME_BUFFER_SIZE),
         use_friday=worker_args.get("use_friday", False),
+        temperature=worker_args.get("temperature", 0.7),
     )
 
 
@@ -398,6 +432,8 @@ def eval_benchmark(
                                         help="Limit number of scenarios to evaluate"),
     use_friday: bool = typer.Option(False, "--use-friday",
                                     help="Use Friday platform sandbox instead of local Docker"),
+    temperature: float = typer.Option(0.7, "--temperature", "-t",
+                                      help="LLM sampling temperature"),
 ):
     """Evaluate all benchmark scenarios in benchmark_dir."""
     logger.info(f"--- Starting evaluation (model={model}) ---")
@@ -469,6 +505,7 @@ def eval_benchmark(
                     use_vllm=use_vllm,
                     vllm_url=vllm_url,
                     use_friday=use_friday,
+                    temperature=temperature,
                 )
             except Exception as e:
                 logger.error(f"[ERROR] {scene_num}: {e}")
@@ -511,6 +548,7 @@ def eval_benchmark(
                     "use_vllm": use_vllm,
                     "vllm_url": vllm_url,
                     "use_friday": use_friday,
+                    "temperature": temperature,
                     "_scene_num": scene_num,
                 })
 

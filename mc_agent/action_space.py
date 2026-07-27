@@ -41,8 +41,9 @@ class ActionState(BaseModel):
         pitch, yaw = float(v[0]), float(v[1])
         if not (-90.0 <= pitch <= 90.0):
             raise ValueError(f"camera[0] (pitch_delta) must be in [-90, 90], got {pitch}")
-        if not (-180.0 <= yaw <= 180.0):
-            raise ValueError(f"camera[1] (yaw_delta) must be in [-180, 180], got {yaw}")
+        # Normalize yaw to the equivalent shortest signed turn in [-180, 180]
+        # (e.g. 270 -> -90) instead of rejecting values outside the canonical range.
+        yaw = ((yaw + 180.0) % 360.0) - 180.0
         return [pitch, yaw]
 
     think: str = "I will continue my current plan."

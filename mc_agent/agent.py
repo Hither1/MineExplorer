@@ -112,6 +112,7 @@ class DefaultAgent:
         for attempt in range(max_json_retries := 3):
             try:
                 response_content = self.provider.chat(messages)
+                logger.info(f"[DefaultAgent] Raw LLM response (attempt {attempt + 1}):\n{response_content}")
                 action_state = self.action_space.load_action(response_content)
                 thought = action_state.think
                 memory_update = action_state.memory_update
@@ -123,6 +124,10 @@ class DefaultAgent:
                     logger.error(f"JSON parsing failed on attempt {attempt + 1}/{max_json_retries}: {e}")
                 else:
                     logger.exception(f"Error during LLM call or JSON parsing (attempt {attempt + 1}/{max_json_retries}):")
+                logger.error(
+                    f"[DefaultAgent] Response content that failed to parse:\n"
+                    f"{response_content if 'response_content' in locals() else '<no response received>'}"
+                )
 
                 if attempt < max_json_retries - 1:
                     logger.info("Retrying due to error...")
