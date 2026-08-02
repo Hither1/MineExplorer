@@ -14,11 +14,24 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 def _inventory_count(state: Dict[str, Any], item: str) -> int:
-    """Get the count of an item in the inventory from state."""
+    """Get the count of an item in the inventory from state.
+
+    The sandbox's 'inventory' info key is slot-indexed (keys "0".."35", one
+    per inventory slot, each {"type": ..., "quantity": ...}) rather than a
+    flat {item_name: count} dict -- confirmed by directly querying the
+    sandbox (info['inventory'] == {"0": {"type": "none", "quantity": 0}, ...}
+    for an empty inventory). Sum quantities across every slot whose type
+    matches, rather than doing a direct key lookup (which always returned 0,
+    regardless of what the player actually held).
+    """
     inventory = state.get("inventory", {})
-    if isinstance(inventory, dict):
-        return int(inventory.get(item, 0))
-    return 0
+    if not isinstance(inventory, dict):
+        return 0
+    total = 0
+    for slot in inventory.values():
+        if isinstance(slot, dict) and slot.get("type") == item:
+            total += int(slot.get("quantity", 0) or 0)
+    return total
 
 
 def _to_vec3(v: Any) -> Tuple[float, float, float]:

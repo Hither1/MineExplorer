@@ -117,6 +117,106 @@ class BaseActionSpace(abc.ABC):
         return True
 
 
+def extract_json_from_response(text: str) -> dict:
+    """Robustly extract the action JSON dict from raw LLM output.
+
+    Handles:
+    1. Thinking-model output: strips <think>...</think> blocks first.
+    2. Markdown code-fenced JSON: ```json ... ``` (may appear multiple times).
+    3. Bare JSON object directly in the text.
+    4. Llama-style Markdown sections: **Thought:** ... **Action:** ```json ... ``` **Memory Update:** ...
+
+    Module-level so it can be reused by callers that need the full parsed
+    dict (e.g. HypothesisAgent reading extra "hypotheses"/"plan" keys)
+    without depending on a particular ActionSpace subclass.
+    """
+    # --- Step 1: strip <think>...</think> blocks (thinking models) ---
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+
+    # --- Step 2: try to extract a ```json ... ``` block that has all 3 required keys ---
+    json_blocks = re.findall(r"```json\s*(.*?)```", text, re.DOTALL)
+    for candidate in reversed(json_blocks):  # prefer the last block
+        candidate = candidate.strip()
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict) and "action" in parsed and "thought" in parsed:
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    # --- Step 3: try the last ``` ... ``` block that has all required keys ---
+    raw_blocks = re.findall(r"```\s*(.*?)```", text, re.DOTALL)
+    for candidate in reversed(raw_blocks):
+        candidate = candidate.strip()
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict) and "action" in parsed and "thought" in parsed:
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    # --- Step 4: detect Llama-style Markdown sections ---
+    thought_match = re.search(
+        r'\*{0,2}[Tt]hought\*{0,2}:?\*{0,2}\s*(.*?)(?=\*{0,2}[Aa]ction|\Z)',
+        text, re.DOTALL
+    )
+    action_match = re.search(
+        r'\*{0,2}[Aa]ction\*{0,2}:?\*{0,2}.*?```(?:json)?\s*(\{.*?\})\s*```',
+        text, re.DOTALL
+    )
+    if action_match is None:
+        action_match = re.search(
+            r'\*{0,2}[Aa]ction\*{0,2}:?\*{0,2}\s*(\{.*?\})',
+            text, re.DOTALL
+        )
+    memory_match = re.search(
+        r'\*{0,2}[Mm]emory[\s_][Uu]pdate\*{0,2}:?\*{0,2}\s*(.*?)(?=\n\*{1,2}[A-Z]|\Z)',
+        text, re.DOTALL
+    )
+
+    if thought_match and action_match:
+        thought = thought_match.group(1).strip()
+        action_str = action_match.group(1).strip()
+        memory = memory_match.group(1).strip() if memory_match else ""
+        try:
+            action_dict = json.loads(action_str)
+            return {
+                "thought": thought,
+                "action": action_dict,
+                "memory_update": memory,
+            }
+        except json.JSONDecodeError:
+            pass
+
+    # --- Step 5: find the first top-level { ... } object that has required keys ---
+    pos = 0
+    while True:
+        brace_start = text.find("{", pos)
+        if brace_start == -1:
+            break
+        depth = 0
+        for i, ch in enumerate(text[brace_start:], start=brace_start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = text[brace_start : i + 1]
+                    try:
+                        parsed = json.loads(candidate)
+                        if isinstance(parsed, dict) and "action" in parsed:
+                            return parsed
+                    except json.JSONDecodeError:
+                        pass
+                    pos = i + 1
+                    break
+        else:
+            break
+
+    # --- Step 6: last resort – parse the whole stripped text ---
+    return json.loads(text.strip())
+
+
 class DefaultActionSpace(BaseActionSpace):
     def __init__(
         self
@@ -125,99 +225,7 @@ class DefaultActionSpace(BaseActionSpace):
 
     @staticmethod
     def _extract_json_from_response(text: str) -> dict:
-        """Robustly extract the action JSON dict from raw LLM output.
-
-        Handles:
-        1. Thinking-model output: strips <think>...</think> blocks first.
-        2. Markdown code-fenced JSON: ```json ... ``` (may appear multiple times).
-        3. Bare JSON object directly in the text.
-        4. Llama-style Markdown sections: **Thought:** ... **Action:** ```json ... ``` **Memory Update:** ...
-        """
-        # --- Step 1: strip <think>...</think> blocks (thinking models) ---
-        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-
-        # --- Step 2: try to extract a ```json ... ``` block that has all 3 required keys ---
-        json_blocks = re.findall(r"```json\s*(.*?)```", text, re.DOTALL)
-        for candidate in reversed(json_blocks):  # prefer the last block
-            candidate = candidate.strip()
-            try:
-                parsed = json.loads(candidate)
-                if isinstance(parsed, dict) and "action" in parsed and "thought" in parsed:
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-
-        # --- Step 3: try the last ``` ... ``` block that has all required keys ---
-        raw_blocks = re.findall(r"```\s*(.*?)```", text, re.DOTALL)
-        for candidate in reversed(raw_blocks):
-            candidate = candidate.strip()
-            try:
-                parsed = json.loads(candidate)
-                if isinstance(parsed, dict) and "action" in parsed and "thought" in parsed:
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-
-        # --- Step 4: detect Llama-style Markdown sections ---
-        thought_match = re.search(
-            r'\*{0,2}[Tt]hought\*{0,2}:?\*{0,2}\s*(.*?)(?=\*{0,2}[Aa]ction|\Z)',
-            text, re.DOTALL
-        )
-        action_match = re.search(
-            r'\*{0,2}[Aa]ction\*{0,2}:?\*{0,2}.*?```(?:json)?\s*(\{.*?\})\s*```',
-            text, re.DOTALL
-        )
-        if action_match is None:
-            action_match = re.search(
-                r'\*{0,2}[Aa]ction\*{0,2}:?\*{0,2}\s*(\{.*?\})',
-                text, re.DOTALL
-            )
-        memory_match = re.search(
-            r'\*{0,2}[Mm]emory[\s_][Uu]pdate\*{0,2}:?\*{0,2}\s*(.*?)(?=\n\*{1,2}[A-Z]|\Z)',
-            text, re.DOTALL
-        )
-
-        if thought_match and action_match:
-            thought = thought_match.group(1).strip()
-            action_str = action_match.group(1).strip()
-            memory = memory_match.group(1).strip() if memory_match else ""
-            try:
-                action_dict = json.loads(action_str)
-                return {
-                    "thought": thought,
-                    "action": action_dict,
-                    "memory_update": memory,
-                }
-            except json.JSONDecodeError:
-                pass
-
-        # --- Step 5: find the first top-level { ... } object that has required keys ---
-        pos = 0
-        while True:
-            brace_start = text.find("{", pos)
-            if brace_start == -1:
-                break
-            depth = 0
-            for i, ch in enumerate(text[brace_start:], start=brace_start):
-                if ch == "{":
-                    depth += 1
-                elif ch == "}":
-                    depth -= 1
-                    if depth == 0:
-                        candidate = text[brace_start : i + 1]
-                        try:
-                            parsed = json.loads(candidate)
-                            if isinstance(parsed, dict) and "action" in parsed:
-                                return parsed
-                        except json.JSONDecodeError:
-                            pass
-                        pos = i + 1
-                        break
-            else:
-                break
-
-        # --- Step 6: last resort – parse the whole stripped text ---
-        return json.loads(text.strip())
+        return extract_json_from_response(text)
 
     def load_action(
         self,

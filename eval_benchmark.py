@@ -21,11 +21,15 @@ if str(_ROOT_DIR) not in sys.path:
 
 from env.minerl_sandbox import MineRLSandboxEnv
 from env.render import RenderWrapper
-from mc_agent import DefaultAgent, MinerRLActionSpace, OpenAIProvider, VLLMProvider, DefaultContextBuilder
+from mc_agent import (
+    DefaultAgent, MinerRLActionSpace, OpenAIProvider, VLLMProvider, DefaultContextBuilder,
+    HypothesisAgent, HypothesisContextBuilder,
+)
+
+AGENT_MODES = ("default", "hypothesis")
 
 FRAME_BUFFER_SIZE = 20
-# MAX_STEPS = 50
-MAX_STEPS = 1800
+MAX_STEPS = 300
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 AGENT_API_BASE = os.getenv("AGENT_API_BASE", "")
 if not AGENT_API_KEY:
@@ -107,6 +111,118 @@ def _signal_handler(signum, frame):
     logger.warning("\n[INTERRUPT] Shutdown requested, finishing current step and closing sandbox...")
 
 
+def _camera_state_hint(info: dict) -> str:
+    """Ground-truth camera pitch from the environment, so the agent doesn't
+    have to rely solely on visually noticing it has pitched to an extreme
+    (observed failure mode: repeating the same camera move several steps in
+    a row drives pitch into the +-90 clamp, after which every frame is blank
+    sky/ground, which some models keep misreading as unrelated scenery
+    instead of recognizing they're stuck)."""
+    pos = info.get("player_pos") or {}
+    pitch = pos.get("pitch")
+    if pitch is None:
+        return ""
+    if pitch >= 80:
+        note = "you are looking almost straight DOWN at the ground"
+    elif pitch <= -80:
+        note = "you are looking almost straight UP at the sky"
+    elif pitch >= 40:
+        note = "you are looking steeply downward"
+    elif pitch <= -40:
+        note = "you are looking steeply upward"
+    else:
+        note = "roughly level"
+    return f"pitch={pitch:.0f} degrees ({note})."
+
+
+def _movement_state_hint(
+    info: dict,
+    spawn_xz: tuple[float, float] | None,
+    pos_history: "deque[tuple[float, float]]",
+) -> str:
+    """Ground-truth horizontal displacement from the environment, so the
+    agent doesn't have to infer from subtle frame-to-frame visual similarity
+    whether its last action (or last several actions) actually covered new
+    ground.
+
+    Observed failure modes this targets (see MineExplorer hypothesis-agent
+    debugging session): (a) the model issues 'left'/'right' (these STRAFE
+    sideways, they do not change facing) while narrating "turning to scan a
+    new direction", never actually rotating; (b) the model pairs a large
+    camera yaw turn with forward movement on every single tick, which -
+    exactly as this file's own system prompt warns - walks in a closed loop
+    while every individual frame still looks like "new" forest; (c) the
+    agent gets physically wedged against terrain (a 1-block ledge, a wall)
+    and its position freezes for tens of steps while it keeps narrating
+    "N consecutive scans, environment unchanged" as if still moving. In all
+    three cases the model's own account of its progress silently diverges
+    from the server-reported player_pos, and nothing before this hint ever
+    surfaced that divergence back into the prompt. Before this hint existed,
+    the model had no numeric access to its own coordinates at all (only
+    pixels + camera pitch + milestone hint), so it also had no way to reason
+    about real distance/direction independent of its own narrative.
+    """
+    pos = info.get("player_pos") or {}
+    x, z = pos.get("x"), pos.get("z")
+    if x is None or z is None:
+        return ""
+
+    had_history = len(pos_history) > 0
+    tick_delta = 0.0
+    if had_history:
+        px, pz = pos_history[-1]
+        tick_delta = ((x - px) ** 2 + (z - pz) ** 2) ** 0.5
+
+    pos_history.append((x, z))
+    if not had_history:
+        # First call (spawn): nothing has moved yet because no action has
+        # been taken, so there's nothing meaningful to report.
+        return ""
+
+    parts = []
+
+    if tick_delta < 0.05:
+        parts.append(
+            f"You have NOT moved since your last action (still at x={x:.1f}, z={z:.1f}). "
+            f"Your last action did not change your position at all - you are likely "
+            f"blocked by terrain (a wall, fence, one-block ledge), or you used "
+            f"'left'/'right' (these STRAFE sideways - they do NOT change your facing "
+            f"direction; only 'camera' turns you) without any 'forward'/'camera' change "
+            f"that would actually move you. Try 'jump' combined with 'forward', try "
+            f"'back' to un-wedge yourself, or issue a 'camera' yaw turn before your next "
+            f"forward move - do not just repeat the same action again."
+        )
+    else:
+        parts.append(f"moved {tick_delta:.2f} blocks since last step (now x={x:.1f}, z={z:.1f}).")
+
+    if len(pos_history) == pos_history.maxlen:
+        ox, oz = pos_history[0]
+        window_net = ((x - ox) ** 2 + (z - oz) ** 2) ** 0.5
+        if window_net < 1.0:
+            parts.append(
+                f"WARNING: over your last {pos_history.maxlen} steps you have net-moved "
+                f"only {window_net:.2f} blocks (from x={ox:.1f},z={oz:.1f} to x={x:.1f},"
+                f"z={z:.1f}) even though you took action every step. Even if each frame "
+                f"looked slightly different, you are circling back on yourself, not "
+                f"covering new ground - this is what happens when you turn and move in "
+                f"the same tick, repeatedly. Stop and do ONE full turn (camera only, "
+                f"forward=0), then move in a straight line (forward=1, camera=[0,0]) for "
+                f"several steps before turning again."
+            )
+
+    if spawn_xz is not None:
+        sx, sz = spawn_xz
+        spawn_dist = ((x - sx) ** 2 + (z - sz) ** 2) ** 0.5
+        parts.append(
+            f"You are {spawn_dist:.1f} blocks from your spawn point (spawn was "
+            f"x={sx:.1f}, z={sz:.1f}). Use this real number, not a step count, to judge "
+            f"how much ground you've actually covered - a high step count with a small "
+            f"spawn distance means you have been going in circles, not exploring."
+        )
+
+    return " ".join(parts)
+
+
 def _run_benchmark(
     *,
     metadata_path: str,
@@ -119,6 +235,8 @@ def _run_benchmark(
     frame_size: int = FRAME_BUFFER_SIZE,
     use_friday: bool = False,
     temperature: float = 0.7,
+    use_milestone_hint: bool = True,
+    agent_mode: str = "default",
 ) -> Dict[str, Any]:
     """Run one benchmark scenario and save results."""
     global _shutdown_requested
@@ -146,12 +264,22 @@ def _run_benchmark(
         _provider = VLLMProvider(model_name=model, base_url=vllm_url, temperature=temperature)
     else:
         _provider = OpenAIProvider(AGENT_API_KEY, AGENT_API_BASE, model, temperature=temperature)
-    agent = DefaultAgent(
-        action_space=MinerRLActionSpace(),
-        provider=_provider,
-        context_builder_class=DefaultContextBuilder,
-        model=model,
-    )
+    if agent_mode not in AGENT_MODES:
+        raise ValueError(f"agent_mode must be one of {AGENT_MODES}, got {agent_mode!r}")
+    if agent_mode == "hypothesis":
+        agent = HypothesisAgent(
+            action_space=MinerRLActionSpace(),
+            provider=_provider,
+            context_builder_class=HypothesisContextBuilder,
+            model=model,
+        )
+    else:
+        agent = DefaultAgent(
+            action_space=MinerRLActionSpace(),
+            provider=_provider,
+            context_builder_class=DefaultContextBuilder,
+            model=model,
+        )
 
     run_id = f"{safe_model}_{scene_id}"
 
@@ -169,6 +297,11 @@ def _run_benchmark(
     _all_done_logged: bool = False
     long_term_memory: str = ""
     termination_reason: str = "max_steps"
+    milestone_hint: str = (
+        "The environment has not verified the task as complete yet." if use_milestone_hint else ""
+    )
+    _spawn_xz: Optional[tuple] = None
+    _pos_history: "deque[tuple[float, float]]" = deque(maxlen=8)
 
     original_sigint_handler = signal.signal(signal.SIGINT, _signal_handler)
 
@@ -203,6 +336,9 @@ def _run_benchmark(
                 f"[{run_id}] Server info has no usable 'player_pos' key "
                 f"(info keys={list(info.keys())}); spawn will default to (0,0,0)."
             )
+        else:
+            _spawn_pos = info["player_pos"]
+            _spawn_xz = (_spawn_pos.get("x"), _spawn_pos.get("z"))
 
         checker.reset(info)
         agent.load_system_prompt(task_desc)
@@ -230,6 +366,15 @@ def _run_benchmark(
         # Reset the checker state so those pre-satisfied flags don't persist
         checker.reset(info)
 
+        # Milestones that actually count toward completion (excludes
+        # decorative/no-rule milestones). Computed once here so both the
+        # per-step ground-truth hint and the final summary use the same set.
+        trackable_mids = {
+            ms.get("milestone_id", "")
+            for ms in checker._milestones
+            if len(ms.get("rules", [])) > 0
+        }
+
         step_error: Optional[str] = None
         step = -1
 
@@ -245,7 +390,10 @@ def _run_benchmark(
             try:
                 thought, action, memory_update = agent.get_action(
                     list(frame_buffer), list(thought_history), list(action_history), step + 1,
-                    long_term_memory=long_term_memory
+                    long_term_memory=long_term_memory,
+                    milestone_hint=milestone_hint,
+                    camera_hint=_camera_state_hint(info),
+                    movement_hint=_movement_state_hint(info, _spawn_xz, _pos_history)
                 )
             except Exception as agent_err:
                 logger.error(f"[{run_id}] Agent call failed: {agent_err}. Retrying in 10s...")
@@ -271,22 +419,6 @@ def _run_benchmark(
                 time.sleep(10)
                 continue
 
-            # The remote sandbox does not reliably end the episode when the
-            # agent presses ESC (observed: agent can emit ESC=1 for hundreds
-            # of consecutive steps with server-reported `done` staying False).
-            # Enforce the documented contract ("set ESC=1 to end the episode",
-            # see mc_agent/context.py) on the client side as a safety net.
-            agent_requested_stop = bool(action.get("ESC"))
-            done = terminated or truncated or agent_requested_stop
-
-            if done:
-                if agent_requested_stop and not (terminated or truncated):
-                    termination_reason = "agent_esc"
-                elif terminated:
-                    termination_reason = "env_terminated"
-                elif truncated:
-                    termination_reason = "env_truncated"
-
             frame_buffer.append(obs["pov"])
 
             milestone_status = checker.check(info)
@@ -303,6 +435,61 @@ def _run_benchmark(
                     # frame_completed is 1-indexed from the first agent step
                     _frame_completed[mid] = env.frame_count - _frame_offset
                     logger.success(f"[{run_id}] Milestone '{mid}' completed at step {step + 1} (frame {_frame_completed[mid]})")
+
+            _remaining_mids = [
+                mid for mid in trackable_mids
+                if mid not in _presatisfied_ids and mid not in _frame_completed
+            ]
+
+            # The remote sandbox does not reliably end the episode when the
+            # agent presses ESC (observed: agent can emit ESC=1 for hundreds
+            # of consecutive steps with server-reported `done` staying False).
+            # Enforce the documented contract ("set ESC=1 to end the episode",
+            # see mc_agent/context.py) on the client side as a safety net.
+            agent_requested_stop = bool(action.get("ESC"))
+
+            # Guard against a common failure mode: the agent visually
+            # hallucinates success and presses ESC before the milestone
+            # checker has actually verified the task, ending the episode
+            # early with steps still available. If we already told the
+            # agent (via milestone_hint) that completion is unverified,
+            # don't honor a premature ESC — ignore it and keep the episode
+            # running so the agent gets a chance to actually finish the
+            # task. Only applies when the ground-truth hint is enabled.
+            if agent_requested_stop and use_milestone_hint and _remaining_mids:
+                logger.warning(
+                    f"[{run_id}] step={step + 1} Agent requested ESC but milestone(s) "
+                    f"{_remaining_mids} are not yet verified complete — ignoring premature "
+                    f"stop, episode continues."
+                )
+                agent_requested_stop = False
+                if hasattr(agent, "on_esc_rejected"):
+                    try:
+                        agent.on_esc_rejected(step=step + 1)
+                    except Exception as hook_err:
+                        logger.warning(f"[{run_id}] agent.on_esc_rejected() raised: {hook_err}")
+
+            done = terminated or truncated or agent_requested_stop
+
+            if done:
+                if agent_requested_stop and not (terminated or truncated):
+                    termination_reason = "agent_esc"
+                elif terminated:
+                    termination_reason = "env_terminated"
+                elif truncated:
+                    termination_reason = "env_truncated"
+
+            # Ground-truth completion signal shown to the agent next step, so
+            # it doesn't have to rely solely on visually judging whether its
+            # last action worked (a common failure mode: hallucinating
+            # success and pressing ESC before the milestone is actually met).
+            # Disabled when use_milestone_hint=False to match the paper's
+            # protocol, where the agent gets no such signal.
+            if use_milestone_hint:
+                if _remaining_mids:
+                    milestone_hint = "The environment has NOT verified the task as complete yet. Do not end the episode (ESC) until it is."
+                else:
+                    milestone_hint = "The environment HAS verified the task as complete. You may now end the episode by setting ESC=1."
 
             if not _all_done_logged and checker.num_completed() > 0 and checker.all_done():
                 _all_done_logged = True
@@ -327,6 +514,12 @@ def _run_benchmark(
         except Exception as close_err:
             logger.warning(f"[{run_id}] env.close() raised: {close_err}")
 
+    if hasattr(agent, "save_state"):
+        try:
+            agent.save_state(output_dir)
+        except Exception as save_err:
+            logger.warning(f"[{run_id}] agent.save_state() raised: {save_err}")
+
     final_status = []
     for ms in checker._milestones:
         mid = ms.get("milestone_id", "")
@@ -347,11 +540,6 @@ def _run_benchmark(
 
     # Compute milestones_completed / all_milestones_done using only the
     # corrected _frame_completed dict (excludes pre-satisfied milestones).
-    trackable_mids = {
-        ms.get("milestone_id", "")
-        for ms in checker._milestones
-        if len(ms.get("rules", [])) > 0
-    }
     corrected_completed = sum(
         1 for mid in trackable_mids
         if mid in _frame_completed and mid not in _presatisfied_ids
@@ -388,6 +576,14 @@ def _run_benchmark(
     return summary
 
 
+def _hop_folder_name(meta_path: str) -> str:
+    """Derive the '<N>-hop' folder name from a scene's atomic task count."""
+    with open(meta_path, "r", encoding="utf-8") as f:
+        metadata_dict = json.load(f)
+    n_hops = len(metadata_dict.get("atomic_tasks_ordered", []))
+    return f"{n_hops}-hop" if n_hops > 0 else "unknown-hop"
+
+
 def _worker_eval(worker_args: dict) -> dict:
     import signal as _signal
     _signal.signal(_signal.SIGINT, _signal.SIG_IGN)
@@ -406,6 +602,8 @@ def _worker_eval(worker_args: dict) -> dict:
         frame_size=worker_args.get("frame_size", FRAME_BUFFER_SIZE),
         use_friday=worker_args.get("use_friday", False),
         temperature=worker_args.get("temperature", 0.7),
+        use_milestone_hint=worker_args.get("use_milestone_hint", True),
+        agent_mode=worker_args.get("agent_mode", "default"),
     )
 
 
@@ -434,9 +632,36 @@ def eval_benchmark(
                                     help="Use Friday platform sandbox instead of local Docker"),
     temperature: float = typer.Option(0.7, "--temperature", "-t",
                                       help="LLM sampling temperature"),
+    shard_index: int = typer.Option(0, "--shard-index",
+                                    help="This job's shard index (0-based) for splitting a "
+                                         "benchmark-dir across a SLURM array; e.g. pass "
+                                         "$SLURM_ARRAY_TASK_ID. Scenes are assigned round-robin "
+                                         "(shard_index::shard_count), so every shard's output "
+                                         "can share the same --output-dir without collisions."),
+    shard_count: int = typer.Option(1, "--shard-count",
+                                    help="Total number of shards (array size), e.g. "
+                                         "$SLURM_ARRAY_TASK_COUNT. Must be >= 1."),
+    milestone_hint: bool = typer.Option(True, "--milestone-hint/--no-milestone-hint",
+                                        help="Feed the agent a per-step ground-truth signal for "
+                                             "whether the environment has verified the task "
+                                             "complete. The paper's protocol has no such signal "
+                                             "(--no-milestone-hint matches it)."),
+    agent_mode: str = typer.Option("default", "--agent-mode",
+                                   help="Agent implementation to use: 'default' (the current "
+                                        "LLM-only agent, unchanged) or 'hypothesis' (adds an "
+                                        "explicit hypothesis DAG + short-horizon plan on top; "
+                                        "see mc_agent/hypothesis_agent.py). Defaults to 'default' "
+                                        "so existing invocations behave exactly as before."),
 ):
     """Evaluate all benchmark scenarios in benchmark_dir."""
     logger.info(f"--- Starting evaluation (model={model}) ---")
+
+    if agent_mode not in AGENT_MODES:
+        raise ValueError(f"--agent-mode must be one of {AGENT_MODES}, got {agent_mode!r}")
+    if shard_count < 1:
+        raise ValueError(f"--shard-count must be >= 1, got {shard_count}")
+    if not (0 <= shard_index < shard_count):
+        raise ValueError(f"--shard-index must be in [0, {shard_count}), got {shard_index}")
 
     bench_path = Path(benchmark_dir)
     out_root = Path(output_dir) / model.replace("/", "_")
@@ -454,6 +679,14 @@ def eval_benchmark(
         logger.warning(f"No metadata.json found under {bench_path}")
         return
 
+    if shard_count > 1:
+        total_before_shard = len(metadata_entries)
+        metadata_entries = metadata_entries[shard_index::shard_count]
+        logger.info(
+            f"Shard {shard_index}/{shard_count}: {len(metadata_entries)} of "
+            f"{total_before_shard} scenario(s) assigned to this job"
+        )
+
     if limit and limit > 0:
         metadata_entries = metadata_entries[:limit]
 
@@ -463,7 +696,7 @@ def eval_benchmark(
     all_results: List[Dict[str, Any]] = []
 
     for scene_num, meta_path in metadata_entries:
-        scene_out_dir = out_root / scene_num
+        scene_out_dir = out_root / _hop_folder_name(meta_path) / scene_num
         result_path = scene_out_dir / "result.json"
 
         if resume and result_path.exists():
@@ -489,7 +722,7 @@ def eval_benchmark(
 
     if num_workers <= 1:
         for idx, (scene_num, meta_path) in enumerate(pending):
-            scene_out_dir = out_root / scene_num
+            scene_out_dir = out_root / _hop_folder_name(meta_path) / scene_num
             result_path = scene_out_dir / "result.json"
 
             logger.info(f"\n{'='*60}")
@@ -506,6 +739,8 @@ def eval_benchmark(
                     vllm_url=vllm_url,
                     use_friday=use_friday,
                     temperature=temperature,
+                    use_milestone_hint=milestone_hint,
+                    agent_mode=agent_mode,
                 )
             except Exception as e:
                 logger.error(f"[ERROR] {scene_num}: {e}")
@@ -537,7 +772,7 @@ def eval_benchmark(
 
             batch_jobs: List[Dict[str, Any]] = []
             for scene_num, meta_path in batch:
-                scene_out_dir = out_root / scene_num
+                scene_out_dir = out_root / _hop_folder_name(meta_path) / scene_num
                 scene_out_dir.mkdir(parents=True, exist_ok=True)
                 batch_jobs.append({
                     "metadata_path": str(meta_path),
@@ -549,6 +784,8 @@ def eval_benchmark(
                     "vllm_url": vllm_url,
                     "use_friday": use_friday,
                     "temperature": temperature,
+                    "use_milestone_hint": milestone_hint,
+                    "agent_mode": agent_mode,
                     "_scene_num": scene_num,
                 })
 
@@ -580,7 +817,10 @@ def eval_benchmark(
     logger.info(f"Scenes: {total} | Tasks: {done}/{total} ({task_rate:.1f}%) | Milestones: {ms_done}/{ms_total} ({ms_rate:.1f}%)")
     logger.info(f"{'='*60}")
 
-    agg_path = out_root / "eval_summary.json"
+    # Each shard writes its own summary file to avoid concurrent array tasks
+    # clobbering a single shared eval_summary.json; merge them afterward.
+    summary_name = "eval_summary.json" if shard_count == 1 else f"eval_summary.shard{shard_index}.json"
+    agg_path = out_root / summary_name
     with open(agg_path, "w", encoding="utf-8") as f:
         json.dump({
             "model": model,

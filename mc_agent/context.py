@@ -47,7 +47,10 @@ class DefaultContextBuilder:
     def system_prompt(
         cls,
         task_desc: str,
-        long_term_memory: str = ""
+        long_term_memory: str = "",
+        milestone_hint: str = "",
+        camera_hint: str = "",
+        movement_hint: str = ""
     ) -> Self:
         TASK_SUFFIX = "end the episode by setting the 'ESC' action to 1."
         goal_desc = f"{task_desc}, {TASK_SUFFIX}"
@@ -57,7 +60,21 @@ class DefaultContextBuilder:
             memory_section = MEMORY_SECTION_TEMPLATE.format(long_term_memory=long_term_memory.strip())
         else:
             memory_section = ""
-        builder.buffer.write(BASE_PROMPT.format(goal_desc=goal_desc, memory_section=memory_section))
+        if milestone_hint and milestone_hint.strip():
+            milestone_section = MILESTONE_SECTION_TEMPLATE.format(milestone_hint=milestone_hint.strip())
+        else:
+            milestone_section = ""
+        if camera_hint and camera_hint.strip():
+            camera_section = CAMERA_SECTION_TEMPLATE.format(camera_hint=camera_hint.strip())
+        else:
+            camera_section = ""
+        if movement_hint and movement_hint.strip():
+            movement_section = MOVEMENT_SECTION_TEMPLATE.format(movement_hint=movement_hint.strip())
+        else:
+            movement_section = ""
+        builder.buffer.write(BASE_PROMPT.format(
+            goal_desc=goal_desc, memory_section=memory_section, milestone_section=milestone_section,
+            camera_section=camera_section, movement_section=movement_section))
         return builder
 
 
@@ -66,10 +83,25 @@ MEMORY_SECTION_TEMPLATE = """
 {long_term_memory}
 """
 
+MILESTONE_SECTION_TEMPLATE = """
+**Environment-verified task status:** {milestone_hint}
+"""
+
+CAMERA_SECTION_TEMPLATE = """
+**Environment-reported camera state:** {camera_hint}
+"""
+
+MOVEMENT_SECTION_TEMPLATE = """
+**Environment-reported position (ground truth - trust this over your own step-count narrative):** {movement_hint}
+"""
+
 BASE_PROMPT = """
 You are an expert Minecraft player embodied as an AI agent. Your mission is to survive and thrive.
 {goal_desc}
 {memory_section}
+{milestone_section}
+{camera_section}
+{movement_section}
 You will be given a recent history of your thoughts and a sequence of the last 20 frames from your point of view. Based on this full context, you must decide on your next thought, action, and memory update.
 
 **Your Thought Process:**
@@ -85,7 +117,13 @@ Your actions are controlled by a JSON object. Available keys:
 - "ESC": 0 or 1, press ESC to end episode (usually 0)
 - "attack": 0 or 1, attack/mine blocks
 - "back": 0 or 1, move backward
-- "camera": [pitch, yaw] in degrees (e.g., [0, 45] to look right, [-20, 0] to look up)
+- "camera": [pitch_delta, yaw_delta] in degrees (e.g., [0, 45] to look right, [-20, 0] to look up).
+  **IMPORTANT**: this is a RELATIVE change added to your CURRENT camera angle, not an absolute target -
+  repeating the same camera move across several steps keeps rotating further in that direction. Pitch is
+  clamped to [-90 (straight up), 90 (straight down)]; if you keep pushing pitch the same direction it will
+  get stuck at the clamp and you'll not be looking at anything useful. Trust the "Environment-reported
+  camera state" line above over your own visual read - if it says you're pitched far from 0, issue a
+  camera move of the opposite sign before trying to interpret what you see.
 - "drop": 0 or 1, drop current item
 - "forward": 0 or 1, move forward
 - "jump": 0 or 1, jump
@@ -107,6 +145,14 @@ Your actions are controlled by a JSON object. Available keys:
 
 **Movement Tips for Efficient Exploration:**
 - **USE SPRINT!** Combine "forward": 1 with "sprint": 1 for FAST movement when exploring open areas
+- **Turn, then move - don't do both every step.** A camera yaw change and "forward" fire in the same
+  in-game tick, so pairing a large yaw turn (e.g. 90 degrees) with "forward" on every single step turns
+  your path into a tight loop instead of a straight line - each step points you in a new direction before
+  you've gone anywhere in the last one. If you want to change direction, spend one step turning
+  (camera yaw only, forward=0), then spend several subsequent steps moving straight (forward=1,
+  camera=[0,0]) before turning again. Use the **Environment-reported position** line above (not your
+  own step count or visual impression) to confirm you're actually covering new ground - it will tell
+  you explicitly if your last action didn't move you, or if you've been circling in place.
 - Use "jump": 1 with forward movement to navigate obstacles
 - Use camera to look around before deciding where to move
 - Combine actions efficiently (e.g., sprint + forward + jump for speed over terrain)
@@ -156,7 +202,7 @@ Example 3 - Recording a failed attempt:
 
 **Remember**: Always use sprint when moving forward in open areas to explore efficiently! Always update memory_update with the FULL current memory (not just new info).
 
-**Important**: Do NOT stop or set ESC=1 until the task is fully verified as complete. Keep exploring, attempting, and verifying whether the task has been accomplished.
+**Important**: Only set ESC=1 when the "Environment-verified task status" line above says the task HAS been verified complete. Your own visual read of a frame is not proof the action worked (e.g. a door may look open, an item may look mined, an attack may look lethal, when it actually was not) — trust the environment-verified status, not your impression of the last frame. If it says the task is not yet complete, keep working even if you believe you just succeeded.
 """
 
 

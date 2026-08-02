@@ -42,7 +42,10 @@ class DefaultAgent:
         current_step: int | None = None,
         return_messages: bool = False,
         return_messages_with_pic: bool = False,
-        long_term_memory: str = ""
+        long_term_memory: str = "",
+        milestone_hint: str = "",
+        camera_hint: str = "",
+        movement_hint: str = ""
     ) -> tuple[Any, ...]:
         """Get the next action from the LLM based on a history of frames and thoughts.
 
@@ -54,6 +57,9 @@ class DefaultAgent:
             return_messages:         If True, also return messages sent to LLM.
             return_messages_with_pic: If True, include images in returned messages.
             long_term_memory:        Current long-term memory string.
+            milestone_hint:          Ground-truth completion status from the environment.
+            camera_hint:             Current camera pitch reported by the environment.
+            movement_hint:           Ground-truth position deltas reported by the environment.
 
         Returns:
             (thought, action, memory_update)
@@ -68,7 +74,8 @@ class DefaultAgent:
             return thought, action, long_term_memory
 
         content = [{"type": "text", "text": self.context_builder_class.system_prompt(
-            self.task_desc, long_term_memory=long_term_memory).build()}]
+            self.task_desc, long_term_memory=long_term_memory, milestone_hint=milestone_hint,
+            camera_hint=camera_hint, movement_hint=movement_hint).build()}]
         save_content = copy.deepcopy(content)
 
         for i, base64_img in enumerate(base64_images):
