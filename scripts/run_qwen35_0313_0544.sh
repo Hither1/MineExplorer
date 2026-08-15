@@ -49,8 +49,13 @@ export AGENT_API_KEY=${AGENT_API_KEY:-EMPTY}
 export AGENT_API_BASE=${AGENT_API_BASE:-$QWEN_API_URL}
 
 mkdir -p "$RUN_ROOT" "$OUTPUT_DIR" "$TASK_VIEW"
-ln -sfn "$ROOT_DIR/benchmark/0313" "$TASK_VIEW/0313"
-ln -sfn "$ROOT_DIR/benchmark/0544" "$TASK_VIEW/0544"
+for scene in ${SCENES:-0313 0544}; do
+  if [[ ! -d "$ROOT_DIR/benchmark/$scene" ]]; then
+    echo "unknown scene: benchmark/$scene" >&2
+    exit 2
+  fi
+  ln -sfn "$ROOT_DIR/benchmark/$scene" "$TASK_VIEW/$scene"
+done
 
 cleanup() {
   if [[ -n "$SERVER_PGID" ]] && kill -0 -- "-$SERVER_PGID" 2>/dev/null; then
