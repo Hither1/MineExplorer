@@ -53,6 +53,30 @@ export MC_SANDBOX_URL=http://localhost:8000
 
 You are then ready to generate and evaluate the benchmark as described in the sections below.
 
+### Reproducible Docker sandbox startup
+
+The repository includes a startup helper that pins the published image by
+manifest digest, verifies that the Docker daemon is Linux/x86_64, reuses an
+already-correct container, and waits for `/monitor/alive`:
+
+```bash
+scripts/start_minecraft_docker.sh
+```
+
+When Docker runs on a separate x86_64 host, use a Docker SSH context and give
+the helper the HTTP address that is reachable from the evaluation node:
+
+```bash
+export DOCKER_HOST=ssh://<user>@<x86-docker-host>
+export MC_SANDBOX_URL=http://<x86-docker-host>:8000
+scripts/start_minecraft_docker.sh
+```
+
+The helper deliberately refuses an ARM64 Docker daemon. The published image
+has no ARM64 manifest, and emulated Minecraft is not a valid benchmark
+runtime. It also never replaces an existing same-named container that points
+at a different image.
+
 ---
 
 ## 2. Environment Setup
@@ -180,6 +204,49 @@ python eval_benchmark.py \
 | `--num-workers` | Number of parallel sandbox workers |
 | `--resume` | Resume from checkpoint (skip completed tasks) |
 | `--limit` | Limit number of evaluation samples (for testing) |
+
+### DeltaAI: Qwen3.5-27B on scenes 0313 and 0544
+
+DeltaAI GH200 nodes are `aarch64`, but the released
+`davidzhth/mineexplorer:0.0.1` sandbox image is `linux/amd64` only. Run that
+container on a reachable x86_64 Docker host with
+`scripts/start_minecraft_docker.sh` and expose its port 8000 to the compute
+node. The Qwen service itself runs on one GH200 and uses port 30000, avoiding
+the README examples' port-8000 collision.
+
+Create the native task environment once. By default this also downloads and
+checksum-verifies the pinned model revision (about 56 GB) in
+`/work/nvme/bdrx/dzhang5/huggingface/hub`, using one download worker to avoid
+the memory spike from concurrent 5 GB shards:
+
+```bash
+scripts/setup_deltaai_qwen35.sh
+```
+
+Set `DOWNLOAD_MODEL=0` only when creating or repairing the Python environment
+without populating the model cache.
+
+The runner pins the official model revision
+`fc05daec18b0a78c049392ed2e771dde82bdf654`, selects exactly the directory
+IDs `0313` and `0544`, uses one sandbox worker, disables model thinking for
+action-JSON reliability, and defaults to the paper-comparable
+`--no-milestone-hint` protocol.
+
+```bash
+export MC_SANDBOX_URL=http://<x86-sandbox-host>:8000
+
+scripts/launch.sh \
+  -s qwen35-0313-0544 -t E1 \
+  -p 'Qwen3.5-27B can execute both selected Minecraft scenes; pass if both write auditable result artifacts' \
+  -T 06:00:00 -N 1 -g 1 -c 16 -m 96G \
+  -C qwen35-27b-transformers-nonthinking \
+  -D benchmark-directories-0313-0544 \
+  -K Qwen3.5-27B@fc05daec18b0 \
+  -- scripts/run_qwen35_0313_0544.sh
+```
+
+Use `scripts/monitor.sh <run-id>` to inspect the recorded Slurm run. Heavy
+logs and results are written under the harness-provided artifact directory.
 
 ### Output Structure
 
