@@ -37,9 +37,13 @@
 
 - [x] LWJGL/GLFW/OpenGL context creation works on aarch64 under Xvfb.
 - [x] `mcprec-6.13.jar` (Minecraft 1.16.5) boots on aarch64 and opens `MalmoEnvServer`.
-- [ ] MineStudio `MinecraftSim` reset/step returns a valid POV frame on aarch64.
-- [ ] `mc_server.py` serves the five HTTP endpoints on a DeltaAI node.
-- [ ] One existing benchmark scene runs end to end against `MC_SANDBOX_URL`.
+- [x] MineStudio `MinecraftSim` reset/step returns a valid POV frame on aarch64.
+      (run `20260815-180850-mc-arm64-sim-smoke-6d75`)
+- [x] `mc_server.py` serves the five HTTP endpoints on a DeltaAI node.
+      (run `20260815-181330-mc-arm64-http-verify-67a3`)
+- [x] One existing benchmark scene builds and renders through the repository's evaluation
+      client. (run `20260815-181739-mc-arm64-scene-verify-203d`)
+- [ ] Remaining, and a separate decision: a full agent episode with milestone scoring.
 
 ## Parallel Tracks
 
@@ -74,10 +78,11 @@
 
 ### Phase 4: Integrate and hand off
 
-- [ ] Add a repo startup script for the native aarch64 sandbox (sibling of the Docker helper).
-- [ ] Run one benchmark scene end to end; commit the reproducible configuration.
-- **Status:** pending
-- **Evidence:** none
+- [x] Add repo scripts for the native aarch64 sandbox (siblings of the Docker helper).
+- [x] Build one real benchmark scene through the repository's evaluation client.
+- [x] Commit the reproducible configuration (`d65bd2f`).
+- **Status:** complete for the sandbox rebuild; a full agent episode is a separate decision.
+- **Evidence:** findings row 15; runs `…-http-verify-67a3`, `…-scene-verify-203d`.
 
 ## Decisions And Blockers
 
@@ -99,5 +104,6 @@
 
 ## Next Action
 
-Read run `20260815-181330-mc-arm64-http-verify-67a3`; on pass, commit the repository
-integration and run one benchmark scene end to end.
+Ask the user whether to run the full Qwen3.5-27B evaluation of scenes 0313/0544 against the
+native sandbox — the run the previous task was blocked on. It needs one GPU for roughly an
+hour and starts actual evaluation rather than sandbox engineering.

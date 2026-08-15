@@ -103,4 +103,21 @@ failures and replans, verification, commits, pushes, and handoffs. Do not log ev
   and `scripts/minecraft_arm64/{launchClient.sh,mc_server.py}`; `mc_server.py` is the
   service recovered from the published image, vendored so the ARM64 path does not depend on
   pulling that image. README gained a "Native ARM64 sandbox" section next to the Docker one.
-- Next: commit, then run one benchmark scene end to end against the native sandbox.
+- Committed as `d65bd2f` on `codex/qwen35-27b-minecraft-0313-0544`.
+
+## 2026-08-15 — real benchmark scene verified; sandbox rebuild complete
+
+- PASS: run `20260815-181739-mc-arm64-scene-verify-203d` (Slurm 2954983) drove
+  `benchmark/0313` through the repository's own `MineRLBenchmarkEnv` against the native
+  sandbox. Scene built in 10.6 s, `Successfully filled 21 blocks`, and the rendered frame
+  is the designed desert temple with the player facing the entrance
+  (`/work/nvme/bdrx/dzhang5/mc-arm64/scene_0313.png`).
+- State: the Docker/x86 blocker recorded by the previous task is resolved for DeltaAI.
+  Phases 1-4 complete for the sandbox rebuild.
+- Explicitly NOT established: a full agent episode, milestone scoring, and any comparison
+  of scores against the published x86 sandbox. Rendering-path equivalence is argued from
+  the image's contents (findings row 10), not measured frame-by-frame.
+- Handoff: the remaining step is the Qwen3.5-27B evaluation of 0313/0544 through
+  `scripts/run_qwen35_0313_0544.sh` with `MC_SANDBOX_URL` pointing at the native sandbox
+  started in the same Slurm job. Awaiting the user's go-ahead — it is evaluation work,
+  not sandbox engineering.
