@@ -77,6 +77,42 @@ has no ARM64 manifest, and emulated Minecraft is not a valid benchmark
 runtime. It also never replaces an existing same-named container that points
 at a different image.
 
+### Native ARM64 sandbox (no Docker)
+
+On an ARM64 cluster such as NCSA DeltaAI (GH200) there is no way to run the
+published image: it is `linux/amd64` only, the nodes have no qemu binfmt
+handler, and rootless podman has no subuid range to unpack a distro image
+with. The sandbox therefore runs **natively** instead, reusing the same
+`mcprec-6.13.jar` engine the image ships.
+
+Only two things about the engine are architecture-bound, and both are
+replaced rather than emulated:
+
+| Component | Published image | Native ARM64 |
+|-----------|-----------------|--------------|
+| LWJGL | 3.2.2, x86-64 natives bundled in the fat jar | 3.3.3 with `natives-linux-arm64`, placed ahead of the jar on the classpath (`-cp`, not `-jar`) |
+| Memory allocator | LWJGL's bundled jemalloc | system allocator — jemalloc aborts on GH200's 64 KiB pages |
+| JDK | OpenJDK 8 | Temurin 8 (aarch64); Java 11 breaks Malmo's env server, which needs JAXB |
+| Rendering | Xvfb + Mesa `swrast` (llvmpipe) | identical — the image ships no VirtualGL and no GPU GL |
+
+Provision once, then start the service:
+
+```bash
+scripts/setup_minecraft_arm64.sh          # LWJGL, JDK 8, conda env, engine, patches
+scripts/start_minecraft_arm64.sh          # Xvfb + uvicorn on port 8000
+export MC_SANDBOX_URL=http://<node>:8000
+```
+
+Both honour `MC_ARM64_ROOT` (default `/work/nvme/bdrx/dzhang5/mc-arm64`),
+`MC_SANDBOX_ENV`, and `MC_SANDBOX_PORT`. Because the service is CPU-rendered,
+run it inside a Slurm allocation rather than on a login node; the evaluation
+client can then reach it at `http://127.0.0.1:8000` from the same job.
+
+Known limitation: `/create_env` without `yaml_config` or `commands` falls back
+to `gym.make()` via the `minerl` package, which is not installed in the ARM64
+environment. The benchmark always supplies a scene config, so this path is
+unused.
+
 ---
 
 ## 2. Environment Setup
