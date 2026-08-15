@@ -153,3 +153,21 @@ failures and replans, verification, commits, pushes, and handoffs. Do not log ev
   `scripts/run_qwen35_0313_0544.sh`. All would be new cycles under a different anchor.
 - Not established: any comparison against the published x86 sandbox, and any score claim
   from one seed and two scenes.
+
+## 2026-08-15 — follow-up: measuring a full-length episode
+
+- Question from the user: how long does a complete test of these two scenes take? The
+  finished run only reached 3 steps, which measures nothing about full-length cost.
+- First attempt was an indirect probe of step latency versus frame-buffer depth
+  (`20260815-185137-qwen35-step-latency-probe-7e0a`). It yielded 13.4 s at 1 frame before
+  being cancelled — the user preferred a direct full-length run, which is better evidence.
+- Root cause of the early exits identified: the premature-ESC guard is gated on
+  `use_milestone_hint` (findings row 18), so the paper-protocol run could not have run long.
+- Change: `SCENES` now selects which scenes the runner links into the task view
+  (commit `35612a1`), so a single scene can be run without editing the script.
+- Launched run `20260815-185604-qwen35-0313-full-episode-416c` (Slurm 2955217, gh073, E1,
+  1 GPU / 32 CPU / 128G / 8 h): scene 0313 only, `MILESTONE_HINT=1`, `MAX_STEPS=300`.
+  Walltime sized from the ~55-60 s/step extrapolation (findings row 19).
+- Caveat to carry into any write-up: milestone hints make this an easier setting than the
+  paper protocol. Its score is not comparable to the 0/4 no-hint run; its value is the
+  measured episode duration and whether the agent progresses when it cannot bail out.
