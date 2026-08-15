@@ -43,7 +43,9 @@
       (run `20260815-181330-mc-arm64-http-verify-67a3`)
 - [x] One existing benchmark scene builds and renders through the repository's evaluation
       client. (run `20260815-181739-mc-arm64-scene-verify-203d`)
-- [ ] Remaining, and a separate decision: a full agent episode with milestone scoring.
+- [x] A full agent episode with milestone scoring, for both scenes.
+      (run `20260815-183947-qwen35-0313-0544-native-arm64-5340`; pipeline verified,
+      agent scored 0/4 by ending both episodes early)
 
 ## Parallel Tracks
 
@@ -104,6 +106,6 @@
 
 ## Next Action
 
-Ask the user whether to run the full Qwen3.5-27B evaluation of scenes 0313/0544 against the
-native sandbox — the run the previous task was blocked on. It needs one GPU for roughly an
-hour and starts actual evaluation rather than sandbox engineering.
+none - ready to archive. The anchor is answered: the sandbox runs natively on aarch64 and the
+benchmark runs end to end against it. Agent-behaviour follow-ups (milestone hint, hypothesis
+mode, temperature) belong to a new task with an evaluation anchor, not this one.

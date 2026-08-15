@@ -119,5 +119,37 @@ failures and replans, verification, commits, pushes, and handoffs. Do not log ev
   the image's contents (findings row 10), not measured frame-by-frame.
 - Handoff: the remaining step is the Qwen3.5-27B evaluation of 0313/0544 through
   `scripts/run_qwen35_0313_0544.sh` with `MC_SANDBOX_URL` pointing at the native sandbox
-  started in the same Slurm job. Awaiting the user's go-ahead — it is evaluation work,
-  not sandbox engineering.
+  started in the same Slurm job.
+
+## 2026-08-15 — pushed, and end-to-end evaluation launched (E1)
+
+- Push: the user authorised pushing to `Hither1/MineExplorer` under the `Ced3-han` SSH
+  identity. `codex/qwen35-27b-minecraft-0313-0544` is now on the remote through
+  `d65bd2f`, `6e21788`, `96f015d`; `origin`'s push URL was set to the alias. The previous
+  task's push blocker is resolved.
+- Added `scripts/with_minecraft_arm64.sh`: starts the native sandbox on the node, waits for
+  `/monitor/alive`, exports `MC_SANDBOX_URL`, and cleans up, so the sandbox and the
+  evaluation share one allocation.
+- Launched run `20260815-183947-qwen35-0313-0544-native-arm64-5340` (Slurm 2955143, gh091,
+  E1, 1 GPU / 32 CPU / 128G / 4 h): Qwen3.5-27B over scenes 0313 and 0544, 300 max steps,
+  temperature 0.7, agent mode default, no milestone hint.
+- Expected signal: both scenes produce `result.json` with milestone scoring plus an episode
+  video. A single seed supports no claim about score quality.
+
+## 2026-08-15 — E1 complete: pipeline verified end to end, agent scores 0/4
+
+- Run `20260815-183947-qwen35-0313-0544-native-arm64-5340` (Slurm 2955143, gh091) succeeded
+  in 5 min 10 s. Both scenes produced `result.json` and `episode.mp4` under
+  `artifacts/runs/…/results/Qwen_Qwen3.5-27B@fc05daec…/2-hop/{0313,0544}/`.
+- Aggregate: `Scenes: 2 | Tasks: 0/2 (0.0%) | Milestones: 0/4 (0.0%)`.
+  0313 ended at step 2, 0544 at step 3, both `termination_reason: agent_esc`.
+- Interpretation: the infrastructure claim is met — sandbox, scene construction, multimodal
+  observation, agent loop, milestone checking, and artifact writing all work natively on
+  aarch64. The 0/4 is agent behaviour: the model declared success from the spawn view and
+  pressed ESC without moving, so no position-based milestone could fire. This is the failure
+  mode MineExplorer is designed to expose, not a port defect.
+- Cheap next probes if the behaviour is worth chasing: `MILESTONE_HINT=1`,
+  `AGENT_MODE=hypothesis`, or a lower temperature — each is a one-variable change to
+  `scripts/run_qwen35_0313_0544.sh`. All would be new cycles under a different anchor.
+- Not established: any comparison against the published x86 sandbox, and any score claim
+  from one seed and two scenes.
