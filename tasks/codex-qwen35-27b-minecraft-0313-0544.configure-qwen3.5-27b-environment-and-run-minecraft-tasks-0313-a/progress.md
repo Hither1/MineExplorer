@@ -42,3 +42,9 @@ failures and replans, verification, commits, pushes, and handoffs. Do not log ev
 - Verification: all shell scripts pass `bash -n`; repository diff passes `git diff --check`; clean-environment evaluation CLI imports successfully; `DOWNLOAD_MODEL=0 scripts/setup_deltaai_qwen35.sh` completes idempotently with a clean `pip check`; local Docker negative check fails clearly because no daemon is reachable.
 - Blocker: this ARM64 cluster has no Docker daemon or x86 emulation, and no reachable x86 Docker host/`MC_SANDBOX_URL` is configured. Therefore no `result.json` or `episode.mp4` has been fabricated for either scene.
 - Next: provide `DOCKER_HOST=ssh://user@x86-host` plus `MC_SANDBOX_URL=http://x86-host:8000`, or an already-running reachable sandbox URL.
+
+## 2026-08-15 — local checkpoint preserved
+
+- Commit: `52484f65843b119c712970f2ad51637a32d032c9` on `codex/qwen35-27b-minecraft-0313-0544`.
+- Push: `git push -u origin codex/qwen35-27b-minecraft-0313-0544` was rejected because GitHub identity `daiheng-zhang` lacks permission to `Hither1/MineExplorer`; no remote state changed.
+- Next: keep the local branch as the recovery boundary; configure a writable fork/remote separately if remote preservation is required.
