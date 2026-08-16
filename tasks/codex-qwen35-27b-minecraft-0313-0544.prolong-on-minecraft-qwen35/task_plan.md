@@ -88,6 +88,9 @@ Note that position/pitch is *already* in the baseline prompt (`_camera_state_hin
 - [ ] **W2 de-Docker** `codex_agent.py`: replace the `docker run` argv with a direct
       `codex exec` in the workspace dir (`cwd=sandbox`, host paths for `-o`), keep
       `--json --skip-git-repo-check --ignore-user-config`, add the provider `-c` flags.
+      Swap `-s danger-full-access` for `-s workspace-write`, and on the resume path
+      replace `--dangerously-bypass-approvals-and-sandbox` with the same — otherwise
+      every turn after the first runs unconfined and the isolation is decorative.
 - [ ] **W3 env adapter** `MineExplorerEnv(BaseEnv)` over `env/minerl_sandbox.py`,
       replacing `arcagi3.py`. `reset/step -> (obs, reward, done)`.
 - [ ] **W4 log format** replacing `game_state.render_board`: per step append action,
@@ -118,7 +121,8 @@ Note that position/pitch is *already* in the baseline prompt (`_camera_state_hin
 
 | Item | Decision or blocker | Evidence / owner |
 |---|---|---|
-| Docker sandbox | Dropped. Unavailable on DeltaAI (established in the arm64 task). Codex runs natively with `-s danger-full-access` in a scratch workspace. | prior task findings 1-5 |
+| Isolation | **Decided (user, 2026-08-15): no containers — use Codex's own bubblewrap sandbox.** `-s workspace-write` gives workspace-only writes and no network for spawned commands, while the codex process itself still reaches the local model. podman is unusable here and apptainer can only offer filesystem isolation. | findings 12-14 |
+| Docker sandbox | Dropped. Unavailable on DeltaAI (established in the arm64 task). Codex runs natively in a scratch workspace. | prior task findings 1-5 |
 | Model wire | `transformers serve` exposes `/v1/chat/completions` *with* `tools`/`tool_calls` parsing and `/v1/responses`. Not a blocker on paper; unproven in practice. | `transformers/cli/serving/chat_completion.py:157,264-284` |
 | Codex features | Native aarch64 binary has `model_providers`, `wire_api`, `base_url`, `env_key`, `view_image`. | `strings` on the vendored binary, codex-cli 0.147.0 |
 | `voxels` | Present as an info key but **empty** — `VoxelsCallback` is not registered by our server. Enabling it is a one-line change but moves us to arm A. | `scripts/minecraft_arm64/mc_server.py:196-229` |
