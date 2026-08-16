@@ -154,6 +154,17 @@ check("sandbox set via config on both paths",
       first.count('sandbox_mode="workspace-write"') == 1 and resumed.count('sandbox_mode="workspace-write"') == 1)
 check("session id precedes the stdin sentinel", resumed[-2] == ct.session_id and resumed[-1] == "-")
 
+
+# --- ESC policy must not vary with the protocol, matching the baseline ----------
+from prolong_mc.prompts import build_system_prompt
+hint_on = build_system_prompt("t", 15, 40, 20, None, milestone_hint=True)
+hint_off = build_system_prompt("t", 15, 40, 20, None, milestone_hint=False)
+esc_on = [l for l in hint_on.splitlines() if "ESC=1" in l]
+esc_off = [l for l in hint_off.splitlines() if "ESC=1" in l]
+check("ESC wording is identical under both protocols", esc_on == esc_off, f"{esc_on} vs {esc_off}")
+check("ESC wording keeps the baseline's 'keep working' clause",
+      "keep working" in hint_off)
+
 print()
 print(f"{'ALL PASS' if not fails else 'FAILURES: ' + ', '.join(fails)}")
 sys.exit(1 if fails else 0)

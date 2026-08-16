@@ -137,17 +137,18 @@ Update your briefing and write a new ./actions.json.
 """
 
 
-# The baseline ties ESC to the environment-verified status line, so this arm has to
-# say the same thing under the same protocol or the two are not information-matched.
-ESC_POLICY_HINT = (
+# Verbatim from the baseline's BASE_PROMPT, and unconditional there -- the paragraph
+# is static, so under --no-milestone-hint the baseline still says "only ESC when the
+# verified line says complete" while no such line exists, which is why its episodes
+# run to the step limit. Splitting this by protocol (as a first version did) let the
+# PRO-LONG arm press ESC at step 17 where the baseline ran past 200: an order of
+# magnitude difference in episode length caused by prompt wording, not by memory.
+ESC_POLICY = (
     "Only set ESC=1 when the environment has verified the task complete. Your own "
-    "visual read of a frame is not proof (a door may look open, an item may look "
-    "mined, when it was not)."
-)
-ESC_POLICY_NOHINT = (
-    "Nothing verifies task completion for you — decide from what you observe. Set "
-    "ESC=1 only once you are confident every part of the task is done, remembering "
-    "that a landmark seen from a distance is not the same as having reached it."
+    "visual read of a frame is not proof the action worked (a door may look open, an "
+    "item may look mined, an attack may look lethal, when it actually was not). If "
+    "nothing says the task is verified complete, keep working even if you believe "
+    "you just succeeded."
 )
 
 
@@ -177,7 +178,7 @@ def build_system_prompt(
     ) if multi_turn else ""
 
     prompt = SYSTEM_PROMPT.format(
-        esc_policy=ESC_POLICY_HINT if milestone_hint else ESC_POLICY_NOHINT,
+        esc_policy=ESC_POLICY,
         task_text=task_text,
         action_cap=action_cap,
         step_cap=step_cap,
