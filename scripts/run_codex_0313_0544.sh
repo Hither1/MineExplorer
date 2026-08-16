@@ -77,6 +77,11 @@ trap cleanup EXIT INT TERM
 
 if [[ "$LOCAL_MODEL" == 1 ]]; then
   export LOCAL_API_KEY=EMPTY
+  # 27B weights leave roughly 40 GiB for KV and activations on a 95 GiB GH200, and a
+  # PRO-LONG prompt grows every turn (the log, plus an attached frame). What runs out
+  # first is not capacity but fragmentation: one run died with 9 GiB reserved and
+  # unallocated while a 2.3 GiB allocation failed.
+  export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
   export HF_HOME=${HF_HOME:-/work/nvme/bdrx/dzhang5/huggingface}
   setsid "$PYTHON_BIN" "$ROOT_DIR/scripts/serve_qwen_for_codex.py" serve "$MODEL_ID" \
     --host 127.0.0.1 --port "$QWEN_PORT" --device cuda:0 --dtype auto \

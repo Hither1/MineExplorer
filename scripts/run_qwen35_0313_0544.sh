@@ -48,6 +48,11 @@ EOF
 fi
 
 export HF_HOME MC_SANDBOX_URL PYTHONNOUSERSITE=1
+# 27B weights leave roughly 40 GiB for KV and activations on a 95 GiB GH200, and a
+# PRO-LONG prompt grows every turn (the log, plus an attached frame). What runs out
+# first is not capacity but fragmentation: one run died with 9 GiB reserved and
+# unallocated while a 2.3 GiB allocation failed.
+export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 export AGENT_API_KEY=${AGENT_API_KEY:-EMPTY}
 export AGENT_API_BASE=${AGENT_API_BASE:-$QWEN_API_URL}
 

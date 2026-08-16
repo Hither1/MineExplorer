@@ -117,10 +117,30 @@ def check(run_dir: Path) -> tuple[str, list[str]]:
     # PRO-LONG's whole point is that one analysis covers many steps. A ratio near or
     # below 1 means the plan queue is not working and the mechanism is absent.
     if "ProlongAgent" in text and states and calls:
-        ratio = states[-1][0] / calls
-        notes.append(f"steps_per_turn={ratio:.2f}")
-        if calls >= 5 and ratio < 1.5:
-            flag("BROKEN", f"only {ratio:.2f} steps per analyzer turn; queue not working")
+        # Three separate questions, which a single steps-per-turn ratio conflated --
+        # it counted retried turns in the denominator and then blamed the queue for
+        # the model's short plans. The runner logs every plan it queues, so each can
+        # be asked directly.
+        planned = [int(m) for m in re.findall(r"queued \d+ entries = (\d+) steps", text)]
+        executed = states[-1][0]
+        if planned:
+            mean_plan = sum(planned) / len(planned)
+            notes.append(f"plans={len(planned)} mean_plan_steps={mean_plan:.1f} "
+                         f"planned_total={sum(planned)} executed={executed}")
+            # 1. Is the queue delivering what was planned?
+            if sum(planned) - executed > 10:
+                flag("BROKEN", f"{sum(planned)} steps were planned but only {executed} "
+                               f"reached the world; the queue is dropping them")
+            # 2. Is the mechanism even in use? One-step plans make PRO-LONG an
+            #    expensive per-step agent -- a result about the model, not a defect.
+            elif len(planned) >= 5 and mean_plan < 1.5:
+                flag("WARN", f"the analyzer plans {mean_plan:.1f} steps at a time, so "
+                             f"PRO-LONG's one-analysis-many-steps property is absent")
+        # 3. How many turns yield nothing? Retries make this invisible in the raw
+        #    call count: 15 turns produced 8 plans while only 3 logged a failure.
+        barren = calls - len(planned)
+        if calls >= 8 and barren / calls > 0.4:
+            flag("WARN", f"{barren} of {calls} analyzer turns produced no usable plan")
 
     # An episode the agent ends in a handful of steps produced a score, but not an
     # answer: nothing about memory or navigation is observable in three steps. Qwen
