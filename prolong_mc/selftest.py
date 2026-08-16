@@ -140,6 +140,20 @@ agent2.load_system_prompt("t")
 _, bad_action, _ = agent2.get_action([frame], [], [], 1, info={"player_pos": pos})
 check("analyzer failure returns None, not a no-op", bad_action is None)
 
+
+# --- codex argv: the resume path must stay sandboxed and must not use -s ---------
+from prolong_mc.codex_backend import CodexTurn
+ct = CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true")
+first = ct._args()
+ct.session_id = "1234abcd-0000-0000-0000-00000000ffff"
+resumed = ct._args()
+check("first turn is `codex exec`", first[:2] == ["/bin/true", "exec"] and "resume" not in first)
+check("resume turn is `codex exec resume`", resumed[1:3] == ["exec", "resume"])
+check("no -s anywhere: exec resume rejects it", "-s" not in first and "-s" not in resumed)
+check("sandbox set via config on both paths",
+      first.count('sandbox_mode="workspace-write"') == 1 and resumed.count('sandbox_mode="workspace-write"') == 1)
+check("session id precedes the stdin sentinel", resumed[-2] == ct.session_id and resumed[-1] == "-")
+
 print()
 print(f"{'ALL PASS' if not fails else 'FAILURES: ' + ', '.join(fails)}")
 sys.exit(1 if fails else 0)

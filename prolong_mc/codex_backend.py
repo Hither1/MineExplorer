@@ -80,9 +80,16 @@ class CodexTurn:
         # workspace-write, not upstream's danger-full-access: writes stay in the
         # workspace and the agent's own commands get no network, so it cannot reach
         # the Minecraft sandbox and drive the world behind the runner's back.
-        args += ["-s", "workspace-write"]
+        #
+        # Set through -c rather than -s because `codex exec resume` rejects -s
+        # ("unexpected argument '-s' found") while accepting the same config
+        # override. Upstream hits this too and works around it by bypassing the
+        # sandbox entirely on resume; that would leave every turn after the first
+        # unconfined, so the config form is used on both paths instead.
+        args += ["-c", 'sandbox_mode="workspace-write"']
         if self.session_id:
-            args = args[:2] + ["resume", self.session_id] + args[2:]
+            # Documented order: codex exec resume [OPTIONS] [SESSION_ID] [PROMPT]
+            args = args[:2] + ["resume"] + args[2:] + [self.session_id]
         if prompt_on_stdin:
             args.append("-")
         return args
