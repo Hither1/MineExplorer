@@ -64,10 +64,20 @@ TP=${VLLM_TP:-2}
 #
 # vLLM applies this as a hard ceiling, not a default: get_max_tokens() takes a min
 # over the request's own value and this one (entrypoints/serve/utils/api_utils.py),
-# so a client asking for more is clamped rather than obeyed. Observed outputs
-# self-terminate around 1.4k tokens, so this binds nothing today; what it forecloses
-# is a repetition loop generating toward the 131k context end at decode speed, which
-# is hours inside one call with the job still looking alive.
+# so a client asking for more is clamped rather than obeyed. It merges into the model's
+# own generation config rather than replacing it (--generation-config defaults to
+# "auto"; config.model:1608-1613), so Qwen's sampling defaults survive alongside it.
+#
+# The cap and the thinking pin are coupled, and the earlier note here -- "outputs
+# self-terminate around 1.4k, so this binds nothing" -- was measured on one call and is
+# wrong for the corpus. Tokenising every model-authored item across the finished Qwen3.8
+# runs: p50 237, p90 1933, and 24 items over 4096, the largest a single 12,918-token
+# message (0802 prolong turn_0008, whose turn spent 13,681 output tokens). Capping at
+# 4096 with thinking ON would have truncated those mid-deliberation -- and since the
+# JSON comes *after* the prose, a truncated response yields no actions.json at all.
+# Those long outputs were the thinking channel; with it pinned off they should collapse,
+# which is what makes 4096 safe here. "Should" is a prediction: the probe measures the
+# output-length distribution before the matrix, and this is one env var if it is wrong.
 MAX_OUTPUT_TOKENS=${VLLM_MAX_OUTPUT_TOKENS:-4096}
 # Thinking off, pinned rather than inherited. Qwen3.8's chat template defaults
 # thinking ON -- with no kwarg it ends the generation prompt with a bare `<think>`
