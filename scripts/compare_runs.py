@@ -69,6 +69,14 @@ def main() -> int:
         except Exception:
             continue
         agent, model, path = label(run_id)
+        # Prefer what the run recorded over what its slug implies: result.json now
+        # carries agent_mode and model, and a slug is a label someone typed once.
+        if d.get("agent_mode"):
+            agent = d["agent_mode"]
+        if d.get("model"):
+            model = d["model"].split("@")[0].replace("Qwen/", "")
+        if d.get("provider"):
+            path = d["provider"]
         if bad:
             # Its own configuration key, so it never averages with the arm it was
             # launched as. `vod` = the analyzer had to ask for pixels.
@@ -104,12 +112,12 @@ def main() -> int:
         print("no valid results yet")
         return 0
 
-    print(f"{'agent':11s} {'model':12s} {'path':6s} {'proto':8s} {'scene':6s} "
+    print(f"{'agent':11s} {'model':14s} {'path':6s} {'proto':8s} {'scene':6s} "
           f"{'steps':>5s} {'term':15s} {'score':>6s}  milestones hit")
     print("-" * 108)
     for r in sorted(rows, key=lambda r: (r["proto"], r["scene"], r["agent"],
                                          r["model"], r["path"])):
-        print(f"{r['agent']:11s} {r['model']:12s} {r['path']:6s} {r['proto']:8s} "
+        print(f"{r['agent']:11s} {r['model']:14s} {r['path']:6s} {r['proto']:8s} "
               f"{r['scene']:6s} {r['steps']:5d} {r['term']:15s} "
               f"{r['done']:2d}/{r['track']:<3d}  {','.join(r['hits']) or '-'}")
 
@@ -138,7 +146,7 @@ def main() -> int:
         a[0] += r["done"]; a[1] += r["track"]; a[2] += 1
     for (proto, agent, model, path), (done, track, n) in sorted(agg.items()):
         pct = f"{100 * done / track:.0f}%" if track else "n/a"
-        print(f"  {proto:8s} {agent:11s} {model:12s} {path:6s}  "
+        print(f"  {proto:8s} {agent:11s} {model:14s} {path:6s}  "
               f"{done}/{track} ({pct}) over {n} scene(s)")
     return 0
 

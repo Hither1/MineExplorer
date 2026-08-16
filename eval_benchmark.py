@@ -597,6 +597,10 @@ def _run_benchmark(
         # hallucinated success, and one model did so within three steps -- so the
         # result has to say which one it is rather than leaving it to a run slug.
         "agent_mode": agent_mode,
+        # How the model was reached, recorded rather than inferred from the run slug.
+        # The slug-based guess mislabelled codex-driven runs as plain-vLLM ones purely
+        # because the word "codex" was absent from a name someone typed once.
+        "provider": "codex" if use_codex else ("vllm" if use_vllm else "openai"),
         "milestone_hint": use_milestone_hint,
         "max_steps": max_steps,
         "total_steps": total_steps,
