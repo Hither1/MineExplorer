@@ -615,6 +615,17 @@ check("serving: tensor parallelism defaults to 2",
 check("serving: every arm gets the same 4096 output cap",
       json.loads(flag_value(argv, "--override-generation-config") or "{}").get("max_new_tokens") == 4096,
       flag_value(argv, "--override-generation-config"))
+# Sampling is set once on the server because the codex arms send none of it. The values
+# are Qwen3.8's own recipe for the mode we serve -- its shipped generation_config.json
+# carries the *thinking* recipe (1.0 / 0.95), which is not the mode this server runs.
+_gen = json.loads(flag_value(argv, "--override-generation-config") or "{}")
+check("serving: sampling follows the model card's non-thinking recipe",
+      (_gen.get("temperature"), _gen.get("top_p"), _gen.get("top_k")) == (0.7, 0.8, 20),
+      json.dumps(_gen))
+check("serving: the codex arms and the vLLM arm cannot end up on different sampling",
+      _gen.get("temperature") == 0.7, json.dumps(_gen))
+check("serving: presence_penalty is left unset, since only one arm could receive it",
+      "presence_penalty" not in _gen, json.dumps(_gen))
 check("serving: thinking is pinned off in the chat template",
       json.loads(flag_value(argv, "--default-chat-template-kwargs") or "{}") == {"enable_thinking": False},
       flag_value(argv, "--default-chat-template-kwargs"))

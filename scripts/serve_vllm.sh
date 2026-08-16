@@ -79,6 +79,24 @@ TP=${VLLM_TP:-2}
 # which is what makes 4096 safe here. "Should" is a prediction: the probe measures the
 # output-length distribution before the matrix, and this is one env var if it is wrong.
 MAX_OUTPUT_TOKENS=${VLLM_MAX_OUTPUT_TOKENS:-4096}
+# Sampling, set once on the server so both channels get the same one. The codex arms
+# send no sampling parameters at all (captured off the wire: no temperature, no top_p),
+# so without this they run on whatever the model ships, while the direct-vLLM arm sends
+# temperature=0.7 from eval_benchmark -- two arms of one matrix sampling differently.
+#
+# The values are Qwen3.8's own, for the mode we serve. The model card gives two recipes,
+# and the shipped generation_config.json carries the *thinking* one (temperature 1.0,
+# top_p 0.95): "Instruct (or non-thinking) mode: temperature=0.7, top_p=0.80, top_k=20,
+# min_p=0.0, presence_penalty=1.5, repetition_penalty=1.0". Since thinking is pinned
+# off, that is the recipe that applies, and its temperature is also MineExplorer main's
+# default (VLLMProvider, 0.7) -- the two agree.
+#
+# presence_penalty=1.5 is the one part deliberately left out. vLLM only accepts
+# repetition_penalty, temperature, top_k, top_p, min_p and max_new_tokens as server-side
+# defaults (config/model.py:1615-1622), and codex cannot send it per request, so setting
+# it would apply to the vLLM arm alone. An asymmetry between arms costs more than the
+# repetition it would damp, and the output cap already bounds that failure.
+SAMPLING=${VLLM_SAMPLING:-'"temperature": 0.7, "top_p": 0.8, "top_k": 20, "min_p": 0.0, "repetition_penalty": 1.0'}
 # Thinking off, pinned rather than inherited. Qwen3.8's chat template defaults
 # thinking ON -- with no kwarg it ends the generation prompt with a bare `<think>`
 # and injects a "Reasoning effort is set to ..." instruction into the system message
@@ -140,7 +158,7 @@ setsid "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
   --gpu-memory-utilization "$GPU_FRAC" \
   --trust-remote-code \
   --enable-auto-tool-choice --tool-call-parser "$TOOL_PARSER" \
-  --override-generation-config "{\"max_new_tokens\": $MAX_OUTPUT_TOKENS}" \
+  --override-generation-config "{\"max_new_tokens\": $MAX_OUTPUT_TOKENS, $SAMPLING}" \
   --default-chat-template-kwargs "$CHAT_TEMPLATE_KWARGS" \
   $( [ "$EAGER" = 1 ] && echo --enforce-eager || echo -cc.mode=none -cc.cudagraph_mode=FULL_DECODE_ONLY ) \
   > "$LOG" 2>&1 &
@@ -188,6 +206,7 @@ cat > "$DISCOVERY.tmp" <<JSON
   "revision": "$MODEL_REVISION",
   "max_model_len": $MAX_LEN,
   "max_output_tokens": $MAX_OUTPUT_TOKENS,
+  "sampling": {$SAMPLING},
   "tensor_parallel_size": $TP,
   "execution": "$( [ "$EAGER" = 1 ] && echo eager || echo cudagraphs-full-decode-only )",
   "chat_template_kwargs": $CHAT_TEMPLATE_KWARGS,
