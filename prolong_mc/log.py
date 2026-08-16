@@ -13,11 +13,21 @@ episode's frames fit anywhere near a context window.
 from __future__ import annotations
 
 import math
+import os
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 SEPARATOR = "=" * 80
+
+# The log names its own frames, so the log decides which of them the agent may see.
+_FRAME_RE = re.compile(r"^\[FRAME\] (\S+)", re.M)
+
+# Written by the harness, not by the agent, and required for the turn to happen at all.
+_HARNESS_FILES = {"logs.txt", "AGENTS.md"}
 
 
 def _xz(pos: dict[str, Any] | None) -> tuple[float, float] | None:
@@ -41,8 +51,12 @@ def state_line(pos: dict[str, Any] | None, prev: dict[str, Any] | None) -> str:
 
 
 class EpisodeLog:
-    """Writes `logs.txt` and `frames/`, and produces the windowed copies the
-    ablation arms read."""
+    """Writes `logs.txt` and `frames/`, and publishes the view the agent is given.
+
+    `workspace` is where the canonical record lives. In the unablated arm that is also
+    the directory Codex works in; under an ablation it is not, and `publish` is what
+    decides how much of the record crosses into the directory that is.
+    """
 
     def __init__(self, workspace: Path, stateless: bool = False):
         self.workspace = Path(workspace)
@@ -138,3 +152,67 @@ class EpisodeLog:
             kept = sections[:1] + sections[-window:] if len(sections) > window else sections
         dest.write_text(head + "".join(kept), encoding="utf-8")
         return dest
+
+    def publish(self, visible: Path, window: int | None, stateless: bool) -> dict:
+        """Build the directory the agent is given, and remove what the ablation denies it.
+
+        Upstream keeps the canonical record in the run directory and hands Codex a
+        *sandbox* underneath it, so a truncated log is the only log there is
+        (`codex_agent.py:274,417-460`). This port wrote both files into one directory,
+        which made every ablation a request rather than a constraint: `logs_window.txt`
+        sat next to the full `logs.txt`, and stateless only reworded the prompt while the
+        agent's own notes survived the turn. An ablation the agent can read around does
+        not measure what its name says.
+
+        So, when an ablation is active, `self.workspace` is the record directory and
+        *visible* is what Codex gets:
+
+        - `logs.txt` in *visible* is the windowed copy, and the full log is not there;
+        - frames are linked in only where the copy still names them, because in this
+          port history is pixels as well as text and a window that leaves `frames/`
+          whole leaves history readable by another route;
+        - under stateless, everything else the agent wrote is deleted, matching
+          upstream's `keep = {logs.txt, AGENTS.md}`. The Codex conversation itself stays
+          alive -- that is upstream's behaviour too, and is not ours to "fix".
+
+        No-op when *visible* is the record directory itself, which is the unablated arm:
+        it must keep writing exactly the layout its finished runs were produced under.
+        """
+        if visible == self.workspace:
+            return {"published": False, "frames_visible": 0, "removed": 0}
+
+        visible.mkdir(parents=True, exist_ok=True)
+        view = self.windowed_copy(visible / "logs.txt", window)
+        allowed = set(_FRAME_RE.findall(view.read_text(encoding="utf-8")))
+
+        for name in sorted(allowed):
+            src, dst = self.workspace / name, visible / name
+            if not src.exists() or dst.exists():
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                # A hardlink, so a 300-frame episode is not stored twice. Frames are
+                # written once and never rewritten, so the two names cannot diverge.
+                os.link(src, dst)
+            except OSError:
+                shutil.copyfile(src, dst)
+
+        removed = 0
+        for path in sorted(visible.rglob("*"), reverse=True):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(visible).as_posix()
+            if rel in _HARNESS_FILES or rel in allowed:
+                continue
+            # Outside stateless the workspace is meant to persist; only the frames the
+            # window has dropped are taken back, and they are the harness's files.
+            if not stateless and not rel.startswith("frames/"):
+                continue
+            path.unlink(missing_ok=True)
+            removed += 1
+
+        logger.info(
+            f"[prolong] ablation view: {len(allowed)} frame(s) visible, "
+            f"{removed} file(s) removed (window={window} stateless={stateless})"
+        )
+        return {"published": True, "frames_visible": len(allowed), "removed": removed}

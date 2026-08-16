@@ -75,21 +75,38 @@ class ProlongAgent:
         self._esc_rejected_at: list[int] = []
 
         self.workspace = Path(workspace)
+        # Under an ablation the canonical record moves out of the directory Codex is
+        # given: a truncated log next to the full one, or a "workspace does not persist"
+        # instruction next to the notes it wrote last turn, is a request, not a
+        # constraint. `EpisodeLog.publish` then decides each turn how much of the record
+        # crosses back in. Upstream draws the same line by handing Codex a sandbox
+        # *underneath* its run directory (`codex_agent.py:274`).
+        #
+        # The unablated arm keeps writing straight into the visible workspace, the exact
+        # layout its finished runs were produced under.
+        self.record_dir = self.workspace
+        if log_window is not None or stateless:
+            self.record_dir = self.workspace.with_name(f"{self.workspace.name}_record")
         # Reaching this constructor means the scene has no result.json (`--resume`
         # skips the ones that do), so any workspace still sitting here is the debris
         # of a crashed attempt. Left in place it would append a second episode to the
         # same append-only logs.txt -- two INITIAL STATEs, one file -- and AGENTS.md's
         # write-once guard would keep the old system prompt. Move it aside instead of
         # deleting it: the crashed attempt is still evidence.
-        if (self.workspace / "logs.txt").exists():
-            stale = self.workspace.with_name(f"{self.workspace.name}.crashed")
-            n = 1
-            while stale.exists():
+        if (self.record_dir / "logs.txt").exists():
+            n, suffix = 1, ".crashed"
+            while any((d.with_name(d.name + suffix)).exists()
+                      for d in {self.workspace, self.record_dir}):
                 n += 1
-                stale = self.workspace.with_name(f"{self.workspace.name}.crashed{n}")
-            self.workspace.rename(stale)
-            logger.warning(f"[prolong] found a stale workspace; moved it to {stale}")
-        self.log = EpisodeLog(self.workspace, stateless=stateless)
+                suffix = f".crashed{n}"
+            for d in {self.workspace, self.record_dir}:
+                if d.exists():
+                    d.rename(d.with_name(d.name + suffix))
+                    logger.warning(f"[prolong] found a stale workspace; moved it to {d}{suffix}")
+        self.log = EpisodeLog(self.record_dir, stateless=stateless)
+        # EpisodeLog creates the record directory; the visible one is Codex's cwd and
+        # holds AGENTS.md, which is written before the first turn publishes anything.
+        self.workspace.mkdir(parents=True, exist_ok=True)
         self.codex = CodexTurn(
             self.workspace,
             model=model or "gpt-5.6-sol",
@@ -168,6 +185,16 @@ class ProlongAgent:
                     "compactions": self.codex.compactions,
                     "actions_logged": self._action_num,
                     "esc_rejections": self._esc_rejections,
+                    # Which arm this is, and -- for the ablations -- what the last
+                    # turn's enforcement actually did. A C-arm score is only readable
+                    # next to evidence that its ablation bound; `frames_visible` below
+                    # the frame count above is that evidence for the window arm, and a
+                    # nonzero `files_removed` is it for stateless.
+                    "log_window": self.log_window,
+                    "stateless": self.stateless,
+                    "ablation_enforced": bool((self._published or {}).get("published")),
+                    "frames_visible": (self._published or {}).get("frames_visible"),
+                    "files_removed": self._files_removed,
                 },
                 indent=2,
             ),
@@ -257,12 +284,17 @@ class ProlongAgent:
     _current_frame: str | None = None
     _esc_rejections: int = 0
     _last_milestone_hint: str = ""
+    _published: dict | None = None
+    _files_removed: int = 0
 
     def _refill(self, step: int) -> bool:
+        # What the agent may see this turn. The file is always ./logs.txt, as upstream's
+        # sandbox copy is: naming the windowed one differently advertised that a fuller
+        # log exists somewhere, and it used to be sitting right beside it.
+        published = self.log.publish(self.workspace, self.log_window, self.stateless)
+        self._published = published
+        self._files_removed += published["removed"]
         log_name = "logs.txt"
-        if self.log_window is not None:
-            self.log.windowed_copy(self.workspace / "logs_window.txt", self.log_window)
-            log_name = "logs_window.txt"
 
         # Unconditional, not on demand. The baseline agent is handed its frames every
         # step; an analyzer that has to decide to look is not information-matched to

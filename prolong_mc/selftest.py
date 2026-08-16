@@ -176,6 +176,98 @@ check("a stale workspace is moved aside, not appended to",
       (ws / "wsp3" / "logs.txt").read_text() == "" and (ws / "wsp3.crashed" / "logs.txt").exists())
 
 
+# --- the ablation arms have to bind, not merely be requested ---------------------
+# Upstream enforces both in the directory it hands Codex: stateless deletes everything
+# but logs.txt + AGENTS.md each turn, and a window means the truncated copy is the only
+# log there is (codex_agent.py:417-460). The port used to reword the prompt and leave
+# the full log and the agent's notes in place, which would have made arm C a study of
+# whether a model obeys an instruction to forget.
+
+def _stub_turn(prompt, images=()):
+    _stub_turn.prompts.append(prompt)
+    return {"ok": True, "error": None, "message": "[PLAN]\nkeep going", "overflow": False,
+            "actions_json": json.dumps({"actions": [{"action": {"forward": 1}, "repeat": 1}]})}
+_stub_turn.prompts = []
+
+
+def _ablation_agent(name, **kw):
+    a = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
+                     workspace=ws / name, **kw)
+    a.codex.run = _stub_turn
+    a.load_system_prompt("Find the temple.")
+    return a
+
+
+def _visible_text(root: pathlib.Path) -> str:
+    return "\n".join(p.read_text(errors="replace")
+                     for p in root.rglob("*") if p.is_file() and p.suffix != ".png")
+
+
+sl_agent = _ablation_agent("wsl", stateless=True)
+sl_ws = ws / "wsl"
+sl_agent.get_action([frame], [], [], 1, info={"player_pos": dict(pos, z=1.0)})
+(sl_ws / "notes.md").write_text("the temple is north; do not re-search the ridge")
+sl_agent.get_action([frame], [], [], 2, info={"player_pos": dict(pos, z=2.0)})
+check("stateless deletes what the agent wrote, instead of asking it to forget",
+      not (sl_ws / "notes.md").exists())
+check("stateless keeps the log and the system prompt",
+      (sl_ws / "logs.txt").exists() and (sl_ws / "AGENTS.md").exists())
+check("the canonical record is not the directory the agent works in",
+      sl_agent.record_dir != sl_agent.workspace and (sl_agent.record_dir / "logs.txt").exists())
+check("the plan record the ablation withholds is out of the agent's reach",
+      not (sl_ws / "plans.txt").exists() and (sl_agent.record_dir / "plans.txt").exists())
+check("stateless still hands over the frames the log names",
+      len(list((sl_ws / "frames").glob("*.png"))) == 2,
+      f'got {len(list((sl_ws / "frames").glob("*.png")))}')
+check("the deletions are audited, not silent", sl_agent._files_removed >= 1)
+
+w_agent = _ablation_agent("wsw", log_window=0)
+w_ws = ws / "wsw"
+for step in range(1, 5):
+    w_agent.get_action([frame], [], [], step, info={"player_pos": dict(pos, z=float(step))})
+(w_ws / "notes.md").write_text("kept: the window ablation is not the stateless one")
+w_agent.get_action([frame], [], [], 5, info={"player_pos": dict(pos, z=5.0)})
+visible = (w_ws / "logs.txt").read_text()
+check("the window arm reads a truncated log",
+      visible.count(SEPARATOR) == 2, f"got {visible.count(SEPARATOR)}")
+check("the full log is not in the directory the agent works in",
+      "Action 1 | Step 1" not in _visible_text(w_ws))
+# Five calls, five sections: an action is written when its outcome is observed, so the
+# fifth one is still pending. The point is that all of them are here and one is there.
+check("the record keeps every section the window dropped",
+      (w_agent.record_dir / "logs.txt").read_text().count(SEPARATOR) == 5,
+      f'got {(w_agent.record_dir / "logs.txt").read_text().count(SEPARATOR)}')
+# History is pixels here as well as text, so a window that leaves frames/ whole leaves
+# the history readable by another route.
+check("frames outside the window are not left behind either",
+      len(list((w_ws / "frames").glob("*.png"))) == 2,
+      f'got {len(list((w_ws / "frames").glob("*.png")))}')
+check("the record keeps every frame", len(list((w_agent.record_dir / "frames").glob("*.png"))) == 5)
+check("a window is not a purge: the agent's own files survive it",
+      (w_ws / "notes.md").exists())
+check("the turn prompt names the copy the agent has, not the one it does not",
+      "./logs.txt" in _stub_turn.prompts[-1] and "logs_window" not in _stub_turn.prompts[-1])
+check("the current frame is still attached from a directory the agent can see",
+      (w_ws / "frames" / "step_0005.png").exists())
+
+# The unablated arm must keep the layout its finished runs were produced under: one
+# directory, written in place, no publishing step between the log and the agent.
+plain = _ablation_agent("wsp4")
+plain.get_action([frame], [], [], 1, info={"player_pos": pos})
+check("the headline arm still writes straight into the workspace it is given",
+      plain.record_dir == plain.workspace and not (ws / "wsp4_record").exists())
+check("nothing is removed when nothing is ablated", plain._files_removed == 0)
+
+# The crashed-scene guard has two directories to move now. Leaving the record behind
+# would append a second episode to it while the visible copy looked new.
+_ablation_agent("wsl", stateless=True)
+check("a crashed ablation run takes its record aside with it",
+      (ws / "wsl.crashed" / "logs.txt").exists()
+      and (ws / "wsl_record.crashed" / "logs.txt").read_text().count("INITIAL STATE") == 1
+      and (ws / "wsl_record" / "logs.txt").read_text() == "",
+      f'left behind: {sorted(p.name for p in ws.glob("wsl*"))}')
+
+
 # --- codex argv: the resume path must stay sandboxed and must not use -s ---------
 from prolong_mc.codex_backend import CodexTurn
 ct = CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true")
