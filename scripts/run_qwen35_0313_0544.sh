@@ -7,7 +7,10 @@ TRANSFORMERS_BIN=${TRANSFORMERS_BIN:-$(dirname "$PYTHON_BIN")/transformers}
 HF_HOME=${HF_HOME:-/work/nvme/bdrx/dzhang5/huggingface}
 MODEL_REVISION=${MODEL_REVISION:-fc05daec18b0a78c049392ed2e771dde82bdf654}
 MODEL_ID=${MODEL_ID:-Qwen/Qwen3.5-27B@$MODEL_REVISION}
-QWEN_PORT=${QWEN_PORT:-30000}
+# Derived from the job id: ghx4 nodes are shared, and a fixed port let two of our
+# own jobs collide -- the loser exited while /health still answered from the
+# winner's server, so the run scored against the wrong process.
+QWEN_PORT=${QWEN_PORT:-$(( 20000 + ${SLURM_JOB_ID:-$$} % 20000 ))}
 QWEN_API_URL=${QWEN_API_URL:-http://127.0.0.1:$QWEN_PORT/v1}
 QWEN_API_URL=${QWEN_API_URL%/}
 QWEN_SERVER_URL=${QWEN_API_URL%/v1}

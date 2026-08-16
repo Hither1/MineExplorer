@@ -23,7 +23,11 @@ MODEL_ID=${MODEL_ID:-Qwen/Qwen3.5-27B@$MODEL_REVISION}
 BACKEND=${BACKEND:-local}
 OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.6-sol}
 OPENAI_EFFORT=${OPENAI_EFFORT:-xhigh}
-QWEN_PORT=${QWEN_PORT:-30000}
+# Derived from the job id, not fixed: ghx4 nodes are shared, so two of our own jobs
+# landing on one node both tried to bind 30000. The loser exited while /health still
+# answered -- from the winner's server, which has no shim -- and the whole run 422'd
+# against a stranger's process while looking healthy.
+QWEN_PORT=${QWEN_PORT:-$(( 20000 + ${SLURM_JOB_ID:-$$} % 20000 ))}
 QWEN_API_URL=http://127.0.0.1:$QWEN_PORT/v1
 CODEX_BIN=${CODEX_BIN:-/u/dzhang5/.nvm/versions/node/v22.16.0/bin/codex}
 PROLONG_DIR=${PROLONG_DIR:?set PROLONG_DIR to the PRO-LONG checkout}
@@ -70,6 +74,10 @@ for _ in $(seq 1 360); do
   kill -0 "$SERVER_PID" 2>/dev/null || { echo "server died; see $SERVER_LOG" >&2; exit 1; }
   sleep 5
 done
+if ! kill -0 "$SERVER_PID" 2>/dev/null || grep -q "address already in use" "$SERVER_LOG"; then
+  echo "our model server is not the one answering on $QWEN_PORT; see $SERVER_LOG" >&2
+  exit 1
+fi
 curl -fsS "$QWEN_API_URL/models" > "$RUN_ROOT/qwen-models.json"
 echo "== server up: $(cat "$RUN_ROOT/qwen-models.json" | head -c 200)"
 
