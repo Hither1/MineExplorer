@@ -273,7 +273,11 @@ class CodexProvider(BaseLLMProvider):
         reasoning_effort: str = "xhigh",
         codex_bin: str | None = None,
         max_images: int | None = None,
-        timeout: int = 900,
+        # A ceiling on one call, not a target. Legitimate calls on the local server
+        # finish in under a minute; the default arm's 40-step probe twice sat at exactly
+        # this value, so the number decides what a stall costs -- 900s each is 15 minutes
+        # of walltime spent on a step that ends in a fallback no-op.
+        timeout: int = int(os.environ.get("CODEX_TIMEOUT", 900)),
         transcript_dir: str | None = None,
         base_url: str | None = None,
         context_window: int | None = None,

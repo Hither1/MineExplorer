@@ -210,7 +210,9 @@ class CodexTurn:
         base_url: str | None = None,
         codex_bin: str | None = None,
         codex_home: Path | None = None,
-        timeout: int = 1800,
+        # See CodexProvider: the same ceiling, read from the same place, so a run that
+        # bounds one arm's stalls bounds the other's identically.
+        timeout: int = int(os.environ.get("CODEX_TIMEOUT", 1800)),
         transcript_dir: Path | None = None,
         context_window: int | None = None,
     ) -> None:
