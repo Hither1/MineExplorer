@@ -96,3 +96,52 @@ identically. It needs dz's call because it changes the protocol.
 `RUN_LEDGER.txt` (moved out of the ignored `artifacts/` tree) is the authority on which
 runs may be compared; `scripts/compare_runs.py` reads it and reports VARIANT rows under
 their own label instead of dropping them.
+
+## 2026-08-16 (early hours) — serving layer rebuilt, matrix held
+
+dz's calls this session, in order: use the hint protocol; kill the affected queued
+jobs; **stop running the matrix until the serving layer is verified** ("不要一次跑很多
+但是又有各种系统性问题得不偿失"); serve with vLLM rather than transformers; and
+**test Qwen3.8-27B, not 3.5**.
+
+All 14 queued hint-protocol cells are cancelled. Two no-hint runs finish out.
+
+### Why the serving layer had to change
+
+Each evaluation job ran its own `transformers serve`: 52 GB of weights per job, no
+paged KV cache, and a shim so the Codex CLI's requests were accepted at all. It
+produced finding 37 — a PRO-LONG run losing 7 of 15 analyzer turns to allocator
+fragmentation, not capacity.
+
+vLLM 0.27.1 replaces it: aarch64 wheel, `Qwen3_5ForConditionalGeneration` in its
+registry (the architecture *both* 3.5 and 3.8 declare), and a native Responses API —
+the one codex speaks. sglang 0.5.10 is installed here too and its
+`/v1/chat/completions` handles Minecraft frames correctly, but its `/v1/responses`
+echoed structured content blocks back as literal Python dicts, so it cannot drive
+codex. It stays as a fallback for the plain-VLM arms.
+
+New pieces: `scripts/serve_vllm.sh` (one long-lived server that verifies what it
+serves before advertising, and removes only its own advert) and
+`scripts/use_model_server.sh` (resolves the advert, then asks the server what it
+actually holds — a URL resolving is not the same as the right model answering, which
+is exactly how two runs were scored against a stranger's process).
+
+### Verification ladder before any matrix
+
+Nothing scales until each rung passes, because tonight's pattern is that a
+systematic fault looks healthy from outside:
+
+1. server advertises, `/v1/models` reports Qwen3.8-27B — job `2957109`
+2. `chat/completions` answers text, and answers with a Minecraft frame attached
+3. G1 gate: codex drives it through `/v1/responses` and writes a valid `actions.json`
+4. one 40-step default episode on 0313, hint protocol, end to end
+5. one 40-step PRO-LONG episode
+6. only then the matrix, staged rather than fanned out
+
+### Also fixed
+
+`BACKEND` is a name the research harness itself exports (finding 39). The Qwen3.8
+gate was launched with `BACKEND=local` and silently ran the *hosted* gpt-5.6 arm
+while reporting PASS. Renamed `GATE_BACKEND`. An env-propagation probe confirms the
+transport is fine — `MILESTONE_HINT` and friends do reach the job — so the matrix's
+protocol flags were never at risk.
