@@ -46,6 +46,18 @@ TOOL_PARSER=${VLLM_TOOL_PARSER:-qwen3_xml}
 # VLLM_EAGER=1 restores --enforce-eager if a capture ever fails on a node; it is the
 # escape hatch, not the default, because eager is what truncated the baseline arms.
 EAGER=${VLLM_EAGER:-0}
+# Cudagraphs on this architecture need this, and vLLM's default makes them impossible.
+# Every decode sequence holds one Mamba cache block for its recurrent state, so graph
+# capture refuses to run unless max_num_seqs fits in the blocks the KV budget bought:
+# "max_num_seqs (1024) exceeds available Mamba cache blocks (610)" killed the first
+# single-card attempt (job 2959383) at engine start, before any request existed.
+#
+# 32 rather than 610: at 131k per request the KV cache supports about 3.7 concurrent
+# full-length sequences anyway, and the real load is a handful of evaluation jobs each
+# with one or two requests in flight. A ceiling far above the demand only widens the set
+# of batch sizes captured at startup. It is a floor on nothing -- requests queue rather
+# than fail -- so the cost of being wrong is latency under a load we do not run.
+MAX_NUM_SEQS=${VLLM_MAX_NUM_SEQS:-32}
 # Two GPUs, not one. Tensor parallelism here buys latency, not capacity (27B in bf16
 # is ~54 GB of a 120 GB GH200), and latency is what decides which arms finish: the
 # non-PRO-LONG arms spend one full generation per step, so a slow decode truncates
@@ -155,6 +167,7 @@ setsid "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
   --host 0.0.0.0 --port "$PORT" \
   --max-model-len "$MAX_LEN" \
   --tensor-parallel-size "$TP" \
+  --max-num-seqs "$MAX_NUM_SEQS" \
   --gpu-memory-utilization "$GPU_FRAC" \
   --trust-remote-code \
   --enable-auto-tool-choice --tool-call-parser "$TOOL_PARSER" \

@@ -610,6 +610,11 @@ check("serving: cudagraphs replace eager by default",
       "--enforce-eager" not in argv and "-cc.cudagraph_mode=FULL_DECODE_ONLY" in argv, " ".join(argv))
 check("serving: compilation stays off so the Dynamo host-OOM cannot recur",
       "-cc.mode=none" in argv)
+# Not a tuning knob: leaving vLLM's default of 1024 makes cudagraph capture refuse to
+# start on this architecture, because every decode sequence holds a Mamba cache block.
+check("serving: max_num_seqs is small enough for cudagraph capture to be possible",
+      0 < int(flag_value(argv, "--max-num-seqs") or 0) <= 512,
+      flag_value(argv, "--max-num-seqs"))
 check("serving: tensor parallelism defaults to 2",
       flag_value(argv, "--tensor-parallel-size") == "2", flag_value(argv, "--tensor-parallel-size"))
 check("serving: every arm gets the same 4096 output cap",
