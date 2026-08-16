@@ -61,6 +61,14 @@ def check(run_dir: Path) -> tuple[str, list[str]]:
 
     states = [(int(m.group(1)), float(m.group(2)), float(m.group(4)))
               for m in STATE_RE.finditer(text)]
+
+    # Not every run is an episode. A model server has no steps, no player and no
+    # milestones, so every invariant below would report its absence as a problem --
+    # and an alert that cries wolf on healthy infrastructure is how the real ones get
+    # ignored.
+    if not states and not loop_steps and "eval_benchmark" not in text:
+        notes.append("not an episode run (no benchmark loop); invariants skipped")
+        return verdict, notes
     if loop_steps:
         notes.append(f"loop_steps={loop_steps[-1]}")
         # Every executed step reports state. Counter far ahead of state means the
