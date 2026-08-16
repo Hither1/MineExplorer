@@ -12,7 +12,9 @@
 # to measure. Resolving a URL is not the same as confirming what is on the other end.
 set -uo pipefail
 
-ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# MINEEXPLORER_ROOT when running from a snapshot copy, where this script's own
+# location points at the run directory rather than the repo.
+ROOT_DIR=${MINEEXPLORER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 SLUG=${1:?usage: use_model_server.sh <server-slug> [expected-model]}
 EXPECT_MODEL=${2:-}
 DISCOVERY=${DISCOVERY_DIR:-$ROOT_DIR/artifacts/servers}/$SLUG.json

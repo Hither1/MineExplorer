@@ -14,7 +14,9 @@
 # drive it" -- the one distinction the local arm alone can never make.
 set -euo pipefail
 
-ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# MINEEXPLORER_ROOT when running from a snapshot copy, where this script's own
+# location points at the run directory rather than the repo.
+ROOT_DIR=${MINEEXPLORER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 PYTHON_BIN=${PYTHON_BIN:-/work/nvme/bdrx/dzhang5/conda/envs/mineexplorer-qwen35-tf/bin/python}
 HF_HOME=${HF_HOME:-/work/nvme/bdrx/dzhang5/huggingface}
 MODEL_ID=${MODEL_ID:-Qwen/Qwen3.8-27B}

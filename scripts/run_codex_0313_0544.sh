@@ -12,7 +12,9 @@
 # *through the Codex harness*, not as a plain VLM the way the vLLM path does.
 set -euo pipefail
 
-ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# MINEEXPLORER_ROOT when running from a snapshot copy, where this script's own
+# location points at the run directory rather than the repo.
+ROOT_DIR=${MINEEXPLORER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 PYTHON_BIN=${PYTHON_BIN:-/work/nvme/bdrx/dzhang5/conda/envs/mineexplorer-qwen35-tf/bin/python}
 CODEX_BIN=${CODEX_BIN:-/u/dzhang5/.nvm/versions/node/v22.16.0/bin/codex}
 MODEL_ID=${MODEL_ID:-gpt-5.6-sol}

@@ -34,6 +34,12 @@ if [[ ! -f "$DEST_DIR/.snapshot-complete" ]]; then
   echo "snapshotted $SRC_DIR -> $DEST_DIR"
 fi
 
+# A snapshotted script sits under artifacts/runs/<id>/script-snapshot/, so computing
+# the repo root from its own location yields the run directory instead of the repo.
+# The real root is known here, so pass it on: the server's discovery file was written
+# to artifacts/runs/<id>/artifacts/servers/ before this existed.
+export MINEEXPLORER_ROOT=${MINEEXPLORER_ROOT:-$(cd "$SRC_DIR/.." && pwd)}
+
 SNAP="$DEST_DIR/$(basename "$SCRIPT")"
 chmod +x "$SNAP"
 echo "running snapshot: $SNAP (from $SCRIPT)"

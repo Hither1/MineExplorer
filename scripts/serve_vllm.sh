@@ -12,7 +12,9 @@
 # land on other nodes, can find it and assert they are talking to the right model.
 set -uo pipefail
 
-ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# MINEEXPLORER_ROOT when running from a snapshot copy, where this script's own
+# location points at the run directory rather than the repo.
+ROOT_DIR=${MINEEXPLORER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 PYTHON_BIN=${VLLM_PYTHON:-/work/nvme/bdrx/dzhang5/conda/envs/mineexplorer-vllm/bin/python}
 MODEL_ID=${MODEL_ID:-Qwen/Qwen3.8-27B}
 MODEL_REVISION=${MODEL_REVISION:-1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0}
