@@ -55,6 +55,10 @@ def main() -> int:
     for f in sorted(ROOT.glob("artifacts/runs/*/results/*/*/*/result.json")):
         run_id = f.parts[len(ROOT.parts) + 2]
         bad = next((r for p, r in invalid.items() if run_id.startswith(p)), None)
+        # A protocol difference is not a defect: it is a second axis. Reported with
+        # the protocol in its own column instead of being dropped.
+        if bad and bad.startswith("PROTOCOL:"):
+            bad = None
         if bad and not bad.startswith("VARIANT:"):
             if (run_id, bad) not in skipped:
                 skipped.append((run_id, bad))
@@ -71,8 +75,11 @@ def main() -> int:
             agent = f"{agent}-vod"
         ms = d.get("milestone_status", [])
         hits = [m["milestone_id"] for m in ms if m.get("completed")]
+        # Results written before the flag existed are all from the no-hint protocol.
+        proto = "hint" if d.get("milestone_hint") else "no-hint"
         rows.append({
             "run": run_id, "scene": scene, "agent": agent, "model": model, "path": path,
+            "proto": proto, "cap": d.get("max_steps", 0),
             "steps": d.get("total_steps", 0), "term": d.get("termination_reason", ""),
             "done": d.get("milestones_completed", 0),
             "track": d.get("milestones_trackable", 0),
@@ -88,24 +95,28 @@ def main() -> int:
         print("no valid results yet")
         return 0
 
-    print(f"{'agent':11s} {'model':12s} {'path':6s} {'scene':6s} {'steps':>5s} "
-          f"{'term':15s} {'score':>6s}  milestones hit")
-    print("-" * 100)
-    for r in sorted(rows, key=lambda r: (r["scene"], r["agent"], r["model"], r["path"])):
-        print(f"{r['agent']:11s} {r['model']:12s} {r['path']:6s} {r['scene']:6s} "
-              f"{r['steps']:5d} {r['term']:15s} {r['done']:2d}/{r['track']:<3d}  "
-              f"{','.join(r['hits']) or '-'}")
+    print(f"{'agent':11s} {'model':12s} {'path':6s} {'proto':8s} {'scene':6s} "
+          f"{'steps':>5s} {'term':15s} {'score':>6s}  milestones hit")
+    print("-" * 108)
+    for r in sorted(rows, key=lambda r: (r["proto"], r["scene"], r["agent"],
+                                         r["model"], r["path"])):
+        print(f"{r['agent']:11s} {r['model']:12s} {r['path']:6s} {r['proto']:8s} "
+              f"{r['scene']:6s} {r['steps']:5d} {r['term']:15s} "
+              f"{r['done']:2d}/{r['track']:<3d}  {','.join(r['hits']) or '-'}")
 
     print()
     print("per-configuration totals (scenes pooled, read with the caveat above):")
     agg: dict[tuple, list[int]] = {}
     for r in rows:
-        k = (r["agent"], r["model"], r["path"])
+        # Protocol is part of the key: without the hint an arm ends its own episode,
+        # so pooling the two would average a navigation score with a quitting score.
+        k = (r["proto"], r["agent"], r["model"], r["path"])
         a = agg.setdefault(k, [0, 0, 0])
         a[0] += r["done"]; a[1] += r["track"]; a[2] += 1
-    for (agent, model, path), (done, track, n) in sorted(agg.items()):
+    for (proto, agent, model, path), (done, track, n) in sorted(agg.items()):
         pct = f"{100 * done / track:.0f}%" if track else "n/a"
-        print(f"  {agent:11s} {model:12s} {path:6s}  {done}/{track} ({pct}) over {n} scene(s)")
+        print(f"  {proto:8s} {agent:11s} {model:12s} {path:6s}  "
+              f"{done}/{track} ({pct}) over {n} scene(s)")
     return 0
 
 

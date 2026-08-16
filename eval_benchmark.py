@@ -592,6 +592,13 @@ def _run_benchmark(
         "scene_id": scene_id,
         "mode": "multi-agent",
         "metadata_path": str(meta_path),
+        # Which protocol produced this number. Scores taken with and without the hint
+        # are not comparable -- without it an arm can end its own episode on a
+        # hallucinated success, and one model did so within three steps -- so the
+        # result has to say which one it is rather than leaving it to a run slug.
+        "agent_mode": agent_mode,
+        "milestone_hint": use_milestone_hint,
+        "max_steps": max_steps,
         "total_steps": total_steps,
         "termination_reason": termination_reason,
         "milestones_completed": corrected_completed,
