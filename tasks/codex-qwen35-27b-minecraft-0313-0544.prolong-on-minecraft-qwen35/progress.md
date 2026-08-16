@@ -145,3 +145,20 @@ gate was launched with `BACKEND=local` and silently ran the *hosted* gpt-5.6 arm
 while reporting PASS. Renamed `GATE_BACKEND`. An env-propagation probe confirms the
 transport is fine — `MILESTONE_HINT` and friends do reach the job — so the matrix's
 protocol flags were never at risk.
+
+### Discovery layer verified before the server exists (2026-08-16 ~02:00)
+
+`use_model_server.sh` exercised against the live sglang server on gh056:8002, no GPU
+needed, all five paths behaving:
+
+| case | result |
+|---|---|
+| live server, model matches | URL on stdout, rc=0 |
+| caller expects a different model | refused |
+| advert points at a dead port | refused ("stale file from job …?") |
+| advert lies about what the server holds | refused |
+| no advert at all | refused after the wait |
+
+The fourth case is the one that cost two runs tonight — a readiness endpoint
+answering from a stranger's process. It now fails closed. Cross-node reachability is
+confirmed by the same test (login node → gh056).
