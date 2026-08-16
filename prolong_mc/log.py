@@ -54,10 +54,22 @@ class EpisodeLog:
         self.frames_dir.mkdir(parents=True, exist_ok=True)
         self.path.touch()
         self._pending_plan: str | None = None
+        self._pending_notes: list[str] = []
 
     def set_plan(self, plan: str) -> None:
         """Hold the agent's plan until the next action section is written."""
         self._pending_plan = (plan or "").strip() or None
+
+    def add_note(self, note: str) -> None:
+        """Hold a runner-side note (an ESC refusal, say) until the next section.
+
+        Separate from `set_plan` deliberately: a note arriving in the same step as a
+        fresh plan used to overwrite it, so the analyzer's own reasoning vanished from
+        the log at exactly the steps where it was being overruled.
+        """
+        note = (note or "").strip()
+        if note:
+            self._pending_notes.append(note)
 
     def save_frame(self, step: int, png_bytes: bytes) -> str:
         name = f"frames/step_{step:04d}.png"
@@ -97,6 +109,9 @@ class EpisodeLog:
                 else:
                     f.write(f"{block}\n")
                 self._pending_plan = None
+            for note in self._pending_notes:
+                f.write(f"[NOTE] {note}\n")
+            self._pending_notes.clear()
             f.write(f"Tool Call: {entry_desc}\n")
             f.write(f"{state_line(pos, prev_pos)}\n")
             if frame_name:

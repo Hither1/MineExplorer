@@ -19,6 +19,9 @@ from pathlib import Path
 STATE_RE = re.compile(
     r"step=(\d+) player_pos=\{'x': ([-\d.]+), 'y': ([-\d.]+), 'z': ([-\d.]+)"
 )
+# The episode loop's own counter, which advances even when the environment refuses
+# the action. The gap between the two is the tell.
+LOOP_STEP_RE = re.compile(r"--- Step (\d+)/(\d+) ---")
 
 
 def check(run_dir: Path) -> tuple[str, list[str]]:
@@ -34,8 +37,27 @@ def check(run_dir: Path) -> tuple[str, list[str]]:
         if level == "BROKEN" or (level == "WARN" and verdict == "OK"):
             verdict = level
 
+    # A dead sandbox session does not stop the episode: env.step exhausts its retries,
+    # the loop logs the failure and moves to the next step, and the step counter climbs
+    # for hours over a world that is no longer being acted on. One run reached step 83
+    # this way with 316 session errors and looked, from the counter alone, healthy.
+    lost = len(re.findall(r"env\.step failed|session '[^']+' not found", text))
+    loop_steps = [int(m.group(1)) for m in LOOP_STEP_RE.finditer(text)]
+    if lost:
+        notes.append(f"env_step_failures={lost}")
+        if lost > 10:
+            flag("BROKEN", f"{lost} env.step failures; the sandbox session is gone")
+
     states = [(int(m.group(1)), float(m.group(2)), float(m.group(4)))
               for m in STATE_RE.finditer(text)]
+    if loop_steps:
+        notes.append(f"loop_steps={loop_steps[-1]}")
+        # Every executed step reports state. Counter far ahead of state means the
+        # actions are not landing, whatever the reason.
+        if loop_steps[-1] >= 20 and len(states) < loop_steps[-1] / 2:
+            flag("BROKEN",
+                 f"loop reached step {loop_steps[-1]} but only {len(states)} states "
+                 f"were reported; actions are not reaching the world")
     if not states:
         flag("WARN", "no per-step state lines yet")
     else:

@@ -59,6 +59,7 @@ class ProlongAgent:
         log_window: int | None = None,
         stateless: bool = False,
         analyzer_retries: int = 3,
+        milestone_hint: bool = False,
     ) -> None:
         self.action_space = action_space
         self.provider = provider          # unused: Codex is the model channel here
@@ -70,6 +71,8 @@ class ProlongAgent:
         self.log_window = log_window
         self.stateless = stateless
         self.analyzer_retries = analyzer_retries
+        self.milestone_hint = milestone_hint
+        self._esc_rejected_at: list[int] = []
 
         self.workspace = Path(workspace)
         # Reaching this constructor means the scene has no result.json (`--resume`
@@ -116,6 +119,7 @@ class ProlongAgent:
                 repeat_cap=self.repeat_cap,
                 log_window=self.log_window,
                 stateless=self.stateless,
+                milestone_hint=self.milestone_hint,
             )
         )
 
@@ -129,10 +133,12 @@ class ProlongAgent:
         )
 
     def on_esc_rejected(self, step: int) -> None:
-        self.log.set_plan(
-            f"[note] ESC at step {step} was rejected: the environment says the task "
-            f"is not verified complete. Keep working."
-        )
+        # Collected, not written here: under the hint protocol a model that believes
+        # it is finished presses ESC on every remaining step, and one log line per
+        # rejection would bury the trace it is supposed to annotate. One line per
+        # action section, carrying the count, says the same thing.
+        self._esc_rejected_at.append(step)
+        self._esc_rejections += 1
 
     def save_state(self, output_dir) -> None:
         """The workspace *is* the state; record what the agent built in it."""
@@ -151,6 +157,7 @@ class ProlongAgent:
                     "view_image_calls": self.codex.view_image_calls,
                     "overflow_resets": self.codex.overflow_resets,
                     "actions_logged": self._action_num,
+                    "esc_rejections": self._esc_rejections,
                 },
                 indent=2,
             ),
@@ -184,6 +191,14 @@ class ProlongAgent:
             self._initial_written = True
             self._prev_pos = pos
         elif self._last_entry is not None:
+            if self._esc_rejected_at:
+                steps = self._esc_rejected_at
+                where = f"step {steps[0]}" if len(steps) == 1 else f"steps {steps[0]}-{steps[-1]}"
+                self.log.add_note(
+                    f"ESC was rejected at {where} ({len(steps)}x): the environment has "
+                    f"not verified the task as complete. Keep working."
+                )
+                self._esc_rejected_at = []
             self.log.write_action(
                 action_num=self._action_num,
                 step=self._last_step,
@@ -225,6 +240,7 @@ class ProlongAgent:
     _last_desc: str = ""
     _last_step: int = 0
     _current_frame: str | None = None
+    _esc_rejections: int = 0
 
     def _refill(self, step: int) -> bool:
         log_name = "logs.txt"

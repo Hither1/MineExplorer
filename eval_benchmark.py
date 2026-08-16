@@ -292,6 +292,10 @@ def _run_benchmark(
             reasoning_effort=codex_effort,
             base_url=codex_base_url or None,
             codex_home=os.environ.get("CODEX_HOME"),
+            # The baseline only renders its "Environment-verified task status" section
+            # under this protocol; PRO-LONG documents its [MILESTONE] marker on the
+            # same condition, so neither arm is told about a signal the other lacks.
+            milestone_hint=use_milestone_hint,
         )
     elif agent_mode == "hypothesis":
         agent = HypothesisAgent(

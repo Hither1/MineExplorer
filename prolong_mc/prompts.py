@@ -86,6 +86,7 @@ files accumulate. Feel free to save notes, state, or helper functions.
         without asking; use the image viewer on the older paths when you want to
         compare against where you have already been.
     [PLAN] — your own plan from the previous call.
+    [NOTE] — something the runner rejected or refused since the previous action.{milestone_marker}
 
 **What you can rely on**:
 - Coordinates and facing in `[STATE]` are ground truth from the environment; your own
@@ -187,8 +188,21 @@ def build_system_prompt(
         "often the only way to notice you have revisited somewhere."
     ) if multi_turn else ""
 
+    # The baseline renders the environment's verification as its own context section
+    # ("**Environment-verified task status:** ...", context.py:86-88) and only when the
+    # hint protocol is on. PRO-LONG's equivalent channel is the log, so the marker is
+    # documented on exactly the same condition -- otherwise one arm would be told a
+    # verification signal exists while the other is not, which is the confound that
+    # already cost one PRO-LONG run.
+    milestone_marker = (
+        "\n    [MILESTONE] — the environment's own verification of task completion, "
+        "attached to\n        the action it was observed after. This is the signal the "
+        "ESC rule below refers\n        to; nothing else counts as verification."
+    ) if milestone_hint else ""
+
     prompt = SYSTEM_PROMPT.format(
         esc_policy=ESC_POLICY,
+        milestone_marker=milestone_marker,
         task_text=task_text,
         action_cap=action_cap,
         step_cap=step_cap,

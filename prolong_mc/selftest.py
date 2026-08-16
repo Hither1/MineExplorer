@@ -232,6 +232,32 @@ check("ESC wording is identical under both protocols", esc_on == esc_off, f"{esc
 check("ESC wording keeps the baseline's 'keep working' clause",
       "keep working" in hint_off)
 
+# The hint protocol: the baseline renders its verified-status section only when the
+# hint is on, so PRO-LONG documents [MILESTONE] on exactly the same condition.
+check("[MILESTONE] is documented only under the hint protocol",
+      "[MILESTONE]" in hint_on and "[MILESTONE]" not in hint_off)
+
+# An ESC refusal must annotate the log without erasing the plan it arrived alongside.
+agent5 = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
+                      workspace=ws / "wsp5", milestone_hint=True)
+agent5.codex.run = lambda prompt, images=(): {
+    "ok": True, "error": None, "overflow": False, "message": "[PLAN]\nkeep going north",
+    "actions_json": json.dumps({"actions": [{"action": {"forward": 1}, "repeat": 4}]})}
+agent5.load_system_prompt("t")
+check("hint protocol reaches the analyzer's system prompt",
+      "[MILESTONE]" in (ws / "wsp5" / "AGENTS.md").read_text())
+for step in range(1, 5):
+    agent5.get_action([frame], [], [], step, info={"player_pos": dict(pos, z=float(step))})
+    agent5.on_esc_rejected(step=step)      # model insists it is done, every step
+agent5.get_action([frame], [], [], 5, info={"player_pos": dict(pos, z=5.0)})
+text5 = (ws / "wsp5" / "logs.txt").read_text()
+check("repeated ESC refusals collapse to one note per section",
+      text5.count("[NOTE] ESC was rejected") <= 4 and "[NOTE] ESC was rejected" in text5,
+      f'got {text5.count("[NOTE] ESC was rejected")}')
+check("the refusal note does not erase the analyzer's plan",
+      "keep going north" in text5)
+check("refusals are counted for the audit", agent5._esc_rejections == 4)
+
 print()
 print(f"{'ALL PASS' if not fails else 'FAILURES: ' + ', '.join(fails)}")
 sys.exit(1 if fails else 0)
