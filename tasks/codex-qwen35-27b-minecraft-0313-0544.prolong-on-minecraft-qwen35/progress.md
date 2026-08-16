@@ -189,3 +189,50 @@ unnecessary server restart.
 With a shared server the gate is a pure client, so rung 3 ran on the login node in
 two minutes instead of waiting for an allocation. Rung 4 (job 2957472) needs the
 Minecraft sandbox and therefore a node.
+
+## 2026-08-16 (midday) — the review's fix list, landed; ladder waiting on the queue
+
+The consolidated review (`review-from-fable-session.md`) is the spec; items 1-4 are done
+and committed one slice at a time, 119 selftest checks passing under
+`mineexplorer-qwen35-tf`.
+
+| item | state |
+|---|---|
+| 1. serving: cudagraphs, TP=2, 4096 cap, thinking pinned | landed (`35438f0`); eager job cancelled, `2958782` queued with the new config |
+| 2. codex `model_context_window` on both paths | landed (`4d141a8`), plus `model_auto_compact_token_limit` at 8x the window |
+| 3. compare_runs: distinct scenes, `view_image`, frozen channels | landed |
+| 4. ablations enforced, and launchable at all | landed |
+| cost by request count (dz's boundary note) | landed |
+
+**The ablations were the biggest gap.** stateless only reworded the prompt while the
+agent's notes and its own plan record sat in the directory it greps, and log_window
+wrote `logs_window.txt` next to the full `logs.txt`. Arm C would have measured whether a
+model obeys an instruction to forget. Under an ablation the canonical record now lives
+in a sibling `_record` directory and each turn publishes only what the ablation allows:
+the windowed log (always named `logs.txt`, since a second name advertises the first),
+the frames that log still names, and under stateless nothing else. Frames are in scope
+because here history is pixels as well as text. The unablated arm's layout is untouched
+and asserted to stay that way. The flags also reached nothing before this: no CLI, no
+runner variable, so arm C could not have been launched.
+
+**Cost is now counted in model requests.** A codex call runs a tool loop, so the "one
+call per step" arm is really 2.05 requests/step on 0313 and 2.31 on 0802, and the
+prolong arm is 0.44-0.66 — a ~4x advantage per step, not the ~6x that counting calls
+implied. Getting there needed a correction that would have poisoned every token number:
+`turn.completed.usage` is *cumulative over the thread* (40246, 88493, 146686, 242646 for
+turns 1-4 of one conversation), so summing it is quadratic — one run read 659M input
+tokens before the fix.
+
+**`model_context_window` verified to bind, without a GPU.** codex accepts an invented
+config key as silently as a real one (`model_definitely_not_a_key` changes nothing and
+raises nothing), so "it ran" proves nothing. The discriminating test: at
+`model_context_window=2000` codex emits "Exceeded skills context budget. All skill
+descriptions were removed", and at 131072 it does not. The key is live. Whether
+`model_auto_compact_token_limit` actually gates compaction still needs a long episode
+against a real server — the transcripts carry a compaction counter and the audit
+reports it, and a nonzero count means the arm needs re-describing rather than rerunning.
+
+**Blocked on the queue, not on code.** The server job (2958782, 2 GPUs on ghx4, 8h) is
+`Reason=Priority` with an estimated start of 2026-08-17 12:56. Until it runs, nothing
+can measure decode tok/s, the 4096 cap in effect, thinking off in a real output, or
+compaction over a long episode.
