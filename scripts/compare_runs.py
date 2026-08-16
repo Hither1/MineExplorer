@@ -15,6 +15,10 @@ from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+# One definition of what a codex call costs, shared with the runner that produces the
+# transcripts this reads.
+from prolong_mc.codex_backend import merge_stats, request_stats  # noqa: E402
 
 
 def label(run_id: str, drifted: list[str] | None = None) -> tuple[str, str, str]:
@@ -94,6 +98,25 @@ def _ledger_entries() -> tuple[tuple[str, str], ...]:
         prefix, _, reason = line.partition("  ")
         out.append((prefix.strip(), reason.strip()))
     return tuple(out)
+
+
+def scene_cost(scene_dir: Path) -> dict[str, int]:
+    """Add up what one scene's codex calls cost, from the transcripts it already saved.
+
+    Both codex paths write their event streams next to the result: `codex_turns/` for
+    the PRO-LONG analyzer, `codex_calls/` for the per-step provider. Neither is one
+    request per call -- see `request_stats` -- so this is the only honest denominator
+    for a per-call cost comparison. Runs with no transcripts (the plain vLLM arm) return
+    zeros and are reported as blank rather than as cheap.
+    """
+    parts = []
+    for sub in ("codex_turns", "codex_calls"):
+        for events in sorted((scene_dir / sub).glob("*.events.jsonl")):
+            try:
+                parts.append(request_stats(events.read_text(errors="replace")))
+            except OSError:
+                continue
+    return merge_stats(parts)
 
 
 def arm_label(agent: str, d: dict) -> str:
@@ -191,6 +214,7 @@ def main() -> int:
         rows.append({
             "run": run_id, "scene": scene, "agent": agent, "model": model, "path": path,
             "proto": proto, "cap": d.get("max_steps", 0), "audit": audit,
+            "cost": scene_cost(f.parent),
             "steps": d.get("total_steps", 0), "term": d.get("termination_reason", ""),
             "done": d.get("milestones_completed", 0),
             "track": d.get("milestones_trackable", 0),
@@ -231,6 +255,21 @@ def main() -> int:
                   f"{a.get('view_image_calls', 0):10d} "
                   f"{a.get('overflow_resets', 0):8d} {a.get('compactions', 0):7d} "
                   f"{a.get('esc_rejections', 0):7d}")
+
+    costed = [r for r in rows if r["cost"].get("requests")]
+    if costed:
+        print()
+        print("cost, in model requests rather than agent steps (a codex call runs a tool "
+              "loop, so one call is several requests, each re-paying the prompt):")
+        print(f"  {'run':44s} {'scene':6s} {'steps':>5s} {'calls':>5s} {'reqs':>5s} "
+              f"{'req/call':>8s} {'req/step':>8s} {'in_tok':>10s} {'out_tok':>8s}")
+        for r in sorted(costed, key=lambda r: (r["agent"], r["scene"], r["run"])):
+            c = r["cost"]
+            calls, reqs, steps = c["turns"], c["requests"], r["steps"]
+            print(f"  {r['run'][:44]:44s} {r['scene']:6s} {steps:5d} {calls:5d} {reqs:5d} "
+                  f"{reqs / calls if calls else 0:8.2f} {reqs / steps if steps else 0:8.2f} "
+                  f"{c['input_tokens']:10d} {c['output_tokens']:8d}")
+        print("  the plain vLLM arm saves no transcripts and is absent here, not cheap.")
 
     if drifted:
         print()

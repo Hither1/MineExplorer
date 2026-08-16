@@ -69,6 +69,92 @@ def _metadata_args(context_window: int) -> list[str]:
     ]
 
 
+# A tool result is what makes codex send the model another request, so these are what
+# turn one call into several. Named rather than inferred, so an unfamiliar item type is
+# undercounted visibly instead of inflating the count silently.
+_TOOL_ITEM_TYPES = frozenset({
+    "command_execution", "view_image", "file_change", "patch_apply",
+    "mcp_tool_call", "web_search", "todo_list",
+})
+
+
+def request_stats(events: str) -> dict[str, int]:
+    """What one arm's calls actually cost, read off the saved event stream.
+
+    "One call per step" is the wrong unit for the codex arms. A single turn runs an
+    agentic loop: the model answers, calls a tool, and is asked again with the result
+    appended -- turn_0003 of the m1-qwen38-prolong-0313 run is three requests (two bash
+    calls plus the closing message) re-paying a ~46k-token prompt each time. Comparing
+    per-call cost across arms without this counts a codex turn as one request and
+    understates it by however many tools the model reached for.
+
+    The alternative -- stripping codex's tools so a step is one request -- would redefine
+    the arm mid-study, so this measures the harness that is actually being run.
+
+    requests = one per tool result plus the one that closes each turn. Token totals come
+    from codex's own `turn.completed` usage, so they are its accounting, not our estimate
+    -- but that usage is CUMULATIVE over the thread: across one prolong episode it reads
+    40k, 88k, 147k, 243k for turns 1-4 of the same resumed conversation. Adding those up
+    is quadratic, and it is not a subtle error: summed naively, one 57-turn run claimed
+    659M input tokens. So usage is returned per thread, to be maxed and only then summed
+    (`merge_stats`); a session dropped after an overflow starts a new thread and its own
+    counter, which is exactly the boundary the totals should respect.
+    """
+    out: dict[str, Any] = dict(turns=0, requests=0, tool_calls=0, agent_messages=0,
+                               usage_by_thread={})
+    thread = ""
+    for line in events.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        kind = event.get("type")
+        if kind == "thread.started":
+            thread = event.get("thread_id") or ""
+        elif kind == "item.completed":
+            item_type = (event.get("item") or {}).get("type")
+            if item_type in _TOOL_ITEM_TYPES:
+                out["tool_calls"] += 1
+            elif item_type == "agent_message":
+                out["agent_messages"] += 1
+        elif kind == "turn.completed":
+            out["turns"] += 1
+            usage = event.get("usage") or {}
+            seen = out["usage_by_thread"].setdefault(
+                thread, dict(input_tokens=0, cached_input_tokens=0, output_tokens=0))
+            for key in seen:
+                seen[key] = max(seen[key], int(usage.get(key) or 0))
+    out["requests"] = out["tool_calls"] + out["turns"]
+    return out
+
+
+def merge_stats(parts: Sequence[dict[str, Any]]) -> dict[str, int]:
+    """Total up per-call stats without double-counting codex's cumulative usage.
+
+    Counts add; token usage is the per-thread maximum, summed across threads, because
+    every turn of a resumed thread reports the whole thread's usage so far.
+    """
+    total = dict(turns=0, requests=0, tool_calls=0, agent_messages=0,
+                 input_tokens=0, cached_input_tokens=0, output_tokens=0, threads=0)
+    per_thread: dict[str, dict[str, int]] = {}
+    for part in parts:
+        for key in ("turns", "requests", "tool_calls", "agent_messages"):
+            total[key] += int(part.get(key) or 0)
+        for thread, usage in (part.get("usage_by_thread") or {}).items():
+            seen = per_thread.setdefault(
+                thread, dict(input_tokens=0, cached_input_tokens=0, output_tokens=0))
+            for key in seen:
+                seen[key] = max(seen[key], int(usage.get(key) or 0))
+    for usage in per_thread.values():
+        for key in ("input_tokens", "cached_input_tokens", "output_tokens"):
+            total[key] += usage[key]
+    total["threads"] = len(per_thread)
+    return total
+
+
 def is_overflow(name: str, text: str) -> bool:
     """Does this Codex error mean the model's context window is full?
 

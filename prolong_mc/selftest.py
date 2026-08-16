@@ -399,6 +399,47 @@ check("an unablated prolong run keeps its plain label",
       compare_runs.arm_label("prolong", {"prolong_log_window": None,
                                          "prolong_stateless": False}) == "prolong")
 
+# --- what a codex call actually costs --------------------------------------------
+# "One call per step" is the wrong unit: a call runs a tool loop, and each tool result
+# is another request re-paying the prompt. And codex's usage is cumulative over the
+# thread, so the arithmetic that looks obvious is quadratic.
+from prolong_mc.codex_backend import request_stats, merge_stats
+
+
+def _events(thread, tools, usage):
+    lines = [{"type": "thread.started", "thread_id": thread}]
+    for i in range(tools):
+        lines.append({"type": "item.completed",
+                      "item": {"id": f"i{i}", "type": "command_execution"}})
+    lines.append({"type": "item.completed", "item": {"id": "m", "type": "agent_message"}})
+    lines.append({"type": "turn.completed", "usage": {"input_tokens": usage,
+                                                      "output_tokens": usage // 10}})
+    return "\n".join(json.dumps(o) for o in lines)
+
+
+two_tools = request_stats(_events("t1", 2, 40000))
+check("a tool call is a request boundary, so two tools make three requests",
+      two_tools["requests"] == 3, str(two_tools))
+check("a call with no tools is one request", request_stats(_events("t1", 0, 10))["requests"] == 1)
+check("agent messages are counted but are not the request unit",
+      two_tools["agent_messages"] == 1 and two_tools["tool_calls"] == 2)
+
+# turn_0001..0004 of m1-qwen38-prolong-0313-02bf report 40246, 88493, 146686, 242646
+# input tokens for one resumed conversation: each number contains the ones before it.
+resumed = [request_stats(_events("t1", 1, n)) for n in (40246, 88493, 146686)]
+merged = merge_stats(resumed)
+check("cumulative usage is taken once, not summed into a quadratic",
+      merged["input_tokens"] == 146686, str(merged))
+check("requests still add up across calls", merged["requests"] == 6, str(merged))
+check("a session dropped on overflow starts its own counter",
+      merge_stats(resumed + [request_stats(_events("t2", 0, 5000))])["input_tokens"]
+      == 146686 + 5000)
+check("threads are counted so a cold start is visible in the cost row",
+      merge_stats(resumed + [request_stats(_events("t2", 0, 5000))])["threads"] == 2)
+check("a transcript with no usage costs nothing rather than crashing",
+      merge_stats([request_stats("")])["input_tokens"] == 0)
+
+
 # --- overflow: the session must be dropped, not retried into ---------------------
 from prolong_mc.codex_backend import is_overflow
 check("overflow classifier catches the context-window message",
