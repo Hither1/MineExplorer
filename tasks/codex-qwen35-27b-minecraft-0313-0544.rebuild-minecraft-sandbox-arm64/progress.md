@@ -211,3 +211,18 @@ failures and replans, verification, commits, pushes, and handoffs. Do not log ev
   hop, then declares the hidden second hop complete from a distance and presses ESC.
 - Still true: one seed, two scenes; no claim about model quality, and no comparison against
   the published x86 sandbox.
+
+## 2026-08-15 — episode video playback rate
+
+- `RenderWrapper` buffers exactly one frame per agent step, so the mp4's fps is
+  steps-per-second, not wall-clock. At the previous `fps=10` a 13-step episode played in
+  1.3 s and was unusable for inspecting behaviour.
+- `env/render.py` now has a single `VIDEO_FPS = 1` used by both writers and the
+  imageio_ffmpeg fallback. Verified by driving `save_video()` directly: 13 frames -> 1 fps /
+  13.0 s.
+- The five already-written `artifacts/runs/*/…/episode.mp4` were retimed in place with
+  `ffmpeg -itsscale 10 -c copy` (container timestamps only, H.264 bitstream untouched);
+  each output was asserted pixel-identical to its source before replacing it. The scored
+  run's 0313 episode is now 13.1 s.
+- Frames still exist only in memory during a run (`frames/` stays disabled) and server-side
+  `record=False` is unchanged, so the mp4 remains the only replay artifact.

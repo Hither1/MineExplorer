@@ -8,6 +8,10 @@ import imageio
 import imageio_ffmpeg
 from loguru import logger
 
+# One buffered frame == one agent step, so playback rate is steps-per-second, not
+# wall-clock speed. At 10 a 13-step episode flashes by in 1.3s; 1 makes it watchable.
+VIDEO_FPS = 1
+
 class RenderWrapper(gym.Wrapper):
     """
     A Gym Wrapper to save observations as images and compile them into a video.
@@ -105,7 +109,7 @@ class RenderWrapper(gym.Wrapper):
             imageio.mimsave(
                 checkpoint_filename,
                 self.frames,
-                fps=10,
+                fps=VIDEO_FPS,
                 codec="libx264",
                 pixelformat="yuv420p",
             )
@@ -113,7 +117,7 @@ class RenderWrapper(gym.Wrapper):
         except TypeError as error:
             if "audio_path" in str(error):
                 logger.warning("imageio/imageio-ffmpeg version mismatch, falling back to imageio_ffmpeg writer.")
-                self._save_video_with_imageio_ffmpeg(checkpoint_filename, fps=10)
+                self._save_video_with_imageio_ffmpeg(checkpoint_filename, fps=VIDEO_FPS)
             else:
                 logger.exception("Error saving checkpoint video:")
         except Exception:
@@ -132,7 +136,7 @@ class RenderWrapper(gym.Wrapper):
             imageio.mimsave(
                 video_filename,
                 self.frames,
-                fps=10,
+                fps=VIDEO_FPS,
                 codec="libx264",
                 pixelformat="yuv420p",
             )
@@ -143,13 +147,13 @@ class RenderWrapper(gym.Wrapper):
                     "imageio/imageio-ffmpeg version mismatch detected. "
                     "Falling back to direct imageio_ffmpeg writer."
                 )
-                self._save_video_with_imageio_ffmpeg(video_filename, fps=10)
+                self._save_video_with_imageio_ffmpeg(video_filename, fps=VIDEO_FPS)
             else:
                 logger.exception("Error saving video:")
         except Exception:
             logger.exception(f"Error saving video:")
 
-    def _save_video_with_imageio_ffmpeg(self, video_filename, fps=10):
+    def _save_video_with_imageio_ffmpeg(self, video_filename, fps=VIDEO_FPS):
         """Write video directly via imageio_ffmpeg for old plugin compatibility."""
         try:
             first_frame = np.asarray(self.frames[0])
