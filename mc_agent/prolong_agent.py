@@ -161,7 +161,10 @@ class ProlongAgent:
             self._prev_pos = pos
 
         if not self.queue and not self._refill(step):
-            return "", None
+            # Three values, not two: eval_benchmark unpacks a triple, and returning a
+            # pair here turns a recoverable analyzer failure into a ValueError that
+            # kills the episode instead of hitting its retry path.
+            return "", None, ""
 
         item = self.queue.popleft()
         self._last_entry = item["entry"]
