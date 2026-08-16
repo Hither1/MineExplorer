@@ -28,7 +28,7 @@ from mc_agent.utils import deco_retry_on_ratelimit
 # One definition of what codex is told about a locally served model, so the two codex
 # paths -- this provider and PRO-LONG's own turn runner -- cannot drift apart on the
 # setting that decides whether the conversation gets compacted underneath them.
-from prolong_mc.codex_backend import DEFAULT_CONTEXT_WINDOW, _metadata_args
+from prolong_mc.codex_backend import DEFAULT_CONTEXT_WINDOW, _metadata_args, effort_for
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +364,7 @@ class CodexProvider(BaseLLMProvider):
                 self.codex_bin, "exec",
                 "--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
                 "-m", effective_model,
-                "-c", f'model_reasoning_effort="{self.reasoning_effort}"',
+                "-c", f'model_reasoning_effort="{effort_for(self.base_url, self.reasoning_effort)}"',
                 "-s", "workspace-write",
                 "-o", str(out_file),
             ]

@@ -46,6 +46,34 @@ _COMPACTION_RE = re.compile(r'"(?:type|kind|action_trigger)"\s*:\s*"[^"]*compact
 DEFAULT_CONTEXT_WINDOW = int(os.environ.get("CODEX_MODEL_CONTEXT_WINDOW", 131072))
 
 
+def effort_for(base_url: str | None, effort: str) -> str:
+    """The reasoning effort to send, which on a local server is the thinking switch.
+
+    `--default-chat-template-kwargs '{"enable_thinking": false}'` does not reach the
+    codex arms. vLLM synthesises `enable_thinking = (effort != "none")` from a Responses
+    request's `reasoning.effort` and merges it as `defaults | request`
+    (`responses/protocol.py:329-330`, `renderers/params.py:99-115`), so the request wins
+    and the server's pin is overridden by every codex turn.
+
+    Measured, not inferred. Codex puts `reasoning: {"effort": ..., "summary": "auto"}` on
+    the wire verbatim and sends no `chat_template_kwargs` of its own, so effort is the
+    only lever it has. Rendering Qwen3.8's pinned template shows what each value buys:
+    with thinking enabled the generation prompt ends with a bare `<think>` and the system
+    message gains "Reasoning effort is set to <effort>"; with `none` it ends with an
+    already-closed `<think></think>` and no effort instruction -- byte-identical to what
+    the server pin produces for the direct-vLLM arm, which is the alignment dz asked for.
+
+    This also names what the finished Qwen3.8 runs were really doing: thinking was ON for
+    all of them. The absence of `<think>` in their output is because the tag sits in the
+    prompt, and the "free-form deliberation before the JSON" was the thinking channel
+    without a label.
+
+    Hosted models keep the caller's effort: there the field means what codex means by it,
+    and nothing downstream reinterprets it as a template switch.
+    """
+    return "none" if base_url else effort
+
+
 def _metadata_args(context_window: int) -> list[str]:
     """Codex config for a model codex has never heard of.
 
@@ -232,7 +260,7 @@ class CodexTurn:
             args += ["-i", str(image)]
         args += [
             "-m", self.model,
-            "-c", f'model_reasoning_effort="{self.reasoning_effort}"',
+            "-c", f'model_reasoning_effort="{effort_for(self.base_url, self.reasoning_effort)}"',
             "-o", str(self.workspace / "last_message.txt"),
         ]
         if self.base_url:

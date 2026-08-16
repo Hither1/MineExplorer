@@ -306,6 +306,50 @@ check("auto-compaction is pushed past the context window, so overflow arrives fi
 check("a hosted model keeps codex's own metadata",
       not any("model_context_window" in a or "auto_compact" in a for a in hosted))
 
+# Thinking, on the arms the server pin cannot reach. vLLM synthesises
+# enable_thinking = (effort != "none") from the Responses request and lets it override
+# --default-chat-template-kwargs, and codex sends effort verbatim with no template
+# kwargs of its own, so this one string is what decides whether the codex arms think.
+check("a locally served model is asked for no reasoning, which is what pins thinking off",
+      'model_reasoning_effort="none"' in " ".join(local), " ".join(local))
+check("a hosted model keeps the effort the caller asked for",
+      'model_reasoning_effort="low"' in " ".join(
+          CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true",
+                    reasoning_effort="low")._args()))
+
+
+
+def _provider_argv(**kw):
+    """The argv CodexProvider really builds, captured rather than restated here."""
+    import unittest.mock as _mock
+    from mc_agent.llm_provider import CodexProvider as _CP
+    seen = {}
+
+    class _Proc:
+        stdout = ""
+        stderr = ""
+        returncode = 0
+
+    def _capture(cmd, **rest):
+        seen["cmd"] = cmd
+        return _Proc()
+
+    with _mock.patch("subprocess.run", _capture):
+        try:
+            _CP(codex_bin="/bin/true", **kw).chat([{"role": "user", "content": "hi"}])
+        except RuntimeError:
+            # A stubbed codex writes no -o file, so the provider raises after building
+            # the argv. The argv is the subject here.
+            pass
+    return " ".join(seen["cmd"])
+
+
+check("the provider path pins thinking the same way the prolong path does",
+      'model_reasoning_effort="none"' in
+      _provider_argv(base_url="http://node:30000/v1", reasoning_effort="xhigh"))
+check("the hosted provider path keeps the effort the run asked for",
+      'model_reasoning_effort="xhigh"' in _provider_argv(reasoning_effort="xhigh"))
+
 from mc_agent.llm_provider import CodexProvider
 prov = CodexProvider(codex_bin="/bin/true", base_url="http://node:30000/v1",
                      context_window=131072)
