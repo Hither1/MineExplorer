@@ -6,8 +6,8 @@
 # the smallest thing that can answer it: no Minecraft, no PRO-LONG runner, just the
 # CLI, a model, and PRO-LONG's own actions.json parser as the oracle.
 #
-# BACKEND=local  (default) local Qwen3.5-27B behind the transformers-serve shim.
-# BACKEND=openai           hosted gpt-5.6-sol, no GPU and no local server.
+# GATE_BACKEND=local  (default) local Qwen3.5-27B behind the transformers-serve shim.
+# GATE_BACKEND=openai      hosted gpt-5.6-sol, no GPU and no local server.
 #
 # The two arms share the prompts, the flags and the oracle byte for byte, so a
 # split verdict separates "the harness cannot work here" from "this model cannot
@@ -20,7 +20,10 @@ TRANSFORMERS_BIN=${TRANSFORMERS_BIN:-$(dirname "$PYTHON_BIN")/transformers}
 HF_HOME=${HF_HOME:-/work/nvme/bdrx/dzhang5/huggingface}
 MODEL_REVISION=${MODEL_REVISION:-fc05daec18b0a78c049392ed2e771dde82bdf654}
 MODEL_ID=${MODEL_ID:-Qwen/Qwen3.5-27B@$MODEL_REVISION}
-BACKEND=${BACKEND:-local}
+# GATE_BACKEND, not BACKEND: the research harness exports BACKEND itself (it held the
+# launcher's own path), so a run script that reads BACKEND silently gets the harness's
+# value. This gate took the hosted branch that way while claiming to test a local model.
+GATE_BACKEND=${GATE_BACKEND:-local}
 OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.6-sol}
 OPENAI_EFFORT=${OPENAI_EFFORT:-xhigh}
 # Derived from the job id, not fixed: ghx4 nodes are shared, so two of our own jobs
@@ -31,7 +34,7 @@ QWEN_PORT=${QWEN_PORT:-$(( 20000 + ${SLURM_JOB_ID:-$$} % 20000 ))}
 QWEN_API_URL=http://127.0.0.1:$QWEN_PORT/v1
 CODEX_BIN=${CODEX_BIN:-/u/dzhang5/.nvm/versions/node/v22.16.0/bin/codex}
 PROLONG_DIR=${PROLONG_DIR:?set PROLONG_DIR to the PRO-LONG checkout}
-RUN_ROOT=${ART_DIR:-$ROOT_DIR/artifacts/manual-prolong-g1-$BACKEND}
+RUN_ROOT=${ART_DIR:-$ROOT_DIR/artifacts/manual-prolong-g1-$GATE_BACKEND}
 WS=$RUN_ROOT/workspace
 SERVER_LOG=$RUN_ROOT/qwen-server.log
 SERVER_PID=""
@@ -60,7 +63,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if [[ "$BACKEND" == local ]]; then
+if [[ "$GATE_BACKEND" == local ]]; then
 # Not `transformers serve` directly: Codex sends `client_metadata`, which the stock
 # server 422s on. The shim drops unknown fields and logs each one.
 setsid "$PYTHON_BIN" "$ROOT_DIR/scripts/serve_qwen_for_codex.py" serve "$MODEL_ID" \
@@ -102,7 +105,7 @@ codex_common=(
   --json --skip-git-repo-check --ignore-user-config --ignore-rules
   -m "$SERVED_MODEL"
 )
-if [[ "$BACKEND" == local ]]; then
+if [[ "$GATE_BACKEND" == local ]]; then
 codex_common+=(
   -c model_provider=local
   -c 'model_providers.local.name="qwen-local"'
@@ -199,7 +202,7 @@ for f in sorted(pathlib.Path(sys.argv[1]).glob("t*.jsonl")):
     if usage: print(f"     usage: {json.dumps(usage)[:300]}")
 PY
 
-if [[ "$BACKEND" == local ]]; then
+if [[ "$GATE_BACKEND" == local ]]; then
   echo "== server-side view of the requests codex actually made"
   grep -iE "POST /v1|responses|error|Traceback|unsupported" "$SERVER_LOG" | tail -15
 fi
