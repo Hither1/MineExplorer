@@ -27,6 +27,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 POSITION_RULES = {"position_near_with_facing", "position_inside_box"}
 
+# Tasks the action space cannot express, whatever the model does. ActionState carries an
+# `inventory` toggle that opens the GUI but no cursor and no click, so anything requiring
+# a slot -- crafting, villager trades, anvils, furnaces, brewing -- cannot be performed.
+# 138 of the 299 scenes with three or more milestones contain at least one. Scoring zero
+# on those measures the harness, not the agent.
+GUI_ONLY_VERBS = ("craft", "trade", "sell", "rename", "enchant", "smelt", "brew")
+
 
 def dependency_depth(nodes: list, edges: list) -> int:
     """Longest path through the reasoning graph, which is the real hop count."""
@@ -73,6 +80,10 @@ def main() -> int:
     ap.add_argument("--max-free", type=int, default=None,
                     help="only show scenes with at most this many spawn-satisfied milestones")
     ap.add_argument("--tier", default=None, choices=["position", "inventory", "voxel-counts"])
+    ap.add_argument("--reachable", action="store_true",
+                    help="drop scenes containing a task the action space cannot perform")
+    ap.add_argument("--min-depth", type=int, default=None,
+                    help="require this real dependency depth, not just this milestone count")
     args = ap.parse_args()
 
     rows = []
@@ -91,25 +102,30 @@ def main() -> int:
             math.dist((0, 0, 0), tuple(r["params"].get("target") or r["params"].get("min") or (0, 0, 0)))
             for m in milestones for r in (m.get("rules") or [])
         ]
+        tasks = [t.lower() for t in (meta.get("atomic_tasks_ordered") or [])]
+        gui = [t for t in tasks if t.startswith(GUI_ONLY_VERBS)]
         rows.append({
             "scene": meta_path.parts[-3], "tier": tier, "depth": depth, "free": free,
-            "unscorable": unscorable, "max_dist": max(distances or [0]),
+            "unscorable": unscorable, "max_dist": max(distances or [0]), "gui": len(gui),
             "task": meta.get("task_text", "")[:64],
         })
 
     shown = [r for r in rows
              if (args.tier is None or r["tier"] == args.tier)
-             and (args.max_free is None or r["free"] <= args.max_free)]
+             and (args.max_free is None or r["free"] <= args.max_free)
+             and (not args.reachable or r["gui"] == 0)
+             and (args.min_depth is None or r["depth"] >= args.min_depth)]
 
     print(f"{len(rows)} scenes with {args.hops} milestones; {len(shown)} pass the filter")
     print(f"  by verification tier: {dict(collections.Counter(r['tier'] for r in rows))}")
     print(f"  by real dependency depth: {dict(sorted(collections.Counter(r['depth'] for r in rows).items()))}")
     print(f"  by milestones free at spawn: {dict(sorted(collections.Counter(r['free'] for r in rows).items()))}")
+    print(f"  containing a task the action space cannot perform: {sum(1 for r in rows if r['gui'])}")
     print()
-    print(f"{'scene':6s} {'tier':13s} {'depth':>5s} {'free':>4s} {'dead':>4s} {'max_d':>6s}  task")
+    print(f"{'scene':6s} {'tier':13s} {'depth':>5s} {'free':>4s} {'dead':>4s} {'gui':>3s} {'max_d':>6s}  task")
     for r in sorted(shown, key=lambda r: (r["free"], -r["depth"], -r["max_dist"])):
         print(f"{r['scene']:6s} {r['tier']:13s} {r['depth']:5d} {r['free']:4d} "
-              f"{r['unscorable']:4d} {r['max_dist']:6.1f}  {r['task']}")
+              f"{r['unscorable']:4d} {r['gui']:3d} {r['max_dist']:6.1f}  {r['task']}")
     return 0
 
 
