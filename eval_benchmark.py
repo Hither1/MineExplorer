@@ -22,7 +22,7 @@ if str(_ROOT_DIR) not in sys.path:
 from env.minerl_sandbox import MineRLSandboxEnv
 from env.render import RenderWrapper
 from mc_agent import (
-    DefaultAgent, MinerRLActionSpace, OpenAIProvider, VLLMProvider, DefaultContextBuilder,
+    DefaultAgent, MinerRLActionSpace, OpenAIProvider, VLLMProvider, CodexProvider, DefaultContextBuilder,
     HypothesisAgent, HypothesisContextBuilder,
 )
 
@@ -232,6 +232,8 @@ def _run_benchmark(
     max_steps: int,
     use_vllm: bool = False,
     vllm_url: str = "http://localhost:8000/v1",
+    use_codex: bool = False,
+    codex_effort: str = "xhigh",
     frame_size: int = FRAME_BUFFER_SIZE,
     use_friday: bool = False,
     temperature: float = 0.7,
@@ -260,7 +262,15 @@ def _run_benchmark(
         checker = MilestoneChecker([])
 
     _base_env = MineRLBenchmarkEnv(metadata_path=metadata_path, use_friday=use_friday)
-    if use_vllm:
+    if use_codex:
+        # Every call's prompt and event stream lands under the scene's own output
+        # directory, so a Codex run is inspectable the same way episode.mp4 is.
+        _provider = CodexProvider(
+            model_name=model,
+            reasoning_effort=codex_effort,
+            transcript_dir=str(output_dir / "codex_calls"),
+        )
+    elif use_vllm:
         _provider = VLLMProvider(model_name=model, base_url=vllm_url, temperature=temperature)
     else:
         _provider = OpenAIProvider(AGENT_API_KEY, AGENT_API_BASE, model, temperature=temperature)
@@ -599,6 +609,8 @@ def _worker_eval(worker_args: dict) -> dict:
         max_steps=worker_args["max_steps"],
         use_vllm=worker_args.get("use_vllm", False),
         vllm_url=worker_args.get("vllm_url", "http://localhost:8000/v1"),
+        use_codex=worker_args.get("use_codex", False),
+        codex_effort=worker_args.get("codex_effort", "xhigh"),
         frame_size=worker_args.get("frame_size", FRAME_BUFFER_SIZE),
         use_friday=worker_args.get("use_friday", False),
         temperature=worker_args.get("temperature", 0.7),
@@ -624,6 +636,10 @@ def eval_benchmark(
                                   help="Use local vLLM server"),
     vllm_url: str = typer.Option("http://localhost:8000/v1", "--vllm-url",
                                  help="vLLM server URL"),
+    use_codex: bool = typer.Option(False, "--use-codex",
+                                   help="Drive the model through the Codex CLI (subscription auth, no API key)"),
+    codex_effort: str = typer.Option("xhigh", "--codex-effort",
+                                     help="Reasoning effort for --use-codex"),
     num_workers: int = typer.Option(1, "--num-workers", "-n",
                                     help="Number of parallel workers"),
     limit: Optional[int] = typer.Option(None, "--limit",
@@ -737,6 +753,8 @@ def eval_benchmark(
                     max_steps=max_steps,
                     use_vllm=use_vllm,
                     vllm_url=vllm_url,
+                    use_codex=use_codex,
+                    codex_effort=codex_effort,
                     use_friday=use_friday,
                     temperature=temperature,
                     use_milestone_hint=milestone_hint,
@@ -782,6 +800,8 @@ def eval_benchmark(
                     "max_steps": max_steps,
                     "use_vllm": use_vllm,
                     "vllm_url": vllm_url,
+                    "use_codex": use_codex,
+                    "codex_effort": codex_effort,
                     "use_friday": use_friday,
                     "temperature": temperature,
                     "use_milestone_hint": milestone_hint,

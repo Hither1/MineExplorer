@@ -73,9 +73,11 @@ done
 curl -fsS "$QWEN_API_URL/models" > "$RUN_ROOT/qwen-models.json"
 echo "== server up: $(cat "$RUN_ROOT/qwen-models.json" | head -c 200)"
 
-# Codex puts -m straight into the request's `model` field, so it has to be the id the
-# server actually advertises -- the @revision form the eval client uses is rejected here.
-SERVED_MODEL=$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1]))["data"][0]["id"])' "$RUN_ROOT/qwen-models.json")
+# Codex puts -m straight into the request's `model` field, and the server compares it
+# for exact equality against force_model (utils.py:1120-1127) -- so it must be MODEL_ID
+# verbatim, revision included. /v1/models is no help: it lists every cached model in
+# unstable order, and reading data[0] once picked the 4B and got the request rejected.
+SERVED_MODEL=$MODEL_ID
 echo "== serving as: $SERVED_MODEL"
 else
   # The hosted arm needs the account credential but must not inherit config.toml's
