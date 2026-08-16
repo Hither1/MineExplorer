@@ -171,3 +171,22 @@ failures and replans, verification, commits, pushes, and handoffs. Do not log ev
 - Caveat to carry into any write-up: milestone hints make this an easier setting than the
   paper protocol. Its score is not comparable to the 0/4 no-hint run; its value is the
   measured episode duration and whether the agent progresses when it cannot bail out.
+
+## 2026-08-15 — replan: the scoring path was broken, earlier interpretation corrected
+
+- While watching the full-length run, `player_pos=None` appeared on every step. Root cause:
+  the published `mc_server.py` never returns `info` at all (findings row 20). Every milestone
+  in both scenes is `position_near_with_facing`, so **no milestone could ever fire**.
+- Correction: the earlier reading of the 0/4 result as "agent behaviour, not a port defect"
+  was wrong in its main claim. The score was predetermined by the missing `player_pos`.
+  The premature-ESC behaviour is real and was also present, but it is not what produced 0/4.
+- Cancelled run `…-0313-full-episode-416c` (Slurm 2955217) at step 11: with milestones
+  unscorable, the ESC guard could never release, so it would have spent ~4.5 h to reach a
+  predetermined 0/2.
+- Fix: `build_info()` in `scripts/minecraft_arm64/mc_server.py` forwards `player_pos`,
+  `voxels` and `mobs` (frame-sized arrays excluded) on `/step` and `/reset_env`. The data was
+  already inside the server (findings row 21); nothing on the client changes.
+- Verifying with run `20260815-190627-mc-arm64-info-passthrough-2835` (Slurm 2955272) before
+  spending GPU hours on another episode.
+- Also carried forward: partial latency data from the cancelled full run — 26.6 / 24.0 / 23.1 s
+  for steps 1-4 with hints enabled, still on the ramp, plateau unmeasured.

@@ -112,6 +112,32 @@ def convert_numpy_types(obj):
     return obj
 
 
+# Frame-sized arrays are already delivered as `screenshot`; everything else in info is
+# small enough to serialise per step.
+_INFO_EXCLUDE = {"pov", "image"}
+
+
+def build_info(obs: dict, info: dict) -> dict:
+    """Expose the observation fields the benchmark client scores against.
+
+    MinecraftSim's `_wrap_obs_info` already merges the observation into `info`, so
+    `player_pos`, `voxels` and `mobs` are present here. The published server never sent
+    them, which left `position_near_with_facing` milestones permanently unscorable
+    (`eval_benchmark.py` logs `player_pos=None` and defaults spawn to the origin).
+    """
+    merged: Dict[str, Any] = {}
+    for source in (info or {}), (obs or {}):
+        if not isinstance(source, dict):
+            continue
+        for key, value in source.items():
+            if key in _INFO_EXCLUDE:
+                continue
+            if isinstance(value, np.ndarray) and value.ndim >= 2:
+                continue
+            merged[key] = value
+    return convert_numpy_types(merged)
+
+
 def get_frame(obs: dict, info: dict = None) -> np.ndarray:
     # 优先用 info 中的原始高清帧 (render_size)
     if info and "pov" in info:
@@ -241,7 +267,8 @@ def reset_env(req: SessionRequest = SessionRequest()):
         frame = get_frame(obs, info)
         screenshot = frame_to_base64(frame)
 
-        return ok({"session_id": session_id, "screenshot": screenshot})
+        return ok({"session_id": session_id, "screenshot": screenshot,
+                   "info": build_info(obs, info)})
     except Exception as e:
         logger.exception(f"[{session_id}] reset_env error")
         return err(f"{type(e).__name__}: {e}")
@@ -283,6 +310,7 @@ def step_env(req: StepRequest):
             "screenshot": screenshot,
             "reward": float(reward),
             "done": done,
+            "info": build_info(obs, info),
             "timing": {
                 "env_step_ms": round((t2 - t1) * 1000, 1),
                 "encode_ms": round((t4 - t3) * 1000, 1),
