@@ -155,8 +155,8 @@ class ProlongAgent:
         elif self._last_entry is not None:
             self.log.write_action(
                 action_num=self._action_num,
-                step=step,
-                entry_desc=describe_entry(self._last_entry),
+                step=self._last_step,
+                entry_desc=self._last_desc,
                 pos=pos,
                 prev_pos=self._prev_pos,
                 frame_name=frame_name,
@@ -172,6 +172,11 @@ class ProlongAgent:
 
         item = self.queue.popleft()
         self._last_entry = item["entry"]
+        # Name the tick within its plan entry. Without this every drained tick logs
+        # the whole entry ("... x10"), which reads as if ten times the movement was
+        # issued each step -- misleading to the agent that reads this log back.
+        self._last_desc = f'{describe_entry(item["entry"])} [tick {item["tick"]}/{item["entry"]["repeat"]}]'
+        self._last_step = step
         self._action_num += 1
         # (thought, wire action dict, memory_update) -- the same triple DefaultAgent
         # returns. PRO-LONG has no memory_update: the log is the memory.
@@ -180,6 +185,8 @@ class ProlongAgent:
     # -- the mechanism ---------------------------------------------------
 
     _last_entry: dict | None = None
+    _last_desc: str = ""
+    _last_step: int = 0
 
     def _refill(self, step: int) -> bool:
         log_name = "logs.txt"
@@ -210,9 +217,10 @@ class ProlongAgent:
             self.log.set_plan(think)
             offset = 0
             for entry in plan.entries:
-                for _ in range(entry["repeat"]):
+                for tick in range(1, entry["repeat"] + 1):
                     self.queue.append(
-                        {"entry": entry, "wire": plan.steps[offset], "think": think}
+                        {"entry": entry, "wire": plan.steps[offset],
+                         "think": think, "tick": tick}
                     )
                     offset += 1
             logger.info(

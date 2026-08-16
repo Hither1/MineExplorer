@@ -128,6 +128,9 @@ text2 = (ws / "wsp" / "logs.txt").read_text()
 check("agent log has initial + actions", text2.count(SEPARATOR) >= 5, f"got {text2.count(SEPARATOR)}")
 check("agent log records moved", "moved=1.00" in text2)
 check("agent log records the plan", "[PLAN]" in text2)
+check("drained ticks are numbered, not repeated wholesale",
+      "[tick 1/3]" in text2 and "[tick 2/3]" in text2, text2[:400])
+check("log header uses the step the action was issued at", "Action 1 | Step 1" in text2, text2[:400])
 check("frames saved by the agent", len(list((ws / "wsp" / "frames").glob("*.png"))) >= 5)
 
 agent2 = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
