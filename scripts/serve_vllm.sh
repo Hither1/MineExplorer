@@ -30,20 +30,58 @@ GPU_FRAC=${VLLM_GPU_FRACTION:-0.90}
 # and the agent silently cannot act: a failure that looks like a bad model rather
 # than a missing flag.
 TOOL_PARSER=${VLLM_TOOL_PARSER:-qwen3_xml}
-# Eager by default. torch.compile is where the first successful load died: the step
-# was killed mid-"Dynamo bytecode transform" with the weights already resident, and
-# compilation spawns parallel workers whose host memory is what ran out. This
-# workload is one agent request at a time, so CUDA graphs buy little. Set
-# VLLM_EAGER=0 to re-enable compilation once the stack has proven itself.
-EAGER=${VLLM_EAGER:-1}
-# One GPU holds the model comfortably -- 27B in bf16 is ~54 GB of a 120 GB GH200 --
-# so tensor parallelism here buys latency, not capacity. It is worth buying: the
-# per-step cost of the non-PRO-LONG arms is one full generation, and at TP=1 with
-# eager execution the server decodes ~10-13 tokens/s per request, which is what puts
-# a 150-step baseline episode past its walltime while PRO-LONG, making a sixth as
-# many calls, finishes comfortably. A serving-speed asymmetry that lands on one arm
-# is not a neutral cost.
-TP=${VLLM_TP:-1}
+# CUDA graphs over eager kernels, which is not the same choice as torch.compile.
+# The first successful load died mid-"Dynamo bytecode transform" -- compilation
+# spawns parallel workers and their host memory is what ran out -- and the response
+# was --enforce-eager, carrying the reasoning that "one request at a time means CUDA
+# graphs buy little". That has it backwards. Grace (ARM) cores pay a high per-kernel
+# launch cost, and a 64-layer hybrid model decoding at batch size 1-2 is launch-bound
+# precisely where graphs pay most: measured 12.5 tok/s per request under eager, with
+# "Enforce eager set, disabling torch.compile and CUDAGraphs" in the server log.
+#
+# `mode=none` keeps the Dynamo/Inductor pass off, so the host-memory blowup cannot
+# recur, while `cudagraph_mode=FULL_DECODE_ONLY` still captures graphs over the eager
+# kernels. FULL_DECODE_ONLY is vLLM's own fallback for attention that cannot do
+# piecewise graphs (vllm/config/compilation.py:1409), which is this architecture.
+# VLLM_EAGER=1 restores --enforce-eager if a capture ever fails on a node; it is the
+# escape hatch, not the default, because eager is what truncated the baseline arms.
+EAGER=${VLLM_EAGER:-0}
+# Two GPUs, not one. Tensor parallelism here buys latency, not capacity (27B in bf16
+# is ~54 GB of a 120 GB GH200), and latency is what decides which arms finish: the
+# non-PRO-LONG arms spend one full generation per step, so a slow decode truncates
+# them at walltime while PRO-LONG, calling a sixth as often, finishes. A serving
+# asymmetry that lands on one arm is not a neutral cost.
+#
+# TP is second in line behind graphs and depends on them: under eager, TP=2 adds two
+# all-reduce launches per layer per token while shrinking the per-kernel work, so it
+# is close to a wash. TP=4 divides every head count cleanly too, but 1N/4G queues too
+# slowly on ghx4 to be worth the wait (dz, 2026-08-16).
+TP=${VLLM_TP:-2}
+# One per-request output cap for every arm. VLLMProvider already asks for 4096 on the
+# direct path; the codex path cannot -- it ignores max_tokens by design and codex
+# 0.147 has no max-output-tokens config key (confirmed absent from the vendored
+# binary) -- so the server is the only place the two arms can be made to match.
+#
+# vLLM applies this as a hard ceiling, not a default: get_max_tokens() takes a min
+# over the request's own value and this one (entrypoints/serve/utils/api_utils.py),
+# so a client asking for more is clamped rather than obeyed. Observed outputs
+# self-terminate around 1.4k tokens, so this binds nothing today; what it forecloses
+# is a repetition loop generating toward the 131k context end at decode speed, which
+# is hours inside one call with the job still looking alive.
+MAX_OUTPUT_TOKENS=${VLLM_MAX_OUTPUT_TOKENS:-4096}
+# Thinking off, pinned rather than inherited. Qwen3.8's chat template defaults
+# thinking ON -- with no kwarg it ends the generation prompt with a bare `<think>`
+# and injects a "Reasoning effort is set to ..." instruction into the system message
+# (verified by rendering the pinned revision's chat_template.jinja both ways). Main's
+# contract is tolerate-and-strip in the parser; the 3.5 protocol served with
+# reasoning off. Pinning it here matches the 3.5 protocol and stops a vLLM or
+# template upgrade from flipping cost and behaviour silently.
+#
+# Scope worth knowing before trusting it: request-level chat_template_kwargs override
+# this default, and vLLM *synthesises* enable_thinking=true from a Responses request's
+# `reasoning.effort` field. So this governs the direct-vLLM arm, and the codex arms
+# need the matching client-side setting (see mc_agent/llm_provider.py) to agree.
+CHAT_TEMPLATE_KWARGS=${VLLM_CHAT_TEMPLATE_KWARGS:-'{"enable_thinking": false}'}
 SERVER_SLUG=${SERVER_SLUG:-qwen38-27b}
 DISCOVERY_DIR=${DISCOVERY_DIR:-$ROOT_DIR/artifacts/servers}
 DISCOVERY=$DISCOVERY_DIR/$SERVER_SLUG.json
@@ -80,7 +118,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "starting vLLM: $MODEL_ID@$MODEL_REVISION on $HOST_FQDN:$PORT (max_len=$MAX_LEN)"
+echo "starting vLLM: $MODEL_ID@$MODEL_REVISION on $HOST_FQDN:$PORT (max_len=$MAX_LEN" \
+     "tp=$TP exec=$( [ "$EAGER" = 1 ] && echo eager || echo cudagraphs ) max_out=$MAX_OUTPUT_TOKENS" \
+     "chat_template_kwargs=$CHAT_TEMPLATE_KWARGS)"
 setsid "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
   --model "$MODEL_ID" --revision "$MODEL_REVISION" \
   --served-model-name "$SERVED_NAME" \
@@ -90,7 +130,9 @@ setsid "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
   --gpu-memory-utilization "$GPU_FRAC" \
   --trust-remote-code \
   --enable-auto-tool-choice --tool-call-parser "$TOOL_PARSER" \
-  $( [ "$EAGER" = 1 ] && echo --enforce-eager ) \
+  --override-generation-config "{\"max_new_tokens\": $MAX_OUTPUT_TOKENS}" \
+  --default-chat-template-kwargs "$CHAT_TEMPLATE_KWARGS" \
+  $( [ "$EAGER" = 1 ] && echo --enforce-eager || echo -cc.mode=none -cc.cudagraph_mode=FULL_DECODE_ONLY ) \
   > "$LOG" 2>&1 &
 SERVER_PID=$!
 SERVER_PGID=$SERVER_PID
@@ -123,6 +165,10 @@ if [[ "$SERVED" != "$SERVED_NAME" ]]; then
   exit 1
 fi
 
+# The serving configuration travels with the advert, not just the URL. Two of these
+# -- the output cap and the thinking pin -- change what the model produces, so a score
+# is only comparable to another score served the same way, and "which server answered"
+# has to be answerable months later from the run's own artifacts.
 cat > "$DISCOVERY.tmp" <<JSON
 {
   "url": "http://$HOST_FQDN:$PORT/v1",
@@ -131,6 +177,10 @@ cat > "$DISCOVERY.tmp" <<JSON
   "model": "$SERVED_NAME",
   "revision": "$MODEL_REVISION",
   "max_model_len": $MAX_LEN,
+  "max_output_tokens": $MAX_OUTPUT_TOKENS,
+  "tensor_parallel_size": $TP,
+  "execution": "$( [ "$EAGER" = 1 ] && echo eager || echo cudagraphs-full-decode-only )",
+  "chat_template_kwargs": $CHAT_TEMPLATE_KWARGS,
   "job": "${SLURM_JOB_ID:-none}",
   "started_at": "$(date -Iseconds)"
 }

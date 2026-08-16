@@ -276,6 +276,71 @@ check("the unchanged status is logged once, not once per step",
 check("the transition to verified-complete is logged the step it happens",
       text6.count(DONE) == 1, f"got {text6.count(DONE)}")
 
+# --- the serving contract: assert the argv, not the script text --------------------
+# Every property below changes what the model emits, so a regression here silently
+# produces numbers that are not comparable to the ones already in the ledger. The
+# check runs serve_vllm.sh with a stub interpreter that records its own argv, so it
+# asserts what the server is actually launched with rather than what the script looks
+# like it says.
+import os, subprocess
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def serve_argv(**env_overrides) -> list[str]:
+    tmp = pathlib.Path(tempfile.mkdtemp())
+    argv_file = tmp / "argv.txt"
+    stub = tmp / "python-stub"
+    stub.write_text(
+        '#!/usr/bin/env bash\n'
+        f'printf "%s\\n" "$@" >> "{argv_file}"\n'
+        'exit 0\n'
+    )
+    stub.chmod(0o755)
+    env = dict(
+        os.environ,
+        VLLM_PYTHON=str(stub),
+        DISCOVERY_DIR=str(tmp / "servers"),
+        ART_DIR=str(tmp),
+        VLLM_READY_TIMEOUT="0",
+        MINEEXPLORER_ROOT=str(ROOT),
+        **{k: str(v) for k, v in env_overrides.items()},
+    )
+    # Exits non-zero: the stub is not a server, so readiness never arrives. The argv is
+    # what is under test, and it is written before that.
+    subprocess.run(["bash", str(ROOT / "scripts" / "serve_vllm.sh")],
+                   env=env, capture_output=True, text=True, timeout=120)
+    lines = argv_file.read_text().splitlines() if argv_file.exists() else []
+    # Drop the pre-flight `-c import ...` dependency check; the server launch is last.
+    return lines[lines.index("-m"):] if "-m" in lines else lines
+
+
+def flag_value(argv: list[str], flag: str) -> str | None:
+    return argv[argv.index(flag) + 1] if flag in argv else None
+
+
+argv = serve_argv()
+check("serving: cudagraphs replace eager by default",
+      "--enforce-eager" not in argv and "-cc.cudagraph_mode=FULL_DECODE_ONLY" in argv, " ".join(argv))
+check("serving: compilation stays off so the Dynamo host-OOM cannot recur",
+      "-cc.mode=none" in argv)
+check("serving: tensor parallelism defaults to 2",
+      flag_value(argv, "--tensor-parallel-size") == "2", flag_value(argv, "--tensor-parallel-size"))
+check("serving: every arm gets the same 4096 output cap",
+      json.loads(flag_value(argv, "--override-generation-config") or "{}").get("max_new_tokens") == 4096,
+      flag_value(argv, "--override-generation-config"))
+check("serving: thinking is pinned off in the chat template",
+      json.loads(flag_value(argv, "--default-chat-template-kwargs") or "{}") == {"enable_thinking": False},
+      flag_value(argv, "--default-chat-template-kwargs"))
+# The escape hatch has to keep working: if a cudagraph capture ever fails on a node,
+# eager is how the run happens at all, and it must not need a mid-flight script edit.
+eager_argv = serve_argv(VLLM_EAGER="1")
+check("serving: VLLM_EAGER=1 still falls back to --enforce-eager",
+      "--enforce-eager" in eager_argv and "-cc.mode=none" not in eager_argv, " ".join(eager_argv))
+check("serving: the output cap is overridable for a deliberate probe",
+      json.loads(flag_value(serve_argv(VLLM_MAX_OUTPUT_TOKENS="256"),
+                            "--override-generation-config") or "{}").get("max_new_tokens") == 256)
+
 print()
 print(f"{'ALL PASS' if not fails else 'FAILURES: ' + ', '.join(fails)}")
 sys.exit(1 if fails else 0)
