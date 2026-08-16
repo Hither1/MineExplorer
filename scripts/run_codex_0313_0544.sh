@@ -17,6 +17,14 @@ PYTHON_BIN=${PYTHON_BIN:-/work/nvme/bdrx/dzhang5/conda/envs/mineexplorer-qwen35-
 CODEX_BIN=${CODEX_BIN:-/u/dzhang5/.nvm/versions/node/v22.16.0/bin/codex}
 MODEL_ID=${MODEL_ID:-gpt-5.6-sol}
 CODEX_EFFORT=${CODEX_EFFORT:-xhigh}
+# LOCAL_MODEL=1 starts the transformers-serve shim and points codex at it, so the
+# same harness can be driven by Qwen3.5-27B instead of a hosted model.
+LOCAL_MODEL=${LOCAL_MODEL:-0}
+QWEN_PORT=${QWEN_PORT:-30000}
+CODEX_BASE_URL=${CODEX_BASE_URL:-}
+SERVER_LOG=$RUN_ROOT/qwen-server.log
+SERVER_PID=""
+SERVER_PGID=""
 MAX_STEPS=${MAX_STEPS:-300}
 LOADING_COMMAND_STEPS=${LOADING_COMMAND_STEPS:-20}
 TEMPERATURE=${TEMPERATURE:-0.7}
@@ -53,6 +61,33 @@ done
 
 curl -fsS "${MC_SANDBOX_URL%/}/monitor/alive" > "$RUN_ROOT/minecraft-alive.json"
 
+cleanup() {
+  if [[ -n "$SERVER_PGID" ]] && kill -0 -- "-$SERVER_PGID" 2>/dev/null; then
+    kill -TERM -- "-$SERVER_PGID" 2>/dev/null || true
+    for _ in $(seq 1 20); do kill -0 -- "-$SERVER_PGID" 2>/dev/null || break; sleep 0.5; done
+    kill -KILL -- "-$SERVER_PGID" 2>/dev/null || true
+  fi
+  [[ -n "$SERVER_PID" ]] && wait "$SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+if [[ "$LOCAL_MODEL" == 1 ]]; then
+  export LOCAL_API_KEY=EMPTY
+  export HF_HOME=${HF_HOME:-/work/nvme/bdrx/dzhang5/huggingface}
+  setsid "$PYTHON_BIN" "$ROOT_DIR/scripts/serve_qwen_for_codex.py" serve "$MODEL_ID" \
+    --host 127.0.0.1 --port "$QWEN_PORT" --device cuda:0 --dtype auto \
+    --reasoning off --log-level info > "$SERVER_LOG" 2>&1 &
+  SERVER_PID=$!
+  SERVER_PGID=$SERVER_PID
+  for _ in $(seq 1 360); do
+    curl -fsS "http://127.0.0.1:$QWEN_PORT/health" >/dev/null 2>&1 && break
+    kill -0 "$SERVER_PID" 2>/dev/null || { echo "model server died; see $SERVER_LOG" >&2; exit 1; }
+    sleep 5
+  done
+  CODEX_BASE_URL=${CODEX_BASE_URL:-http://127.0.0.1:$QWEN_PORT/v1}
+  echo "local model server ready; codex -> $CODEX_BASE_URL"
+fi
+
 eval_args=(
   --model "$MODEL_ID"
   --benchmark-dir "$TASK_VIEW"
@@ -62,6 +97,7 @@ eval_args=(
   --num-workers 1
   --use-codex
   --codex-effort "$CODEX_EFFORT"
+  --codex-base-url "$CODEX_BASE_URL"
   --temperature "$TEMPERATURE"
   --agent-mode "$AGENT_MODE"
   --resume

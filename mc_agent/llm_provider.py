@@ -271,13 +271,20 @@ class CodexProvider(BaseLLMProvider):
         max_images: int | None = None,
         timeout: int = 900,
         transcript_dir: str | None = None,
+        base_url: str | None = None,
     ) -> None:
-        super().__init__(api_key=None, api_base=None)
+        super().__init__(api_key=None, api_base=base_url)
         self.default_model = model_name
         self.reasoning_effort = reasoning_effort
         self.codex_bin = codex_bin or os.environ.get("CODEX_BIN", "codex")
         self.max_images = max_images
         self.timeout = timeout
+        # When set, codex is redirected at a local OpenAI-compatible server instead
+        # of the account's hosted models, which is how a local model gets driven
+        # through the same harness. The server must tolerate the Responses API's
+        # `developer` role and codex's `client_metadata`; see
+        # scripts/serve_qwen_for_codex.py.
+        self.base_url = base_url
         self.transcript_dir = Path(transcript_dir) if transcript_dir else None
         if self.transcript_dir:
             self.transcript_dir.mkdir(parents=True, exist_ok=True)
@@ -288,7 +295,8 @@ class CodexProvider(BaseLLMProvider):
 
         logger.info(
             f"[CodexProvider] model={model_name} effort={reasoning_effort} "
-            f"max_images={max_images} bin={self.codex_bin}"
+            f"max_images={max_images} bin={self.codex_bin} "
+            f"endpoint={base_url or 'hosted'}"
         )
 
     @staticmethod
@@ -354,6 +362,14 @@ class CodexProvider(BaseLLMProvider):
                 "-s", "workspace-write",
                 "-o", str(out_file),
             ]
+            if self.base_url:
+                cmd += [
+                    "-c", "model_provider=local",
+                    "-c", 'model_providers.local.name="local"',
+                    "-c", f'model_providers.local.base_url="{self.base_url}"',
+                    "-c", 'model_providers.local.wire_api="responses"',
+                    "-c", 'model_providers.local.env_key="LOCAL_API_KEY"',
+                ]
             for img in images:
                 cmd += ["-i", str(img)]
             # `-i/--image` is variadic, so a positional prompt appended after it is

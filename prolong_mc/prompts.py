@@ -11,24 +11,50 @@ workspace, the actions.json contract, briefing-then-plan, the instruction to kee
 plans short while testing a hypothesis, and the log-window ablation wording.
 """
 
-# The action dict mirrors mc_agent.action_space.ActionState, which is what the
-# runner validates against, so the prompt and the validator cannot drift.
+# Mirrors mc_agent/context.py's BASE_PROMPT as closely as the mechanism allows.
+# Wording that differs between the two arms is a confound, so the action reference and
+# the movement guidance below are kept near-verbatim from the baseline; only the
+# `repeat` field (Minecraft actions are temporally extended and PRO-LONG submits plans,
+# not single steps) and the key names are adapted. Key names follow ActionState, which
+# is what the runner validates against: `hotbars` as a 9-element list rather than
+# `hotbar.1`..`hotbar.9`, and `swap_hands`/`pick_item` rather than the wire spelling.
 ACTION_REFERENCE = """\
 Each entry is `{{"action": {{...}}, "repeat": N}}` — the action dict is applied for N
-consecutive environment ticks (1-{repeat_cap}). Minecraft actions are temporally
-extended: one tick of `forward` moves a fraction of a block, so use `repeat` rather
-than listing the same action many times.
+consecutive environment ticks (1-{repeat_cap}). One tick of `forward` covers a fraction
+of a block, so use `repeat` instead of listing the same action many times.
 
-Action dict keys (all optional, default 0):
-- movement: `forward`, `back`, `left`, `right` — 0 or 1. `left`/`right` STRAFE
-  sideways; they do NOT change which way you face.
-- `camera`: `[pitch_delta, yaw_delta]` in degrees. Positive pitch looks DOWN,
-  negative looks UP; positive yaw turns RIGHT. This is the only way to change facing.
-- `jump`, `sneak`, `sprint`, `attack`, `use` — 0 or 1. `sneak`/`sprint` must be
-  combined with a movement key.
-- `inventory`, `drop`, `swap_hands`, `pick_item` — 0 or 1.
-- `hotbars`: a 9-element 0/1 list, at most one set.
-- `ESC`: 1 ends the episode immediately. Only use it when the task is complete.
+Available keys (omitted keys default to 0, so specify only what you want):
+- "ESC": 0 or 1, press ESC to end the episode (usually 0)
+- "attack": 0 or 1, attack/mine blocks
+- "back": 0 or 1, move backward
+- "camera": [pitch_delta, yaw_delta] in degrees (e.g. [0, 45] to look right, [-20, 0] to
+  look up). **IMPORTANT**: this is a RELATIVE change added to your CURRENT camera angle,
+  not an absolute target — repeating the same camera move across several steps keeps
+  rotating further in that direction. Pitch is clamped to [-90 (straight up),
+  90 (straight down)]; if you keep pushing pitch the same direction it sticks at the
+  clamp and you will not be looking at anything useful. Trust the pitch value in the
+  log's [STATE] lines over your own visual read.
+- "drop": 0 or 1, drop current item
+- "forward": 0 or 1, move forward
+- "jump": 0 or 1, jump
+- "left" / "right": 0 or 1, STRAFE sideways — these do NOT change your facing
+- "sneak": 0 or 1, sneak/crouch
+- "sprint": 0 or 1, sprint (MUCH FASTER movement — use this when exploring!)
+- "use": 0 or 1, use item or place block
+- "inventory": 0 or 1, open/close inventory
+- "hotbars": a 9-element list of 0/1, at most one set
+- "pick_item", "swap_hands": 0 or 1
+
+**Movement tips for efficient exploration:**
+- **USE SPRINT!** Combine "forward": 1 with "sprint": 1 for FAST movement in open areas.
+- **Turn, then move — don't do both in the same entry.** A camera yaw change and
+  "forward" fire in the same in-game tick, so pairing a large yaw turn with "forward"
+  turns your path into a tight loop instead of a straight line. Spend one entry turning
+  (camera yaw only, forward=0), then several ticks moving straight (forward=1,
+  camera=[0,0]) before turning again. Use the [STATE] lines — not your step count or
+  visual impression — to confirm you are covering new ground.
+- Use "jump": 1 with forward movement to clear obstacles and one-block rises.
+- Use camera to look around before deciding where to move.
 """
 
 SYSTEM_PROMPT = """\
@@ -60,12 +86,12 @@ files accumulate. Feel free to save notes, state, or helper functions.
     [PLAN] — your own plan from the previous call.
 
 **What you can rely on**:
-- Coordinates and facing in `[STATE]` are ground truth from the environment.
-- Nothing tells you whether the task is complete; judge that from what you see.
-- Walking into a wall, a fence, or a one-block ledge leaves `moved` at ~0. Jumping
-  clears a one-block rise.
-- Turning and walking at the same time every step traces a circle. Every frame will
-  look like new scenery while you get nowhere; the log's coordinates will show it.
+- Coordinates and facing in `[STATE]` are ground truth from the environment; your own
+  visual read of a frame is not proof an action worked.
+- `moved=0.00` repeatedly means you are blocked by terrain (a wall, a fence, a
+  one-block ledge), or that you used `left`/`right`, which strafe without turning.
+- {esc_policy}
+- You keep no separate memory: `logs.txt` and whatever you save in `./` are your memory.
 
 **Response format**: a strategic briefing, then
 [PLAN]
@@ -110,6 +136,20 @@ Update your briefing and write a new ./actions.json.
 """
 
 
+# The baseline ties ESC to the environment-verified status line, so this arm has to
+# say the same thing under the same protocol or the two are not information-matched.
+ESC_POLICY_HINT = (
+    "Only set ESC=1 when the environment has verified the task complete. Your own "
+    "visual read of a frame is not proof (a door may look open, an item may look "
+    "mined, when it was not)."
+)
+ESC_POLICY_NOHINT = (
+    "Nothing verifies task completion for you — decide from what you observe. Set "
+    "ESC=1 only once you are confident every part of the task is done, remembering "
+    "that a landmark seen from a distance is not the same as having reached it."
+)
+
+
 def build_system_prompt(
     task_text: str,
     action_cap: int,
@@ -117,6 +157,7 @@ def build_system_prompt(
     repeat_cap: int,
     log_window: int | None,
     stateless: bool = False,
+    milestone_hint: bool = False,
 ) -> str:
     """Render the system prompt. `log_window` follows PRO-LONG's convention:
     None = full log, 0 = latest state only, >0 = that many action sections."""
@@ -135,6 +176,7 @@ def build_system_prompt(
     ) if multi_turn else ""
 
     prompt = SYSTEM_PROMPT.format(
+        esc_policy=ESC_POLICY_HINT if milestone_hint else ESC_POLICY_NOHINT,
         task_text=task_text,
         action_cap=action_cap,
         step_cap=step_cap,

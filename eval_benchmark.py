@@ -234,6 +234,7 @@ def _run_benchmark(
     vllm_url: str = "http://localhost:8000/v1",
     use_codex: bool = False,
     codex_effort: str = "xhigh",
+    codex_base_url: str = "",
     frame_size: int = FRAME_BUFFER_SIZE,
     use_friday: bool = False,
     temperature: float = 0.7,
@@ -269,6 +270,7 @@ def _run_benchmark(
             model_name=model,
             reasoning_effort=codex_effort,
             transcript_dir=str(output_dir / "codex_calls"),
+            base_url=codex_base_url or None,
         )
     elif use_vllm:
         _provider = VLLMProvider(model_name=model, base_url=vllm_url, temperature=temperature)
@@ -611,6 +613,7 @@ def _worker_eval(worker_args: dict) -> dict:
         vllm_url=worker_args.get("vllm_url", "http://localhost:8000/v1"),
         use_codex=worker_args.get("use_codex", False),
         codex_effort=worker_args.get("codex_effort", "xhigh"),
+        codex_base_url=worker_args.get("codex_base_url", ""),
         frame_size=worker_args.get("frame_size", FRAME_BUFFER_SIZE),
         use_friday=worker_args.get("use_friday", False),
         temperature=worker_args.get("temperature", 0.7),
@@ -640,6 +643,8 @@ def eval_benchmark(
                                    help="Drive the model through the Codex CLI (subscription auth, no API key)"),
     codex_effort: str = typer.Option("xhigh", "--codex-effort",
                                      help="Reasoning effort for --use-codex"),
+    codex_base_url: str = typer.Option("", "--codex-base-url",
+                                       help="Point --use-codex at a local OpenAI-compatible server instead of the account's hosted models"),
     num_workers: int = typer.Option(1, "--num-workers", "-n",
                                     help="Number of parallel workers"),
     limit: Optional[int] = typer.Option(None, "--limit",
@@ -755,6 +760,7 @@ def eval_benchmark(
                     vllm_url=vllm_url,
                     use_codex=use_codex,
                     codex_effort=codex_effort,
+                    codex_base_url=codex_base_url,
                     use_friday=use_friday,
                     temperature=temperature,
                     use_milestone_hint=milestone_hint,
@@ -802,6 +808,7 @@ def eval_benchmark(
                     "vllm_url": vllm_url,
                     "use_codex": use_codex,
                     "codex_effort": codex_effort,
+                    "codex_base_url": codex_base_url,
                     "use_friday": use_friday,
                     "temperature": temperature,
                     "use_milestone_hint": milestone_hint,
