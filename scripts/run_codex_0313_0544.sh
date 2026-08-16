@@ -22,7 +22,6 @@ CODEX_EFFORT=${CODEX_EFFORT:-xhigh}
 LOCAL_MODEL=${LOCAL_MODEL:-0}
 QWEN_PORT=${QWEN_PORT:-30000}
 CODEX_BASE_URL=${CODEX_BASE_URL:-}
-SERVER_LOG=$RUN_ROOT/qwen-server.log
 SERVER_PID=""
 SERVER_PGID=""
 MAX_STEPS=${MAX_STEPS:-300}
@@ -33,6 +32,7 @@ MILESTONE_HINT=${MILESTONE_HINT:-0}
 RUN_ROOT=${ART_DIR:-$ROOT_DIR/artifacts/manual-codex-0313-0544}
 OUTPUT_DIR=${OUTPUT_DIR:-$RUN_ROOT/results}
 TASK_VIEW=$RUN_ROOT/benchmark-view
+SERVER_LOG=$RUN_ROOT/qwen-server.log
 
 if [[ -z ${MC_SANDBOX_URL:-} ]]; then
   echo "MC_SANDBOX_URL is required; wrap this with scripts/with_minecraft_arm64.sh" >&2
