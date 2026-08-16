@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-# G1: can the Codex CLI drive the local Qwen3.5-27B through a tool-using turn and
-# produce the actions.json that PRO-LONG's runner consumes?
+# G1: can the Codex CLI drive a model through a tool-using turn and produce the
+# actions.json that PRO-LONG's runner consumes?
 #
 # Everything downstream of the PRO-LONG port depends on this, so it is deliberately
 # the smallest thing that can answer it: no Minecraft, no PRO-LONG runner, just the
-# CLI, the local server, and PRO-LONG's own actions.json parser as the oracle.
+# CLI, a model, and PRO-LONG's own actions.json parser as the oracle.
+#
+# BACKEND=local  (default) local Qwen3.5-27B behind the transformers-serve shim.
+# BACKEND=openai           hosted gpt-5.6-sol, no GPU and no local server.
+#
+# The two arms share the prompts, the flags and the oracle byte for byte, so a
+# split verdict separates "the harness cannot work here" from "this model cannot
+# drive it" -- the one distinction the local arm alone can never make.
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -13,11 +20,14 @@ TRANSFORMERS_BIN=${TRANSFORMERS_BIN:-$(dirname "$PYTHON_BIN")/transformers}
 HF_HOME=${HF_HOME:-/work/nvme/bdrx/dzhang5/huggingface}
 MODEL_REVISION=${MODEL_REVISION:-fc05daec18b0a78c049392ed2e771dde82bdf654}
 MODEL_ID=${MODEL_ID:-Qwen/Qwen3.5-27B@$MODEL_REVISION}
+BACKEND=${BACKEND:-local}
+OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.6-sol}
+OPENAI_EFFORT=${OPENAI_EFFORT:-xhigh}
 QWEN_PORT=${QWEN_PORT:-30000}
 QWEN_API_URL=http://127.0.0.1:$QWEN_PORT/v1
 CODEX_BIN=${CODEX_BIN:-/u/dzhang5/.nvm/versions/node/v22.16.0/bin/codex}
 PROLONG_DIR=${PROLONG_DIR:?set PROLONG_DIR to the PRO-LONG checkout}
-RUN_ROOT=${ART_DIR:-$ROOT_DIR/artifacts/manual-prolong-g1}
+RUN_ROOT=${ART_DIR:-$ROOT_DIR/artifacts/manual-prolong-g1-$BACKEND}
 WS=$RUN_ROOT/workspace
 SERVER_LOG=$RUN_ROOT/qwen-server.log
 SERVER_PID=""
@@ -46,7 +56,10 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-setsid "$TRANSFORMERS_BIN" serve "$MODEL_ID" \
+if [[ "$BACKEND" == local ]]; then
+# Not `transformers serve` directly: Codex sends `client_metadata`, which the stock
+# server 422s on. The shim drops unknown fields and logs each one.
+setsid "$PYTHON_BIN" "$ROOT_DIR/scripts/serve_qwen_for_codex.py" serve "$MODEL_ID" \
   --host 127.0.0.1 --port "$QWEN_PORT" --device cuda:0 --dtype auto \
   --reasoning off --log-level info > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
@@ -64,12 +77,23 @@ echo "== server up: $(cat "$RUN_ROOT/qwen-models.json" | head -c 200)"
 # server actually advertises -- the @revision form the eval client uses is rejected here.
 SERVED_MODEL=$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1]))["data"][0]["id"])' "$RUN_ROOT/qwen-models.json")
 echo "== serving as: $SERVED_MODEL"
+else
+  # The hosted arm needs the account credential but must not inherit config.toml's
+  # model/effort -- those stay on the command line so both arms are configured the
+  # same way and the only difference is which model answers.
+  ln -sfn "$HOME/.codex/auth.json" "$CODEX_HOME/auth.json"
+  SERVED_MODEL=$OPENAI_MODEL
+  echo "== hosted backend: $SERVED_MODEL (effort=$OPENAI_EFFORT)"
+fi
 
 # Same flags PRO-LONG uses, plus the provider redirect. --ignore-user-config means
 # config.toml cannot carry the provider, so it has to come through -c.
 codex_common=(
   --json --skip-git-repo-check --ignore-user-config --ignore-rules
   -m "$SERVED_MODEL"
+)
+if [[ "$BACKEND" == local ]]; then
+codex_common+=(
   -c model_provider=local
   -c 'model_providers.local.name="qwen-local"'
   -c "model_providers.local.base_url=\"$QWEN_API_URL\""
@@ -79,7 +103,15 @@ codex_common=(
   -c 'model_providers.local.wire_api="responses"'
   -c 'model_providers.local.env_key="LOCAL_API_KEY"'
   -c 'model_reasoning_effort="low"'
-  -s danger-full-access
+)
+else
+codex_common+=( -c "model_reasoning_effort=\"$OPENAI_EFFORT\"" )
+fi
+codex_common+=(
+  # workspace-write, not danger-full-access: bubblewrap confines writes to the
+  # workspace and denies the agent's own commands any network, so it cannot reach
+  # the Minecraft sandbox while codex itself still reaches the model.
+  -s workspace-write
 )
 
 run_codex() {  # name, timeout, prompt
@@ -87,8 +119,10 @@ run_codex() {  # name, timeout, prompt
   echo "== $name"
   local t0=$SECONDS
   set +e
+  # </dev/null or codex treats the batch job's stdin as an appended <stdin> block.
   ( cd "$WS" && timeout "$tmo" "$CODEX_BIN" exec "${codex_common[@]}" \
-      -o "$WS/last_message.txt" "$prompt" ) > "$RUN_ROOT/$name.jsonl" 2> "$RUN_ROOT/$name.err"
+      -o "$WS/last_message.txt" "$prompt" < /dev/null ) \
+      > "$RUN_ROOT/$name.jsonl" 2> "$RUN_ROOT/$name.err"
   local rc=$?
   set -e
   echo "   exit=$rc elapsed=$((SECONDS - t0))s events=$(wc -l < "$RUN_ROOT/$name.jsonl")"
@@ -155,7 +189,9 @@ for f in sorted(pathlib.Path(sys.argv[1]).glob("t*.jsonl")):
     if usage: print(f"     usage: {json.dumps(usage)[:300]}")
 PY
 
-echo "== server-side view of the requests codex actually made"
-grep -iE "POST /v1|responses|error|Traceback|unsupported" "$SERVER_LOG" | tail -15
+if [[ "$BACKEND" == local ]]; then
+  echo "== server-side view of the requests codex actually made"
+  grep -iE "POST /v1|responses|error|Traceback|unsupported" "$SERVER_LOG" | tail -15
+fi
 
 echo "== G1 done -> $RUN_ROOT"
