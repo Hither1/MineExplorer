@@ -232,7 +232,43 @@ descriptions were removed", and at 131072 it does not. The key is live. Whether
 against a real server — the transcripts carry a compaction counter and the audit
 reports it, and a nonzero count means the arm needs re-describing rather than rerunning.
 
-**Blocked on the queue, not on code.** The server job (2958782, 2 GPUs on ghx4, 8h) is
-`Reason=Priority` with an estimated start of 2026-08-17 12:56. Until it runs, nothing
-can measure decode tok/s, the 4096 cap in effect, thinking off in a real output, or
-compaction over a long episode.
+**The thinking pin did not reach the arms it was for.** `--default-chat-template-kwargs`
+binds the direct-vLLM arm only: vLLM synthesises `enable_thinking = (effort != "none")`
+from a Responses request's `reasoning.effort` and merges the server default *underneath*
+the request (`responses/protocol.py:329-330`, `renderers/params.py:99-115`), so every
+codex turn overrode it — and every Qwen3.8 arm in the matrix is a codex arm. Verified by
+capturing what codex puts on the wire (a local server that records the body and fails
+the call): `reasoning: {"effort": "low", "summary": "auto"}` verbatim,
+`chat_template_kwargs: null`, `max_output_tokens: null`. Between effort `low` and `none`
+the request differs in that one field; instructions (20,751 chars) and all 10 tool
+definitions are byte-identical. Rendering the pinned template shows what it buys: with
+thinking on the prompt ends with a bare `<think>`, with `none` it ends with a closed
+`<think></think>` and the "Reasoning effort is set to ..." line disappears. Both codex
+paths now send `none` for locally served models.
+
+Consequence for what is already measured: **thinking was ON for every finished Qwen3.8
+run**, which was invisible because the tag lives in the prompt. Those runs are tagged
+`SERVING: think-on,nocap` in RUN_LEDGER, and compare_runs carries the tag in the
+protocol column so they cannot pool with anything served the new way.
+
+**Blocked on the queue, not on code.** Both server jobs — 2958782 (8h, for the matrix)
+and 2959165 (2h, submitted to backfill ahead of it for the ladder alone) — are
+`Reason=Priority`, estimated 2026-08-17. Until one runs, nothing can measure decode
+tok/s, the cap in effect, thinking off in a real output, or compaction over a long
+episode.
+
+### When a server does come up, in order
+
+1. `bash scripts/use_model_server.sh qwen38-27b-probe` (or `qwen38-27b` for the 8h job)
+   to resolve and verify the advert.
+2. `python scripts/check_model_server.py <url> --model Qwen/Qwen3.8-27B` — identity,
+   text, vision, the Responses shape, and then the three that decide what a score means:
+   the 4096 cap (expect exactly 4096, finish_reason `length`), decode ≥30 tok/s, and
+   thinking off at effort `none`. A failure here is a serving-layer failure; do not
+   spend a matrix seed on it.
+3. One 40-step prolong episode, ledgered as a probe (`TRUNCATED`/probe convention, not
+   in the comparison pool), then `grep -l compact` over its `codex_turns/*.events.jsonl`
+   — plus the `compactions` field in `prolong_vision_audit.json`, which must read 0. A
+   nonzero count means `model_auto_compact_token_limit` does not hold the line and the
+   arm needs re-describing, not re-running.
+4. Only then the matrix, staged.
