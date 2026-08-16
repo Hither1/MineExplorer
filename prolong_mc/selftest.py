@@ -80,6 +80,58 @@ check("stateless keeps the objective trace", "[STATE]" in sl.path.read_text())
 
 check("state_line handles missing pos", state_line(None, None) == "[STATE] unavailable")
 
+
+# --- ProlongAgent: the queue/log wiring, with Codex stubbed out ---------------
+from mc_agent.action_space import MinerRLActionSpace
+from mc_agent.prolong_agent import ProlongAgent
+import numpy as np
+
+ws = pathlib.Path(tempfile.mkdtemp())
+agent = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
+                     workspace=ws / "wsp", action_cap=15, repeat_cap=20, step_cap=40)
+
+turns = {"n": 0}
+def fake_run(prompt):
+    turns["n"] += 1
+    if turns["n"] == 1:
+        return {"ok": True, "error": None, "message": "briefing\n[PLAN]\nwalk north",
+                "actions_json": json.dumps({"actions": [
+                    {"action": {"forward": 1, "sprint": 1}, "repeat": 3},
+                    {"action": {"camera": [0, 45]}, "repeat": 1}]})}
+    return {"ok": True, "error": None, "message": "[PLAN]\ndone",
+            "actions_json": json.dumps({"actions": [{"action": {"ESC": 1}, "repeat": 1}]})}
+agent.codex.run = fake_run
+agent.load_system_prompt("Find the temple.")
+check("AGENTS.md written once", (ws / "wsp" / "AGENTS.md").exists())
+
+frame = np.zeros((64, 64, 3), np.uint8)
+pos = {"x": 0.0, "y": 71.0, "z": 0.0, "pitch": 0.0, "yaw": 0.0}
+acts = []
+for step in range(1, 6):  # plan 1 gives 4 steps, plan 2 gives 1
+    p_ = dict(pos, z=float(step))
+    think, action, _ = agent.get_action([frame], [], [], step, info={"player_pos": p_})
+    acts.append(action)
+
+check("one analyzer turn covered four steps", turns["n"] == 2, f"turns={turns['n']}")
+check("queue drained exactly", len(agent.queue) == 0)
+check("first action is forward+sprint", acts[0].forward == 1 and acts[0].sprint == 1)
+check("fourth action is the camera turn", acts[3].camera == [0.0, 45.0])
+check("fifth action comes from the second plan", acts[4].ESC == 1)
+check("plan text reaches the thought", "walk north" in (acts[0].think or ""))
+
+text2 = (ws / "wsp" / "logs.txt").read_text()
+check("agent log has initial + actions", text2.count(SEPARATOR) >= 5, f"got {text2.count(SEPARATOR)}")
+check("agent log records moved", "moved=1.00" in text2)
+check("agent log records the plan", "[PLAN]" in text2)
+check("frames saved by the agent", len(list((ws / "wsp" / "frames").glob("*.png"))) >= 5)
+
+agent2 = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
+                      workspace=ws / "wsp2", analyzer_retries=2)
+agent2.codex.run = lambda prompt: {"ok": False, "error": "boom", "message": "", "actions_json": None}
+agent2.load_system_prompt("t")
+_, bad_action, _ = agent2.get_action([frame], [], [], 1, info={"player_pos": pos})
+check("analyzer failure returns None, not a no-op", bad_action is None)
+
 print()
 print(f"{'ALL PASS' if not fails else 'FAILURES: ' + ', '.join(fails)}")
 sys.exit(1 if fails else 0)

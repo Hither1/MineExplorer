@@ -26,7 +26,7 @@ from mc_agent import (
     HypothesisAgent, HypothesisContextBuilder,
 )
 
-AGENT_MODES = ("default", "hypothesis")
+AGENT_MODES = ("default", "hypothesis", "prolong")
 
 FRAME_BUFFER_SIZE = 20
 MAX_STEPS = 300
@@ -278,7 +278,22 @@ def _run_benchmark(
         _provider = OpenAIProvider(AGENT_API_KEY, AGENT_API_BASE, model, temperature=temperature)
     if agent_mode not in AGENT_MODES:
         raise ValueError(f"agent_mode must be one of {AGENT_MODES}, got {agent_mode!r}")
-    if agent_mode == "hypothesis":
+    if agent_mode == "prolong":
+        # Same env, same loop, same scorer as the baseline; only the memory
+        # mechanism differs. Codex is the model channel, so the provider above is
+        # constructed but unused.
+        from mc_agent.prolong_agent import ProlongAgent
+        agent = ProlongAgent(
+            action_space=MinerRLActionSpace(),
+            provider=_provider,
+            model=model,
+            workspace=output_dir / "prolong_workspace",
+            transcript_dir=output_dir / "codex_turns",
+            reasoning_effort=codex_effort,
+            base_url=codex_base_url or None,
+            codex_home=os.environ.get("CODEX_HOME"),
+        )
+    elif agent_mode == "hypothesis":
         agent = HypothesisAgent(
             action_space=MinerRLActionSpace(),
             provider=_provider,
@@ -400,12 +415,16 @@ def _run_benchmark(
             logger.info(f"[{run_id}] --- Step {step + 1}/{max_steps} ---")
 
             try:
+                # ProlongAgent writes its own [STATE] lines, so it needs the raw
+                # info the hints are derived from; the other agents do not accept it.
+                _agent_extra = {"info": info} if agent_mode == "prolong" else {}
                 thought, action, memory_update = agent.get_action(
                     list(frame_buffer), list(thought_history), list(action_history), step + 1,
                     long_term_memory=long_term_memory,
                     milestone_hint=milestone_hint,
                     camera_hint=_camera_state_hint(info),
-                    movement_hint=_movement_state_hint(info, _spawn_xz, _pos_history)
+                    movement_hint=_movement_state_hint(info, _spawn_xz, _pos_history),
+                    **_agent_extra,
                 )
             except Exception as agent_err:
                 logger.error(f"[{run_id}] Agent call failed: {agent_err}. Retrying in 10s...")
