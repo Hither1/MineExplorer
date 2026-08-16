@@ -77,6 +77,18 @@ if [[ -n "$MODEL_SERVER" ]]; then
   # asserts the live server serves the model this run claims to measure.
   CODEX_BASE_URL=$(bash "$ROOT_DIR/scripts/use_model_server.sh" "$MODEL_SERVER" "$MODEL_ID") || exit 1
   echo "codex -> $CODEX_BASE_URL"
+  # Codex has no catalog entry for a locally served model, so it guesses the context
+  # window. Take the number from the server's own advert rather than restating it
+  # here: the two would drift, and the direction that hurts is codex believing there
+  # is more room than the server will give it.
+  DISCOVERY=${DISCOVERY_DIR:-$ROOT_DIR/artifacts/servers}/$MODEL_SERVER.json
+  if CW=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["max_model_len"])' \
+            "$DISCOVERY" 2>/dev/null); then
+    export CODEX_MODEL_CONTEXT_WINDOW=$CW
+    echo "codex context window <- $DISCOVERY: $CW"
+  else
+    echo "warning: $DISCOVERY has no max_model_len; codex keeps its built-in default" >&2
+  fi
 fi
 
 eval_args=(

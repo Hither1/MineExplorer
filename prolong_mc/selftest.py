@@ -198,6 +198,68 @@ check("images are followed by a flag, not by the session id",
       r_img[r_img.index("/tmp/b.png") + 1] == "-m", f"got {r_img[r_img.index('/tmp/b.png') + 1]}")
 check("session id survives image attachment", r_img[-2] == ct.session_id)
 
+# --- what codex is told about a locally served model -----------------------------
+# The context window is what codex's own accounting runs on, and the auto-compact
+# trigger is what decides whether a long resumed conversation stays the conversation
+# this arm claims to run. Both must reach BOTH codex paths, and neither may reach a
+# hosted model, where codex's own metadata is right and ours would overwrite a fact
+# with a guess.
+local = CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true",
+                  base_url="http://node:30000/v1", context_window=131072)._args()
+hosted = CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true")._args()
+check("local codex is told the real context window",
+      "model_context_window=131072" in local, " ".join(local))
+check("auto-compaction is pushed past the context window, so overflow arrives first",
+      "model_auto_compact_token_limit=1048576" in local, " ".join(local))
+check("a hosted model keeps codex's own metadata",
+      not any("model_context_window" in a or "auto_compact" in a for a in hosted))
+
+from mc_agent.llm_provider import CodexProvider
+prov = CodexProvider(codex_bin="/bin/true", base_url="http://node:30000/v1",
+                     context_window=131072)
+check("the provider path carries the same window as the prolong path",
+      prov.context_window == 131072)
+
+# The window is not restated in code: it comes from the server's own advert, exported
+# by the runner, so a server started at a different length cannot silently disagree.
+import importlib, os
+import prolong_mc.codex_backend as _cb
+os.environ["CODEX_MODEL_CONTEXT_WINDOW"] = "65536"
+importlib.reload(_cb)
+check("the context window follows the server's advert through the environment",
+      "model_context_window=65536" in _cb.CodexTurn(
+          pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true",
+          base_url="http://node:30000/v1")._args())
+del os.environ["CODEX_MODEL_CONTEXT_WINDOW"]
+importlib.reload(_cb)
+
+# A compaction event must be counted, not passed over: it means the conversation was
+# rewritten, so the arm is no longer the one being compared. Prose is not an event --
+# the model writes about compacting plans, and a substring match on the word would
+# turn its vocabulary into a finding.
+import unittest.mock as _mock
+
+
+def _run_events(events) -> int:
+    turn = _cb.CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true")
+
+    class _Proc:
+        stdout = "\n".join(json.dumps(e) for e in events) + "\n"
+        stderr = ""
+        returncode = 0
+
+    with _mock.patch("subprocess.run", return_value=_Proc()):
+        turn.run("hi")
+    return turn.compactions
+
+
+check("a compaction event is counted",
+      _run_events([{"type": "thread.compacted", "usage": {}}]) == 1)
+check("a model writing the word 'compact' is not a compaction",
+      _run_events([{"type": "item.completed",
+                    "item": {"type": "agent_message",
+                             "text": "let me compact this plan"}}]) == 0)
+
 # --- overflow: the session must be dropped, not retried into ---------------------
 from prolong_mc.codex_backend import is_overflow
 check("overflow classifier catches the context-window message",

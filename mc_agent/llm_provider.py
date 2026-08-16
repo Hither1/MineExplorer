@@ -25,6 +25,10 @@ from loguru import logger
 from openai import OpenAI
 
 from mc_agent.utils import deco_retry_on_ratelimit
+# One definition of what codex is told about a locally served model, so the two codex
+# paths -- this provider and PRO-LONG's own turn runner -- cannot drift apart on the
+# setting that decides whether the conversation gets compacted underneath them.
+from prolong_mc.codex_backend import DEFAULT_CONTEXT_WINDOW, _metadata_args
 
 
 # ---------------------------------------------------------------------------
@@ -272,10 +276,12 @@ class CodexProvider(BaseLLMProvider):
         timeout: int = 900,
         transcript_dir: str | None = None,
         base_url: str | None = None,
+        context_window: int | None = None,
     ) -> None:
         super().__init__(api_key=None, api_base=base_url)
         self.default_model = model_name
         self.reasoning_effort = reasoning_effort
+        self.context_window = context_window or DEFAULT_CONTEXT_WINDOW
         self.codex_bin = codex_bin or os.environ.get("CODEX_BIN", "codex")
         self.max_images = max_images
         self.timeout = timeout
@@ -369,7 +375,7 @@ class CodexProvider(BaseLLMProvider):
                     "-c", f'model_providers.local.base_url="{self.base_url}"',
                     "-c", 'model_providers.local.wire_api="responses"',
                     "-c", 'model_providers.local.env_key="LOCAL_API_KEY"',
-                ]
+                ] + _metadata_args(self.context_window)
             for img in images:
                 cmd += ["-i", str(img)]
             # `-i/--image` is variadic, so a positional prompt appended after it is

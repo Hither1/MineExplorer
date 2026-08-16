@@ -26,6 +26,47 @@ from typing import Any
 from loguru import logger
 
 _SESSION_RE = re.compile(r'"(?:thread_id|session_id)"\s*:\s*"([0-9a-fA-F-]{36})"')
+# Compaction announces itself in a type-ish field, never in prose, so this cannot be
+# tripped by a model that happens to write the word. See `_metadata_args` for why a
+# single hit matters.
+_COMPACTION_RE = re.compile(r'"(?:type|kind|action_trigger)"\s*:\s*"[^"]*compact', re.I)
+
+# What codex should believe about a locally served model. Codex has no catalog entry
+# for it -- every turn logs `Model metadata for <name> not found. Defaulting to
+# fallback metadata` -- so without this its context accounting is a guess.
+#
+# Two things this is NOT. It does not silence that warning: the warning is emitted by
+# the catalog lookup on the model *name*, and it still appears verbatim with
+# `-c model_context_window=131072` set (measured against a no-config baseline and
+# against `-m gpt-5.6-sol`, which is in the catalog and warns not at all). Silencing it
+# needs `model_catalog_json`, whose schema is an undocumented nested struct that would
+# break every run on a codex upgrade -- not worth buying a quieter log with. And it is
+# not applied to hosted models, where codex's own metadata is right and ours would be
+# a guess overriding a fact.
+DEFAULT_CONTEXT_WINDOW = int(os.environ.get("CODEX_MODEL_CONTEXT_WINDOW", 131072))
+
+
+def _metadata_args(context_window: int) -> list[str]:
+    """Codex config for a model codex has never heard of.
+
+    `model_auto_compact_token_limit` is the load-bearing one. The vendored binary
+    carries auto-compaction and its fallback prompts, and telling codex the real
+    context window is exactly what would let it start compacting a long resumed
+    conversation as it fills. That would quietly replace PRO-LONG's memory story:
+    upstream's stance, which our overflow handler mirrors, is that codex has no
+    compaction and an overflowed session must cold-start, which is what keeps logs.txt
+    the memory of record. Set the trigger above the window so the server's own context
+    limit -- and the cold start that follows it -- always arrives first.
+
+    The direction of that comparison is inferred, not documented, so it is not trusted
+    on its own: `CodexTurn` counts compaction events in the transcripts and reports
+    them in the vision audit, and a nonzero count means this argument is wrong and the
+    arm needs re-describing rather than quietly re-running.
+    """
+    return [
+        "-c", f"model_context_window={context_window}",
+        "-c", f"model_auto_compact_token_limit={context_window * 8}",
+    ]
 
 
 def is_overflow(name: str, text: str) -> bool:
@@ -57,11 +98,13 @@ class CodexTurn:
         codex_home: Path | None = None,
         timeout: int = 1800,
         transcript_dir: Path | None = None,
+        context_window: int | None = None,
     ) -> None:
         self.workspace = Path(workspace)
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.base_url = base_url
+        self.context_window = context_window or DEFAULT_CONTEXT_WINDOW
         self.codex_bin = codex_bin or os.environ.get("CODEX_BIN", "codex")
         self.codex_home = Path(codex_home) if codex_home else None
         self.timeout = timeout
@@ -75,6 +118,10 @@ class CodexTurn:
         self.images_attached = 0
         self.view_image_calls = 0
         self.overflow_resets = 0
+        # Must stay 0. A nonzero count means codex compacted the conversation, so the
+        # arm is no longer "PRO-LONG memory + a cold start on overflow" and cannot be
+        # averaged with the runs that were.
+        self.compactions = 0
 
     def write_system_prompt(self, text: str) -> None:
         """Upstream puts the system prompt in AGENTS.md, which Codex discovers from
@@ -109,7 +156,7 @@ class CodexTurn:
                 "-c", f'model_providers.local.base_url="{self.base_url}"',
                 "-c", 'model_providers.local.wire_api="responses"',
                 "-c", 'model_providers.local.env_key="LOCAL_API_KEY"',
-            ]
+            ] + _metadata_args(self.context_window)
         # workspace-write, not upstream's danger-full-access: writes stay in the
         # workspace and the agent's own commands get no network, so it cannot reach
         # the Minecraft sandbox and drive the world behind the runner's back.
@@ -184,6 +231,12 @@ class CodexTurn:
                 continue
             if '"view_image"' in line:
                 self.view_image_calls += 1
+            if _COMPACTION_RE.search(line):
+                self.compactions += 1
+                logger.error(
+                    f"[codex] turn {self.calls} shows a compaction event; the "
+                    f"conversation is no longer the one this arm claims to run: {line[:200]}"
+                )
             if event.get("type") in ("error", "turn.failed"):
                 raw = event.get("message") or event.get("error") or ""
                 if isinstance(raw, dict):

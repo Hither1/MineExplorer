@@ -163,6 +163,9 @@ class ProlongAgent:
                     "frames_attached": self.codex.images_attached,
                     "view_image_calls": self.codex.view_image_calls,
                     "overflow_resets": self.codex.overflow_resets,
+                    # Expected 0. Nonzero means codex compacted the conversation, which
+                    # is a different memory architecture than the one being measured.
+                    "compactions": self.codex.compactions,
                     "actions_logged": self._action_num,
                     "esc_rejections": self._esc_rejections,
                 },
