@@ -16,8 +16,9 @@ plans short while testing a hypothesis, and the log-window ablation wording.
 # the movement guidance below are kept near-verbatim from the baseline; only the
 # `repeat` field (Minecraft actions are temporally extended and PRO-LONG submits plans,
 # not single steps) and the key names are adapted. Key names follow ActionState, which
-# is what the runner validates against: `hotbars` as a 9-element list rather than
-# `hotbar.1`..`hotbar.9`, and `swap_hands`/`pick_item` rather than the wire spelling.
+# is what the runner validates against. Key names are the baseline's wire spelling
+# exactly -- `hotbar.1`..`hotbar.9`, `pickItem`, `swapHands` -- so both arms speak the
+# same action vocabulary and go through the same validator.
 ACTION_REFERENCE = """\
 Each entry is `{{"action": {{...}}, "repeat": N}}` — the action dict is applied for N
 consecutive environment ticks (1-{repeat_cap}). One tick of `forward` covers a fraction
@@ -42,8 +43,8 @@ Available keys (omitted keys default to 0, so specify only what you want):
 - "sprint": 0 or 1, sprint (MUCH FASTER movement — use this when exploring!)
 - "use": 0 or 1, use item or place block
 - "inventory": 0 or 1, open/close inventory
-- "hotbars": a 9-element list of 0/1, at most one set
-- "pick_item", "swap_hands": 0 or 1
+- "hotbar.1" to "hotbar.9": 0 or 1, select hotbar slots (at most one)
+- "pickItem", "swapHands": 0 or 1
 
 **Movement tips for efficient exploration:**
 - **USE SPRINT!** Combine "forward": 1 with "sprint": 1 for FAST movement in open areas.
