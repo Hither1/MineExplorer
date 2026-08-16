@@ -96,6 +96,21 @@ def _ledger_entries() -> tuple[tuple[str, str], ...]:
     return tuple(out)
 
 
+def arm_label(agent: str, d: dict) -> str:
+    """Suffix the agent label with the ablation the run recorded, if any.
+
+    PRO-LONG's ablations are the arm the headline prolong runs are compared *against*,
+    so pooling them under one "prolong" label would average an arm with its own control.
+    The ledger already forces this for the vision-on-demand variant; these two are the
+    same case, except that the run now says so itself instead of needing a ledger line.
+    """
+    if d.get("prolong_stateless"):
+        agent = f"{agent}-sl"
+    if d.get("prolong_log_window") is not None:
+        agent = f"{agent}-w{d['prolong_log_window']}"
+    return agent
+
+
 def load_invalid() -> dict[str, str]:
     """Runs whose numbers exist but do not measure what they claim.
 
@@ -151,6 +166,7 @@ def main() -> int:
         # carries agent_mode and model, and a slug is a label someone typed once.
         if d.get("agent_mode"):
             agent = d["agent_mode"]
+        agent = arm_label(agent, d)
         if d.get("model"):
             model = d["model"].split("@")[0].replace("Qwen/", "")
         if d.get("provider"):

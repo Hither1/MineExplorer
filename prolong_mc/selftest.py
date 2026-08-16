@@ -389,6 +389,16 @@ check("frozen channel labels are readable",
 check("a frozen label wins over whatever scripts/ says today",
       compare_runs.channel("20260815-235931-s0802-qwen-vllm-default-0602") == "vllm")
 
+# An ablated run is the control the headline arm is compared against, so it must not
+# land in the headline arm's cell.
+check("the stateless ablation reports as its own arm",
+      compare_runs.arm_label("prolong", {"prolong_stateless": True}) == "prolong-sl")
+check("the window ablation reports as its own arm, window and all",
+      compare_runs.arm_label("prolong", {"prolong_log_window": 0}) == "prolong-w0")
+check("an unablated prolong run keeps its plain label",
+      compare_runs.arm_label("prolong", {"prolong_log_window": None,
+                                         "prolong_stateless": False}) == "prolong")
+
 # --- overflow: the session must be dropped, not retried into ---------------------
 from prolong_mc.codex_backend import is_overflow
 check("overflow classifier catches the context-window message",

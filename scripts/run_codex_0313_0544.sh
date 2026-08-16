@@ -32,6 +32,17 @@ LOADING_COMMAND_STEPS=${LOADING_COMMAND_STEPS:-20}
 TEMPERATURE=${TEMPERATURE:-0.7}
 AGENT_MODE=${AGENT_MODE:-default}
 MILESTONE_HINT=${MILESTONE_HINT:-0}
+# PRO-LONG's own ablations (arm C), read by --agent-mode prolong only. Empty means the
+# unablated arm; PROLONG_LOG_WINDOW=0 is upstream's "latest state only".
+PROLONG_LOG_WINDOW=${PROLONG_LOG_WINDOW:-}
+PROLONG_STATELESS=${PROLONG_STATELESS:-0}
+if [[ "$AGENT_MODE" != prolong && ( -n "$PROLONG_LOG_WINDOW" || "$PROLONG_STATELESS" == 1 ) ]]; then
+  # Checked before anything is started, because the flags reach only ProlongAgent: a
+  # mislabelled cell would otherwise run the unablated arm under an ablation's name and
+  # be pooled with the arm it was launched to be the control for.
+  echo "PROLONG_* ablations require AGENT_MODE=prolong (got '$AGENT_MODE')" >&2
+  exit 2
+fi
 RUN_ROOT=${ART_DIR:-$ROOT_DIR/artifacts/manual-codex-0313-0544}
 OUTPUT_DIR=${OUTPUT_DIR:-$RUN_ROOT/results}
 TASK_VIEW=$RUN_ROOT/benchmark-view
@@ -109,6 +120,12 @@ if [[ "$MILESTONE_HINT" == 1 ]]; then
   eval_args+=(--milestone-hint)
 else
   eval_args+=(--no-milestone-hint)
+fi
+if [[ -n "$PROLONG_LOG_WINDOW" ]]; then
+  eval_args+=(--prolong-log-window "$PROLONG_LOG_WINDOW")
+fi
+if [[ "$PROLONG_STATELESS" == 1 ]]; then
+  eval_args+=(--prolong-stateless)
 fi
 
 cd "$ROOT_DIR"

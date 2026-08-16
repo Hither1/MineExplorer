@@ -240,6 +240,8 @@ def _run_benchmark(
     temperature: float = 0.7,
     use_milestone_hint: bool = True,
     agent_mode: str = "default",
+    prolong_log_window: Optional[int] = None,
+    prolong_stateless: bool = False,
 ) -> Dict[str, Any]:
     """Run one benchmark scenario and save results."""
     global _shutdown_requested
@@ -296,6 +298,11 @@ def _run_benchmark(
             # under this protocol; PRO-LONG documents its [MILESTONE] marker on the
             # same condition, so neither arm is told about a signal the other lacks.
             milestone_hint=use_milestone_hint,
+            # PRO-LONG's own ablations, off unless asked for. Both are enforced in the
+            # directory the analyzer works in rather than described to it, so these are
+            # arm C, not a differently worded arm B.
+            log_window=prolong_log_window,
+            stateless=prolong_stateless,
         )
     elif agent_mode == "hypothesis":
         agent = HypothesisAgent(
@@ -603,6 +610,11 @@ def _run_benchmark(
         "provider": "codex" if use_codex else ("vllm" if use_vllm else "openai"),
         "milestone_hint": use_milestone_hint,
         "max_steps": max_steps,
+        # Which PRO-LONG arm this is. Recorded only where it means something, and
+        # recorded at all because an ablated run pooled with the headline prolong runs
+        # would average an arm against the arm it exists to be compared with.
+        **({"prolong_log_window": prolong_log_window,
+            "prolong_stateless": prolong_stateless} if agent_mode == "prolong" else {}),
         "total_steps": total_steps,
         "termination_reason": termination_reason,
         "milestones_completed": corrected_completed,
@@ -653,6 +665,8 @@ def _worker_eval(worker_args: dict) -> dict:
         temperature=worker_args.get("temperature", 0.7),
         use_milestone_hint=worker_args.get("use_milestone_hint", True),
         agent_mode=worker_args.get("agent_mode", "default"),
+        prolong_log_window=worker_args.get("prolong_log_window"),
+        prolong_stateless=worker_args.get("prolong_stateless", False),
     )
 
 
@@ -707,6 +721,20 @@ def eval_benchmark(
                                         "explicit hypothesis DAG + short-horizon plan on top; "
                                         "see mc_agent/hypothesis_agent.py). Defaults to 'default' "
                                         "so existing invocations behave exactly as before."),
+    prolong_log_window: Optional[int] = typer.Option(None, "--prolong-log-window",
+                                                     help="PRO-LONG's log-window ablation "
+                                                          "(--agent-mode prolong only): 0 keeps the "
+                                                          "initial state plus the latest action "
+                                                          "section, N keeps the last N. Enforced -- "
+                                                          "the analyzer's directory holds the "
+                                                          "truncated log and the frames it names, "
+                                                          "and nothing else of the history."),
+    prolong_stateless: bool = typer.Option(False, "--prolong-stateless",
+                                           help="PRO-LONG's stateless ablation (--agent-mode prolong "
+                                                "only): everything the analyzer writes is deleted "
+                                                "each turn, leaving logs.txt and AGENTS.md. The "
+                                                "Codex conversation itself stays alive, which is "
+                                                "upstream's behaviour."),
 ):
     """Evaluate all benchmark scenarios in benchmark_dir."""
     logger.info(f"--- Starting evaluation (model={model}) ---")
@@ -799,6 +827,8 @@ def eval_benchmark(
                     temperature=temperature,
                     use_milestone_hint=milestone_hint,
                     agent_mode=agent_mode,
+                    prolong_log_window=prolong_log_window,
+                    prolong_stateless=prolong_stateless,
                 )
             except Exception as e:
                 logger.error(f"[ERROR] {scene_num}: {e}")
@@ -847,6 +877,8 @@ def eval_benchmark(
                     "temperature": temperature,
                     "use_milestone_hint": milestone_hint,
                     "agent_mode": agent_mode,
+                    "prolong_log_window": prolong_log_window,
+                    "prolong_stateless": prolong_stateless,
                     "_scene_num": scene_num,
                 })
 
