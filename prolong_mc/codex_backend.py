@@ -229,7 +229,13 @@ class CodexTurn:
                 event = json.loads(line)
             except Exception:
                 continue
-            if '"view_image"' in line:
+            # Completions only. One view_image call emits item.started AND
+            # item.completed, so matching every line containing the name counted each
+            # call about twice. Every observed value is 0, so nothing published is
+            # wrong yet -- but this number is what says whether a vision-on-demand
+            # analyzer ever actually looked, and it must not be doubled the first time
+            # it is nonzero and quoted.
+            if event.get("type") == "item.completed" and '"view_image"' in line:
                 self.view_image_calls += 1
             if _COMPACTION_RE.search(line):
                 self.compactions += 1

@@ -260,6 +260,43 @@ check("a model writing the word 'compact' is not a compaction",
                     "item": {"type": "agent_message",
                              "text": "let me compact this plan"}}]) == 0)
 
+
+# One view_image call emits two events. Counting lines counted it about twice, and
+# this number is the evidence for whether a vision-on-demand analyzer ever looked.
+def _view_image_calls(events) -> int:
+    turn = _cb.CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true")
+
+    class _Proc:
+        stdout = "\n".join(json.dumps(e) for e in events) + "\n"
+        stderr = ""
+        returncode = 0
+
+    with _mock.patch("subprocess.run", return_value=_Proc()):
+        turn.run("hi")
+    return turn.view_image_calls
+
+
+one_call = [{"type": "item.started", "item": {"id": "i1", "type": "view_image",
+                                              "path": "frames/step_0001.png"}},
+            {"type": "item.completed", "item": {"id": "i1", "type": "view_image",
+                                                "path": "frames/step_0001.png"}}]
+check("one view_image call counts once, not once per event",
+      _view_image_calls(one_call) == 1, f"got {_view_image_calls(one_call)}")
+check("two view_image calls count twice", _view_image_calls(one_call * 2) == 2)
+
+
+# --- RUN_LEDGER bookkeeping must not double as a verdict --------------------------
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
+import compare_runs
+
+check("a CHANNEL: line does not exclude the run it labels",
+      not any(r.startswith("CHANNEL:") for r in compare_runs.load_invalid().values()))
+check("frozen channel labels are readable",
+      compare_runs.load_channels().get("20260815-210755-qwen35-0313-0544-scored-33ea") == "vllm",
+      str(compare_runs.load_channels())[:200])
+check("a frozen label wins over whatever scripts/ says today",
+      compare_runs.channel("20260815-235931-s0802-qwen-vllm-default-0602") == "vllm")
+
 # --- overflow: the session must be dropped, not retried into ---------------------
 from prolong_mc.codex_backend import is_overflow
 check("overflow classifier catches the context-window message",
