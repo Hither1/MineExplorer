@@ -1,12 +1,15 @@
-"""Ask a model server whether it can actually do the three things a run needs.
+"""Ask a model server whether it can actually do what a run needs of it.
 
 Not "is the port open" -- that question has already been answered wrongly twice here,
-once by a stranger's process and once by a server holding a different model. This
-asks the server to produce text, to look at a real Minecraft frame, and to accept the
-Responses API request shape the Codex CLI sends, and it prints what came back so the
-answers can be judged rather than trusted.
+once by a stranger's process and once by a server holding a different model. This asks
+the server to produce text, to look at a real Minecraft frame, to accept the Responses
+API request shape the Codex CLI sends, and then -- because these three change what a
+score means rather than whether one exists -- to show its per-request output cap, its
+decode rate, and whether thinking is on in the request shape the codex arms send. It
+prints what came back so the answers can be judged rather than trusted.
 
 Usage: check_model_server.py <base-url> [--model M] [--frame path.png]
+                             [--expect-cap 4096] [--min-decode 30]
 Exit code is non-zero if any probe fails.
 """
 from __future__ import annotations
@@ -16,6 +19,7 @@ import base64
 import json
 import pathlib
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -43,6 +47,10 @@ def main() -> int:
     ap.add_argument("base_url")
     ap.add_argument("--model", default=None)
     ap.add_argument("--frame", default=None)
+    ap.add_argument("--expect-cap", type=int, default=4096,
+                    help="per-request output cap the server should enforce")
+    ap.add_argument("--min-decode", type=float, default=30.0,
+                    help="tok/s the serving configuration is expected to reach")
     args = ap.parse_args()
     base = args.base_url.rstrip("/")
     failures = []
@@ -111,6 +119,87 @@ def main() -> int:
     except Exception as e:
         print(f"[FAIL] responses: {e}")
         failures.append("responses API")
+
+    # 5. the output cap and the decode rate, from one request.
+    # Asking for far more than the cap and refusing EOS makes the server show its own
+    # ceiling: vLLM takes a min over --override-generation-config, so a correct server
+    # stops at exactly the cap with finish_reason "length". The same request times the
+    # decode, since the prompt is short enough that prefill is noise. Eager served 12.5
+    # tok/s per request here, which is what truncated the one-call-per-step arms at
+    # walltime; cudagraphs are the fix and this is the number that says whether they took.
+    # Asked in three forms because a server that rejects one field would otherwise look
+    # like a server without a cap: a 400 on `ignore_eos` or on an over-long max_tokens is
+    # a protocol difference, not an answer about the ceiling.
+    attempts = [
+        {"max_tokens": 100000, "ignore_eos": True},
+        {"max_tokens": args.expect_cap * 2, "ignore_eos": True},
+        {"max_tokens": args.expect_cap * 2},
+    ]
+    try:
+        d, elapsed, asked = None, 0.0, attempts[0]["max_tokens"]
+        for i, extra in enumerate(attempts):
+            try:
+                t0 = time.monotonic()
+                d = post(f"{base}/chat/completions", dict(
+                    extra, model=model, temperature=0.7,
+                    messages=[{"role": "user",
+                               "content": "Count upward from one, in words."}]))
+                elapsed, asked = time.monotonic() - t0, extra["max_tokens"]
+                if i:
+                    print(f"[warn] cap probe fell back to {extra}; the server refused "
+                          f"the stricter form")
+                break
+            except urllib.error.HTTPError as e:
+                if e.code != 400 or i == len(attempts) - 1:
+                    raise
+        produced = d.get("usage", {}).get("completion_tokens", 0)
+        finish = d["choices"][0].get("finish_reason")
+        rate = produced / elapsed if elapsed else 0.0
+        print(f"[ok]   output cap: stopped at {produced} tokens ({finish}) "
+              f"in {elapsed:.1f}s -> {rate:.1f} tok/s decode")
+        if produced != args.expect_cap or finish != "length":
+            failures.append(
+                f"asked for {asked} tokens and got {produced} ({finish}); expected exactly "
+                f"{args.expect_cap} with finish_reason 'length' -- the per-request cap is "
+                f"not in effect, so one degenerate loop can generate to the context end")
+        if rate < args.min_decode:
+            failures.append(
+                f"decode {rate:.1f} tok/s is below the {args.min_decode} tok/s this "
+                f"serving configuration is supposed to deliver (eager measured 12.5)")
+    except Exception as e:
+        print(f"[FAIL] output cap / decode rate: {e}")
+        failures.append("output cap probe")
+
+    # 6. thinking, through the request shape the codex arms actually send.
+    # The server-side pin does not survive a Responses request that carries
+    # reasoning.effort: vLLM synthesises enable_thinking = (effort != "none") and merges
+    # the server default underneath it. So the arms are only pinned if they send "none",
+    # and this asks the server, in their shape, whether that holds. With thinking on, the
+    # template opens a <think> block in the *prompt*, so the tell in the output is the
+    # closing tag, not the opening one.
+    for effort, want_thinking in (("none", False), ("low", True)):
+        try:
+            d = post(f"{base}/responses", {
+                "model": model, "max_output_tokens": 200,
+                "reasoning": {"effort": effort, "summary": "auto"},
+                "input": [{"role": "user", "content": [
+                    {"type": "input_text", "text": "What is 17 times 3? Answer briefly."}]}]})
+            out = "".join(c.get("text", "")
+                          for item in d.get("output", []) if item.get("type") == "message"
+                          for c in item.get("content", []))
+            thought = "</think>" in out or bool(d.get("reasoning"))
+            print(f"[ok]   responses(effort={effort}): thinking "
+                  f"{'on' if thought else 'off'}; {out.strip()[:60]!r}")
+            if effort == "none" and thought:
+                failures.append(
+                    "effort=none still thinks: the codex arms cannot be pinned this way "
+                    "and the asymmetry with the vLLM arm has to be reported instead")
+            if effort == "low" and not thought and want_thinking:
+                print("[warn] effort=low did not think either, so the pin may be coming "
+                      "from somewhere else -- worth knowing before quoting the mechanism")
+        except Exception as e:
+            print(f"[FAIL] responses(effort={effort}): {e}")
+            failures.append(f"thinking probe at effort={effort}")
 
     if failures:
         print("\nFAILED: " + "; ".join(failures))

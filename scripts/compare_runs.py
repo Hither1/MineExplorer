@@ -147,7 +147,8 @@ def load_invalid() -> dict[str, str]:
     because a prefix match returns the first hit -- could hide a real invalidation
     behind a bookkeeping line further up the file.
     """
-    return {p: r for p, r in _ledger_entries() if not r.startswith("CHANNEL:")}
+    return {p: r for p, r in _ledger_entries()
+            if not r.startswith(("CHANNEL:", "SERVING:"))}
 
 
 @lru_cache(maxsize=1)
@@ -159,6 +160,20 @@ def load_channels() -> dict[str, str]:
     """
     return {p: r.split(":", 1)[1].strip()
             for p, r in _ledger_entries() if r.startswith("CHANNEL:")}
+
+
+@lru_cache(maxsize=1)
+def load_serving() -> dict[str, str]:
+    """How a run's model was served, where that differs from the current configuration.
+
+    Format: `<run-id-prefix>  SERVING: think-on`. The serving configuration decides what
+    the model emits -- an output cap, and whether the chat template opens a thinking
+    block -- so two scores taken under different servers answer slightly different
+    questions. This axis joins the protocol in the pooling key rather than excluding the
+    runs: they measured something real, just not the thing the next runs will measure.
+    """
+    return {p: r.split(":", 1)[1].strip()
+            for p, r in _ledger_entries() if r.startswith("SERVING:")}
 
 
 def main() -> int:
@@ -202,6 +217,12 @@ def main() -> int:
         hits = [m["milestone_id"] for m in ms if m.get("completed")]
         # Results written before the flag existed are all from the no-hint protocol.
         proto = "hint" if d.get("milestone_hint") else "no-hint"
+        # Serving configuration rides in the same column, and therefore in the same
+        # pooling key: a score taken with thinking on and no output cap is not the same
+        # measurement as one taken with both pinned, however identical the arm is.
+        served = next((t for p, t in load_serving().items() if run_id.startswith(p)), None)
+        if served:
+            proto = f"{proto}/{served}"
         # How much vision and how much analysis produced this score. A PRO-LONG number
         # is not interpretable without it: the same agent scores differently blind.
         audit_path = f.parent / "prolong_vision_audit.json"
@@ -230,12 +251,12 @@ def main() -> int:
         print("no valid results yet")
         return 0
 
-    print(f"{'agent':11s} {'model':14s} {'path':6s} {'proto':8s} {'scene':6s} "
+    print(f"{'agent':11s} {'model':14s} {'path':6s} {'proto':16s} {'scene':6s} "
           f"{'steps':>5s} {'term':15s} {'score':>6s}  milestones hit")
     print("-" * 108)
     for r in sorted(rows, key=lambda r: (r["proto"], r["scene"], r["agent"],
                                          r["model"], r["path"])):
-        print(f"{r['agent']:11s} {r['model']:14s} {r['path']:6s} {r['proto']:8s} "
+        print(f"{r['agent']:11s} {r['model']:14s} {r['path']:6s} {r['proto']:16s} "
               f"{r['scene']:6s} {r['steps']:5d} {r['term']:15s} "
               f"{r['done']:2d}/{r['track']:<3d}  {','.join(r['hits']) or '-'}")
 
@@ -295,7 +316,7 @@ def main() -> int:
         # with replicates, five runs over two scenes printed as "5 scene(s)", which
         # reads as breadth of coverage when it is repetition. Both, always, so neither
         # can be mistaken for the other.
-        print(f"  {proto:8s} {agent:11s} {model:14s} {path:6s}  "
+        print(f"  {proto:16s} {agent:11s} {model:14s} {path:6s}  "
               f"{done}/{track} ({pct}) over {n} run(s) on {len(scenes)} scene(s)")
     return 0
 
