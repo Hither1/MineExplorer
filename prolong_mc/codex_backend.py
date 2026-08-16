@@ -318,8 +318,25 @@ class CodexTurn:
                 args, cwd=self.workspace, input=prompt, env=env,
                 capture_output=True, text=True, timeout=self.timeout,
             )
-        except subprocess.TimeoutExpired:
-            logger.error(f"[codex] turn {self.calls} timed out after {self.timeout}s")
+        except subprocess.TimeoutExpired as expired:
+            # Keep what the turn had already emitted. Written after `run` returned, the
+            # transcript was missing for exactly the turns worth reading -- a stall's
+            # last event is what distinguishes hanging in a tool from hanging on the
+            # wire, and without it the only evidence a timeout leaves is its duration.
+            partial = expired.stdout or ""
+            if isinstance(partial, bytes):
+                partial = partial.decode(errors="replace")
+            if self.transcript_dir:
+                # Composed, not `with_suffix`: that replaces `.timeout` rather than
+                # extending it, and the partial would land under the name a completed
+                # turn uses.
+                stem = f"turn_{self.calls:04d}.timeout"
+                (self.transcript_dir / f"{stem}.events.jsonl").write_text(partial, encoding="utf-8")
+                (self.transcript_dir / f"{stem}.prompt.txt").write_text(prompt, encoding="utf-8")
+            logger.error(
+                f"[codex] turn {self.calls} timed out after {self.timeout}s; "
+                f"{len(partial.splitlines())} events kept"
+            )
             return {"actions_json": None, "message": "", "ok": False, "error": "timeout"}
 
         if self.transcript_dir:

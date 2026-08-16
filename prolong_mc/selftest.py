@@ -443,6 +443,33 @@ check("an unablated prolong run keeps its plain label",
       compare_runs.arm_label("prolong", {"prolong_log_window": None,
                                          "prolong_stateless": False}) == "prolong")
 
+# --- a timed-out call must leave its evidence behind ------------------------------
+# The stall is the call worth reading, and it was the only one with no transcript: the
+# events are written after subprocess.run returns, so a timeout discarded them. One
+# 15-minute stall in the 40-step default probe left nothing but its duration.
+_timeout_dir = pathlib.Path(tempfile.mkdtemp())
+_turn = _cb.CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true",
+                      transcript_dir=_timeout_dir)
+
+
+def _raise_timeout(*a, **kw):
+    raise subprocess.TimeoutExpired(
+        cmd="codex", timeout=900,
+        output='{"type":"thread.started"}\n{"type":"item.started"}\n')
+
+
+import subprocess
+with _mock.patch("subprocess.run", _raise_timeout):
+    _res = _turn.run("hi")
+check("a timed-out turn is still reported as a failure", not _res["ok"] and _res["error"] == "timeout")
+check("a timed-out turn keeps the events it had already received",
+      (_timeout_dir / "turn_0001.timeout.events.jsonl").exists()
+      and "thread.started" in (_timeout_dir / "turn_0001.timeout.events.jsonl").read_text(),
+      str(sorted(p.name for p in _timeout_dir.iterdir())))
+check("the partial transcript is named apart from a completed one, not mistaken for it",
+      not (_timeout_dir / "turn_0001.events.jsonl").exists())
+
+
 # --- what a codex call actually costs --------------------------------------------
 # "One call per step" is the wrong unit: a call runs a tool loop, and each tool result
 # is another request re-paying the prompt. And codex's usage is cumulative over the

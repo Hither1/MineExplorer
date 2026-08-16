@@ -388,11 +388,34 @@ class CodexProvider(BaseLLMProvider):
                 f"[CodexProvider] call {self._calls}: model={effective_model} "
                 f"images={len(images)} prompt_chars={len(prompt)}"
             )
-            proc = subprocess.run(
-                cmd, cwd=workdir, input=prompt,
-                capture_output=True, text=True,
-                timeout=timeout or self.timeout,
-            )
+            try:
+                proc = subprocess.run(
+                    cmd, cwd=workdir, input=prompt,
+                    capture_output=True, text=True,
+                    timeout=timeout or self.timeout,
+                )
+            except subprocess.TimeoutExpired as expired:
+                # The one call worth reading is the one that hung, and it was the only
+                # one with no transcript: the events are written after `run` returns, so
+                # a timeout discarded everything the call had already emitted. Keep the
+                # partial stream under its own name -- a stalled turn's last event is
+                # what says whether it hung in a tool, in a retry, or on the wire.
+                if self.transcript_dir:
+                    partial = expired.stdout or ""
+                    if isinstance(partial, bytes):
+                        partial = partial.decode(errors="replace")
+                    # Composed, not `with_suffix`: that replaces `.timeout` rather than
+                    # extending it, and the partial would land under the name a
+                    # completed call uses.
+                    stem = f"call_{self._calls:04d}.timeout"
+                    (self.transcript_dir / f"{stem}.events.jsonl").write_text(partial)
+                    (self.transcript_dir / f"{stem}.prompt.txt").write_text(prompt)
+                    logger.error(
+                        f"[CodexProvider] call {self._calls} timed out after "
+                        f"{timeout or self.timeout}s; {len(partial.splitlines())} events "
+                        f"kept at {stem}.events.jsonl"
+                    )
+                raise
 
             if self.transcript_dir:
                 stem = self.transcript_dir / f"call_{self._calls:04d}"
