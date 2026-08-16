@@ -46,7 +46,15 @@ fi
 # and PRO-LONG refuses to mount the global ~/.codex for the same reason.
 export CODEX_HOME=$RUN_ROOT/codex-home
 mkdir -p "$CODEX_HOME" "$RUN_ROOT" "$OUTPUT_DIR" "$TASK_VIEW"
-ln -sfn "$HOME/.codex/auth.json" "$CODEX_HOME/auth.json"
+# Only for the hosted arm. Linking the account credential also pulls in the account's
+# MCP app tools -- github, slack, gmail, drive, sites -- which add 275 KB of JSON
+# schema to *every* request: 23 tools and 312 KB instead of 10 tools and 18 KB, about
+# 78k tokens against 4.6k. That alone overflowed a 65536-token context and failed 94%
+# of one run's calls. A locally served model authenticates with a dummy key and needs
+# none of it.
+if [[ -z "$MODEL_SERVER" ]]; then
+  ln -sfn "$HOME/.codex/auth.json" "$CODEX_HOME/auth.json"
+fi
 export CODEX_BIN MC_SANDBOX_URL PYTHONNOUSERSITE=1
 # eval_benchmark.py:33-37 hard-fails at import unless both of these are set, before
 # any provider is chosen. The Codex path reads neither; these just get past the check.
