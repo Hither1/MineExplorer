@@ -43,6 +43,18 @@ export VLLM_LOGGING_LEVEL=${VLLM_LOGGING_LEVEL:-INFO}
 mkdir -p "$DISCOVERY_DIR" "$(dirname "$LOG")"
 HOST_FQDN=$(hostname -s)
 
+# Import the model module before starting vLLM, under the same environment the
+# server runs in. A dependency installed into the *user* site-packages is invisible
+# under PYTHONNOUSERSITE=1, so it passes a casual login-node check and then fails on
+# the node: einops did exactly that, twice, at a queue wait each time. Checking here
+# turns a 60-second startup crash into an immediate, named failure -- and running the
+# same line before submitting turns it into no queue wait at all.
+if ! "$PYTHON_BIN" -c "import vllm.model_executor.models.qwen3_5" >/dev/null 2>&1; then
+  echo "serving env cannot import the model module (deps missing under PYTHONNOUSERSITE=1):" >&2
+  "$PYTHON_BIN" -c "import vllm.model_executor.models.qwen3_5" 2>&1 | tail -6 >&2
+  exit 1
+fi
+
 cleanup() {
   # Remove our own advert only. A stale discovery file pointing at a dead node is
   # exactly how a run ends up scoring against nothing.
