@@ -30,6 +30,12 @@ GPU_FRAC=${VLLM_GPU_FRACTION:-0.90}
 # and the agent silently cannot act: a failure that looks like a bad model rather
 # than a missing flag.
 TOOL_PARSER=${VLLM_TOOL_PARSER:-qwen3_xml}
+# Eager by default. torch.compile is where the first successful load died: the step
+# was killed mid-"Dynamo bytecode transform" with the weights already resident, and
+# compilation spawns parallel workers whose host memory is what ran out. This
+# workload is one agent request at a time, so CUDA graphs buy little. Set
+# VLLM_EAGER=0 to re-enable compilation once the stack has proven itself.
+EAGER=${VLLM_EAGER:-1}
 SERVER_SLUG=${SERVER_SLUG:-qwen38-27b}
 DISCOVERY_DIR=${DISCOVERY_DIR:-$ROOT_DIR/artifacts/servers}
 DISCOVERY=$DISCOVERY_DIR/$SERVER_SLUG.json
@@ -75,6 +81,7 @@ setsid "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
   --gpu-memory-utilization "$GPU_FRAC" \
   --trust-remote-code \
   --enable-auto-tool-choice --tool-call-parser "$TOOL_PARSER" \
+  $( [ "$EAGER" = 1 ] && echo --enforce-eager ) \
   > "$LOG" 2>&1 &
 SERVER_PID=$!
 SERVER_PGID=$SERVER_PID
