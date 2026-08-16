@@ -77,8 +77,11 @@ def check(run_dir: Path) -> tuple[str, list[str]]:
             flag("BROKEN",
                  f"loop reached step {loop_steps[-1]} but only {len(states)} states "
                  f"were reported; actions are not reaching the world")
-    if not states:
-        flag("WARN", "no per-step state lines yet")
+    if not states and loop_steps:
+        # Only once the episode loop has actually started. Before that the sandbox is
+        # still booting and there is nothing to report, so warning would fire on every
+        # run for its first minutes and teach the reader to skip these messages.
+        flag("WARN", "the episode loop is running but no state lines have appeared")
     else:
         steps = states[-1][0]
         notes.append(f"steps={steps}")
