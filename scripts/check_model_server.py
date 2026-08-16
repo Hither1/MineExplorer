@@ -174,10 +174,19 @@ def main() -> int:
     # The server-side pin does not survive a Responses request that carries
     # reasoning.effort: vLLM synthesises enable_thinking = (effort != "none") and merges
     # the server default underneath it. So the arms are only pinned if they send "none",
-    # and this asks the server, in their shape, whether that holds. With thinking on, the
-    # template opens a <think> block in the *prompt*, so the tell in the output is the
-    # closing tag, not the opening one.
-    for effort, want_thinking in (("none", False), ("low", True)):
+    # and this asks the server, in their shape, whether that holds.
+    #
+    # It is asked twice and compared, because none of the obvious single-response tells
+    # work here. `reasoning_tokens` reads 0 either way (no reasoning parser is
+    # configured, and none is wanted); the response's `reasoning` field is the request's
+    # own echo and is present whatever the model did; and the `<think>` tag lives in the
+    # *prompt*, with its closing tag not surviving into the message content. What does
+    # separate them is the prompt itself: enabling thinking makes the template inject
+    # "Reasoning effort is set to ..." into the system message, so the same user text
+    # bills more input tokens. Measured on the 1-GPU probe: 24 tokens at effort=none
+    # against 52 at effort=low, for one identical question.
+    counted = {}
+    for effort in ("none", "low"):
         try:
             d = post(f"{base}/responses", {
                 "model": model, "max_output_tokens": 200,
@@ -187,19 +196,24 @@ def main() -> int:
             out = "".join(c.get("text", "")
                           for item in d.get("output", []) if item.get("type") == "message"
                           for c in item.get("content", []))
-            thought = "</think>" in out or bool(d.get("reasoning"))
-            print(f"[ok]   responses(effort={effort}): thinking "
-                  f"{'on' if thought else 'off'}; {out.strip()[:60]!r}")
-            if effort == "none" and thought:
-                failures.append(
-                    "effort=none still thinks: the codex arms cannot be pinned this way "
-                    "and the asymmetry with the vLLM arm has to be reported instead")
-            if effort == "low" and not thought and want_thinking:
-                print("[warn] effort=low did not think either, so the pin may be coming "
-                      "from somewhere else -- worth knowing before quoting the mechanism")
+            counted[effort] = d.get("usage", {}).get("input_tokens", 0)
+            print(f"[ok]   responses(effort={effort}): prompt {counted[effort]} tok, "
+                  f"reply {out.strip()[:60]!r}")
+            if effort == "none" and "</think>" in out:
+                failures.append("effort=none produced a closing </think>: thinking is on")
         except Exception as e:
             print(f"[FAIL] responses(effort={effort}): {e}")
             failures.append(f"thinking probe at effort={effort}")
+    if len(counted) == 2:
+        pinned = counted["none"] < counted["low"]
+        print(f"[{'ok' if pinned else 'FAIL'}]   thinking pin: effort=none renders "
+              f"{counted['low'] - counted['none']} fewer prompt tokens than effort=low")
+        if not pinned:
+            failures.append(
+                f"effort=none and effort=low render the same prompt "
+                f"({counted['none']} vs {counted['low']} tokens), so the template switch "
+                f"is not reaching the codex arms and the asymmetry with the vLLM arm has "
+                f"to be reported rather than fixed here")
 
     if failures:
         print("\nFAILED: " + "; ".join(failures))
