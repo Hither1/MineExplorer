@@ -81,9 +81,10 @@ files accumulate. Feel free to save notes, state, or helper functions.
         `moved` is the horizontal distance covered by that action. `moved=0.00`
         repeatedly means you are blocked by terrain, not that you are standing still
         by choice.
-    [FRAME] frames/step_NNNN.png — the first-person view at that step. Use the
-        image viewer to look at any frame you care about; you do not have to look
-        at all of them.
+    [FRAME] frames/step_NNNN.png — the first-person view at that step. The newest
+        one is attached directly to every call, so you always see the current view
+        without asking; use the image viewer on the older paths when you want to
+        compare against where you have already been.
     [PLAN] — your own plan from the previous call.
 
 **What you can rely on**:
@@ -112,15 +113,24 @@ The runner executes the list in order, then calls you again with the updated log
 
 FIRST_PROMPT = """\
 {log_desc}
-
+{attached}
 This is the first analysis. Look at the initial frame, work out where you are and
 what the task requires, then write ./actions.json with your first set of actions.
 """
 
 RESUME_PROMPT = """\
 {log_desc}
-
+{attached}
 {body}
+"""
+
+# The analyzer is handed the current view every turn, the way the baseline agent is
+# handed its frame buffer every step. Saying so matters: told only about [FRAME]
+# markers, the model treats pixels as something to go fetch, and v3 fetched none.
+ATTACHED_NOTE = """
+The image attached to this message is the player's CURRENT first-person view, taken
+at the latest state in the log. Earlier frames are on disk at the [FRAME] paths if
+you want to compare against them.
 """
 
 RESUME_BODY = """\
@@ -201,7 +211,9 @@ def build_system_prompt(
     return prompt
 
 
-def build_turn_prompt(log_name: str, is_first: bool, log_window: int | None) -> str:
+def build_turn_prompt(
+    log_name: str, is_first: bool, log_window: int | None, frame_attached: bool = False
+) -> str:
     disp = f"./{log_name}"
     if log_window is None:
         log_desc = f"Read the full episode log at {disp}"
@@ -210,7 +222,8 @@ def build_turn_prompt(log_name: str, is_first: bool, log_window: int | None) -> 
     else:
         log_desc = f"Read {disp} (last {log_window} actions)."
 
+    attached = ATTACHED_NOTE if frame_attached else ""
     if is_first:
-        return FIRST_PROMPT.format(log_desc=log_desc)
+        return FIRST_PROMPT.format(log_desc=log_desc, attached=attached)
     body = RESUME_BODY_NO_HISTORY if log_window == 0 else RESUME_BODY
-    return RESUME_PROMPT.format(log_desc=log_desc, body=body)
+    return RESUME_PROMPT.format(log_desc=log_desc, attached=attached, body=body)

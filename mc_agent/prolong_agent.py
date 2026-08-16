@@ -16,6 +16,7 @@ which is how PRO-LONG's own ActionQueue behaves.
 from __future__ import annotations
 
 import io
+import json
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -71,6 +72,20 @@ class ProlongAgent:
         self.analyzer_retries = analyzer_retries
 
         self.workspace = Path(workspace)
+        # Reaching this constructor means the scene has no result.json (`--resume`
+        # skips the ones that do), so any workspace still sitting here is the debris
+        # of a crashed attempt. Left in place it would append a second episode to the
+        # same append-only logs.txt -- two INITIAL STATEs, one file -- and AGENTS.md's
+        # write-once guard would keep the old system prompt. Move it aside instead of
+        # deleting it: the crashed attempt is still evidence.
+        if (self.workspace / "logs.txt").exists():
+            stale = self.workspace.with_name(f"{self.workspace.name}.crashed")
+            n = 1
+            while stale.exists():
+                n += 1
+                stale = self.workspace.with_name(f"{self.workspace.name}.crashed{n}")
+            self.workspace.rename(stale)
+            logger.warning(f"[prolong] found a stale workspace; moved it to {stale}")
         self.log = EpisodeLog(self.workspace, stateless=stateless)
         self.codex = CodexTurn(
             self.workspace,
@@ -122,8 +137,24 @@ class ProlongAgent:
     def save_state(self, output_dir) -> None:
         """The workspace *is* the state; record what the agent built in it."""
         kept = sorted(p.name for p in self.workspace.glob("*") if p.is_file())
-        (Path(output_dir) / "prolong_workspace_files.txt").write_text(
+        out = Path(output_dir)
+        (out / "prolong_workspace_files.txt").write_text(
             "\n".join(kept), encoding="utf-8"
+        )
+        # How much vision this episode actually got, next to its score. Without it a
+        # comparison cannot tell a memory effect from a "one arm was blind" effect.
+        (out / "prolong_vision_audit.json").write_text(
+            json.dumps(
+                {
+                    "analyzer_turns": self.codex.calls,
+                    "frames_attached": self.codex.images_attached,
+                    "view_image_calls": self.codex.view_image_calls,
+                    "overflow_resets": self.codex.overflow_resets,
+                    "actions_logged": self._action_num,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
         )
 
     def get_action(
@@ -163,6 +194,12 @@ class ProlongAgent:
                 milestone_note=f"[MILESTONE] {milestone_hint}" if milestone_hint.strip() else "",
             )
             self._prev_pos = pos
+            # Consume it. Without this, a failed refill leaves the entry set and every
+            # later call re-appends the same section -- duplicate `Action N` headers
+            # with moved=0.00, which reads to the analyzer as a stuck player.
+            self._last_entry = None
+
+        self._current_frame = frame_name
 
         if not self.queue and not self._refill(step):
             # Three values, not two: eval_benchmark unpacks a triple, and returning a
@@ -187,6 +224,7 @@ class ProlongAgent:
     _last_entry: dict | None = None
     _last_desc: str = ""
     _last_step: int = 0
+    _current_frame: str | None = None
 
     def _refill(self, step: int) -> bool:
         log_name = "logs.txt"
@@ -194,14 +232,24 @@ class ProlongAgent:
             self.log.windowed_copy(self.workspace / "logs_window.txt", self.log_window)
             log_name = "logs_window.txt"
 
-        base = prompts.build_turn_prompt(log_name, self._action_num == 0, self.log_window)
+        # Unconditional, not on demand. The baseline agent is handed its frames every
+        # step; an analyzer that has to decide to look is not information-matched to
+        # it, and in prolong-gpt56-v3 it never did (8 turns, 0 view_image calls).
+        # The [FRAME] markers still cover history -- this covers *now*.
+        frames = [self.workspace / self._current_frame] if self._current_frame else []
+
+        base = prompts.build_turn_prompt(
+            log_name, self._action_num == 0, self.log_window, bool(frames)
+        )
         for attempt in range(self.analyzer_retries):
             prompt = base if attempt == 0 else f"{base}\n\n{RETRY_NUDGE}"
-            result = self.codex.run(prompt)
+            result = self.codex.run(prompt, images=frames)
             if not result["ok"]:
                 logger.warning(
                     f"[prolong] analyzer attempt {attempt + 1}/{self.analyzer_retries} "
-                    f"produced no actions.json ({result['error']})"
+                    f"produced no actions.json "
+                    f"({'context overflow; ' if result.get('overflow') else ''}"
+                    f"{result['error']})"
                 )
                 continue
             plan = parse_actions(

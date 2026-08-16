@@ -1,0 +1,43 @@
+# Which runs may be compared, and which may not.
+#
+# Read by scripts/compare_runs.py; matched by run-id prefix. Tracked in the repo
+# rather than under artifacts/ because "this number does not mean what it says" is a
+# research judgement, and it must not disappear with the scratch directory.
+#
+# Format: <run-id-prefix>  <reason>
+# A reason starting with `VARIANT:` means the numbers are sound but belong to a
+# different arm; those are reported under their own label instead of dropped.
+# A run listed here produced numbers, but the numbers do not measure what the run
+# claims to measure. Keeping the list explicit beats deleting the evidence.
+
+20260815-183947-qwen35-0313-0544-native-arm64  mc_server did not forward info; position milestones were unscorable
+20260815-224726-codex-gpt56-0313-0544-scored   prompt swallowed by variadic --image; 73 steps of no-ops
+20260815-233859-prolong-gpt56-0313-0544-scored `codex exec resume` rejected -s; 55 analyzer turns produced one plan
+20260815-234230-prolong-qwen35-0313-0544       cancelled with the same resume defect
+20260815-232921-prolong-pilot-0313             pilot; ActionState returned where a wire dict was required
+20260815-233254-prolong-pilot2-0313            pilot; MAX_STEPS=4, not a scored episode
+20260815-234541-prolong-gpt56-v2-0313-0544     ESC wording differed from the baseline; episodes ended an order of magnitude early
+20260815-234542-prolong-qwen35-v2-0313-0544    port collision; scored against another job's un-shimmed server
+
+# VARIANT: valid measurements of a *different* arm than the one they were launched
+# as. Not invalid, not comparable to the runs above them either -- they answer their
+# own question and must be reported under their own label.
+#
+# prolong v3/v4 attached no images: the analyzer could open frames/ with the image
+# viewer but was never handed one, and in 557a it opened none across 8 turns. The
+# baseline agent gets 20 frames every step, so these measure "PRO-LONG memory + a
+# blind analyzer navigating on coordinates", which is the vision-on-demand ablation.
+# Do not average them with the forced-vision prolong runs.
+20260815-235643-prolong-gpt56-v3-0313-0544   VARIANT: vision-on-demand prolong (no frame attached per turn)
+20260815-235526-prolong-qwen35-v3-0313-0544  VARIANT: vision-on-demand prolong (no frame attached per turn)
+20260815-235643-prolong-qwen35-v4-0313-0544  VARIANT: vision-on-demand prolong (no frame attached per turn)
+20260815-235935-s0802-qwen-codex-prolong     VARIANT: vision-on-demand prolong (launched before the fix)
+20260815-235938-s0802-gpt56-codex-prolong    VARIANT: vision-on-demand prolong (launched before the fix)
+
+# SUSPECT: the measurement looks complete (full summary, result.json, episode.mp4,
+# clean close_env) but the script was edited while bash was executing it, so the
+# evidence cannot be fully trusted. Listed here rather than silently kept.
+# These are excluded from the comparison; rerun where the cost is reasonable.
+20260815-234642-codex-qwen35-default-0313-0544 script edited mid-run; bash died on unexpected EOF after results were written
+20260815-230133-codex-qwen35-hypothesis-0313   same edit window; still running, expect the same tail failure
+20260815-234642-codex-gpt56-hypothesis-0313    same edit window; still running, expect the same tail failure

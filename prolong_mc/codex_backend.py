@@ -19,12 +19,30 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
 _SESSION_RE = re.compile(r'"(?:thread_id|session_id)"\s*:\s*"([0-9a-fA-F-]{36})"')
+
+
+def is_overflow(name: str, text: str) -> bool:
+    """Does this Codex error mean the model's context window is full?
+
+    Mirrors upstream's classifier (`codex_agent.py:207-212`). Codex has no native
+    compaction, so an overflowed session stays overflowed: every later turn on the
+    same session id fails the same way. The only recovery is a cold start, which is
+    cheap here because `logs.txt` -- not the conversation -- is the memory.
+    """
+    lname, lmsg = name.lower(), text.lower()
+    return (
+        "overflow" in lname
+        or "too long" in lmsg
+        or ("context" in lmsg and ("length" in lmsg or "limit" in lmsg or "window" in lmsg))
+        or ("maximum" in lmsg and "tokens" in lmsg)
+    )
 
 
 class CodexTurn:
@@ -52,6 +70,11 @@ class CodexTurn:
             self.transcript_dir.mkdir(parents=True, exist_ok=True)
         self.session_id: str | None = None
         self.calls = 0
+        # Audited in the comparison: an arm's score is only interpretable next to how
+        # much vision it actually received.
+        self.images_attached = 0
+        self.view_image_calls = 0
+        self.overflow_resets = 0
 
     def write_system_prompt(self, text: str) -> None:
         """Upstream puts the system prompt in AGENTS.md, which Codex discovers from
@@ -61,10 +84,20 @@ class CodexTurn:
         if not agents_md.exists():
             agents_md.write_text(text, encoding="utf-8")
 
-    def _args(self, prompt_on_stdin: bool = True) -> list[str]:
+    def _args(
+        self, images: Sequence[Path] = (), prompt_on_stdin: bool = True
+    ) -> list[str]:
         args = [
             self.codex_bin, "exec",
             "--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
+        ]
+        # Before -m, not after the last flag: -i/--image is variadic, so anything
+        # positional that follows it is read as one more image path. On the resume
+        # path that positional is the session id, and losing it would silently turn
+        # every turn into a cold start. A non-variadic flag terminates the list.
+        for image in images:
+            args += ["-i", str(image)]
+        args += [
             "-m", self.model,
             "-c", f'model_reasoning_effort="{self.reasoning_effort}"',
             "-o", str(self.workspace / "last_message.txt"),
@@ -94,8 +127,15 @@ class CodexTurn:
             args.append("-")
         return args
 
-    def run(self, prompt: str) -> dict[str, Any]:
-        """Execute one turn. Returns {"actions_json", "message", "ok", "error"}."""
+    def run(self, prompt: str, images: Sequence[Path] = ()) -> dict[str, Any]:
+        """Execute one turn. Returns {"actions_json", "message", "ok", "error"}.
+
+        `images` are attached to this turn's prompt unconditionally -- on the resume
+        path too, which `codex exec resume -i` supports. Upstream's log carries the
+        full observation as text; here the observation is pixels, so attaching the
+        current frame is what keeps the analyzer as informed as upstream's is, and as
+        informed as the baseline agent it is compared against.
+        """
         self.calls += 1
         for stale in ("actions.json", "last_message.txt"):
             (self.workspace / stale).unlink(missing_ok=True)
@@ -105,10 +145,12 @@ class CodexTurn:
             env["CODEX_HOME"] = str(self.codex_home)
         env.setdefault("LOCAL_API_KEY", "EMPTY")
 
-        args = self._args()
+        images = [Path(p) for p in images if Path(p).exists()]
+        args = self._args(images)
+        self.images_attached += len(images)
         logger.info(
             f"[codex] turn {self.calls} model={self.model} "
-            f"resume={'yes' if self.session_id else 'no'}"
+            f"resume={'yes' if self.session_id else 'no'} images={len(images)}"
         )
         try:
             proc = subprocess.run(
@@ -134,15 +176,32 @@ class CodexTurn:
                 logger.info(f"[codex] session {self.session_id}")
 
         errors = []
+        overflowed = False
         for line in proc.stdout.splitlines():
             try:
                 event = json.loads(line)
             except Exception:
                 continue
+            if '"view_image"' in line:
+                self.view_image_calls += 1
             if event.get("type") in ("error", "turn.failed"):
-                errors.append(
-                    str(event.get("message") or event.get("error", {}).get("message", ""))
-                )
+                raw = event.get("message") or event.get("error") or ""
+                if isinstance(raw, dict):
+                    name, text = raw.get("name", "CodexError"), raw.get("message", str(raw))
+                else:
+                    name, text = "CodexError", str(raw)
+                errors.append(text)
+                overflowed = overflowed or is_overflow(name, text)
+
+        if overflowed and self.session_id:
+            # Drop the thread rather than retry into it. Everything the next turn
+            # needs is in logs.txt and the workspace; only the conversation is lost.
+            logger.error(
+                f"[codex] turn {self.calls} overflowed the context window; "
+                f"discarding session {self.session_id} so the next turn cold-starts"
+            )
+            self.session_id = None
+            self.overflow_resets += 1
 
         actions_path = self.workspace / "actions.json"
         actions_json = actions_path.read_text(encoding="utf-8") if actions_path.exists() else None
@@ -159,6 +218,7 @@ class CodexTurn:
             "message": message,
             "ok": actions_json is not None,
             "error": errors[-1] if errors else None,
+            "overflow": overflowed,
         }
 
     @staticmethod

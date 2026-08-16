@@ -26,8 +26,16 @@ def label(run_id: str) -> tuple[str, str, str]:
 
 
 def load_invalid() -> dict[str, str]:
-    """Runs whose numbers exist but do not measure what they claim."""
-    path = ROOT / "artifacts" / "INVALID_RUNS.txt"
+    """Runs whose numbers exist but do not measure what they claim.
+
+    A reason beginning `VARIANT:` marks the other case: the numbers are sound but
+    they belong to a different arm than the run was launched as. Those are reported,
+    under their own label, rather than dropped -- dropping them would quietly discard
+    a real ablation.
+    """
+    # Tracked, not under artifacts/: which runs are trustworthy is a research
+    # judgement that has to survive an artifacts/ wipe and travel with the code.
+    path = ROOT / "RUN_LEDGER.txt"
     out: dict[str, str] = {}
     if not path.exists():
         return out
@@ -47,7 +55,7 @@ def main() -> int:
     for f in sorted(ROOT.glob("artifacts/runs/*/results/*/*/*/result.json")):
         run_id = f.parts[len(ROOT.parts) + 2]
         bad = next((r for p, r in invalid.items() if run_id.startswith(p)), None)
-        if bad:
+        if bad and not bad.startswith("VARIANT:"):
             if (run_id, bad) not in skipped:
                 skipped.append((run_id, bad))
             continue
@@ -57,6 +65,10 @@ def main() -> int:
         except Exception:
             continue
         agent, model, path = label(run_id)
+        if bad:
+            # Its own configuration key, so it never averages with the arm it was
+            # launched as. `vod` = the analyzer had to ask for pixels.
+            agent = f"{agent}-vod"
         ms = d.get("milestone_status", [])
         hits = [m["milestone_id"] for m in ms if m.get("completed")]
         rows.append({

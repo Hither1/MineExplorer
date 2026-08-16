@@ -90,9 +90,11 @@ ws = pathlib.Path(tempfile.mkdtemp())
 agent = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
                      workspace=ws / "wsp", action_cap=15, repeat_cap=20, step_cap=40)
 
-turns = {"n": 0}
-def fake_run(prompt):
+turns = {"n": 0, "images": []}
+def fake_run(prompt, images=()):
     turns["n"] += 1
+    turns["images"].append([pathlib.Path(p).name for p in images])
+    turns["last_prompt"] = prompt
     if turns["n"] == 1:
         return {"ok": True, "error": None, "message": "briefing\n[PLAN]\nwalk north",
                 "actions_json": json.dumps({"actions": [
@@ -133,12 +135,45 @@ check("drained ticks are numbered, not repeated wholesale",
 check("log header uses the step the action was issued at", "Action 1 | Step 1" in text2, text2[:400])
 check("frames saved by the agent", len(list((ws / "wsp" / "frames").glob("*.png"))) >= 5)
 
+check("every analyzer turn gets the current frame attached",
+      turns["images"] == [["step_0001.png"], ["step_0005.png"]], f'got {turns["images"]}')
+check("the turn prompt says the view is attached",
+      "CURRENT first-person view" in turns["last_prompt"])
+
 agent2 = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
                       workspace=ws / "wsp2", analyzer_retries=2)
-agent2.codex.run = lambda prompt: {"ok": False, "error": "boom", "message": "", "actions_json": None}
+agent2.codex.run = lambda prompt, images=(): {"ok": False, "error": "boom", "message": "",
+                                              "actions_json": None, "overflow": False}
 agent2.load_system_prompt("t")
 _, bad_action, _ = agent2.get_action([frame], [], [], 1, info={"player_pos": pos})
 check("analyzer failure returns None, not a no-op", bad_action is None)
+
+# A failed refill must not leave the previous entry pending: the next call would
+# re-append its section, and a log full of duplicate `Action N | moved=0.00` reads to
+# the analyzer as a player stuck against a wall.
+agent3 = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
+                      workspace=ws / "wsp3", analyzer_retries=1)
+one = {"n": 0}
+def one_then_fail(prompt, images=()):
+    one["n"] += 1
+    if one["n"] == 1:
+        return {"ok": True, "error": None, "message": "[PLAN]\ngo",
+                "actions_json": json.dumps({"actions": [{"action": {"forward": 1}, "repeat": 1}]}),
+                "overflow": False}
+    return {"ok": False, "error": "boom", "message": "", "actions_json": None, "overflow": False}
+agent3.codex.run = one_then_fail
+agent3.load_system_prompt("t")
+for step in range(1, 5):
+    agent3.get_action([frame], [], [], step, info={"player_pos": dict(pos, z=float(step))})
+text3 = (ws / "wsp3" / "logs.txt").read_text()
+check("a failed refill does not duplicate the last action section",
+      text3.count("Action 1 | Step 1") == 1, f'got {text3.count("Action 1 | Step 1")}')
+
+# A crashed scene rerun must not append a second episode to the first one's log.
+agent4 = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
+                      workspace=ws / "wsp3")
+check("a stale workspace is moved aside, not appended to",
+      (ws / "wsp3" / "logs.txt").read_text() == "" and (ws / "wsp3.crashed" / "logs.txt").exists())
 
 
 # --- codex argv: the resume path must stay sandboxed and must not use -s ---------
@@ -153,6 +188,38 @@ check("no -s anywhere: exec resume rejects it", "-s" not in first and "-s" not i
 check("sandbox set via config on both paths",
       first.count('sandbox_mode="workspace-write"') == 1 and resumed.count('sandbox_mode="workspace-write"') == 1)
 check("session id precedes the stdin sentinel", resumed[-2] == ct.session_id and resumed[-1] == "-")
+
+# -i is variadic: anything positional after it is eaten as another image path. On the
+# resume path that positional is the session id, so images must be terminated by a flag.
+imgs = [pathlib.Path("/tmp/a.png"), pathlib.Path("/tmp/b.png")]
+r_img = ct._args(imgs)
+check("both images attached on resume", r_img.count("-i") == 2)
+check("images are followed by a flag, not by the session id",
+      r_img[r_img.index("/tmp/b.png") + 1] == "-m", f"got {r_img[r_img.index('/tmp/b.png') + 1]}")
+check("session id survives image attachment", r_img[-2] == ct.session_id)
+
+# --- overflow: the session must be dropped, not retried into ---------------------
+from prolong_mc.codex_backend import is_overflow
+check("overflow classifier catches the context-window message",
+      is_overflow("BadRequest", "Your input exceeds the context window: maximum 272000 tokens"))
+check("overflow classifier catches 'too long'", is_overflow("Error", "prompt is too long"))
+check("overflow classifier ignores ordinary errors",
+      not is_overflow("ToolError", "actions.json could not be written"))
+
+ct2 = CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true")
+ct2.session_id = "1234abcd-0000-0000-0000-00000000ffff"
+class _Proc:
+    stdout = json.dumps({"type": "turn.failed",
+                         "message": {"name": "BadRequest",
+                                     "message": "context length exceeded"}}) + "\n"
+    stderr = ""
+    returncode = 1
+import unittest.mock as _mock
+with _mock.patch("subprocess.run", return_value=_Proc()):
+    res = ct2.run("hi")
+check("overflow is reported to the caller", res["overflow"] is True)
+check("overflow drops the session so the next turn cold-starts", ct2.session_id is None)
+check("overflow reset is counted", ct2.overflow_resets == 1)
 
 
 # --- ESC policy must not vary with the protocol, matching the baseline ----------
