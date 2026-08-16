@@ -162,3 +162,30 @@ needed, all five paths behaving:
 The fourth case is the one that cost two runs tonight — a readiness endpoint
 answering from a stranger's process. It now fails closed. Cross-node reachability is
 confirmed by the same test (login node → gh056).
+
+### Verification ladder, rungs 1-3 passed (2026-08-16 ~04:00)
+
+Shared vLLM server up on the fifth attempt (job 2957434, gh078:37434). The four
+failures were worth their cost only because each was a different defect: gh089 and
+gh131 interconnect launch failures, einops installed where `PYTHONNOUSERSITE=1`
+cannot see it (three jobs), and the step killed mid-`torch.compile` on host memory.
+
+| rung | result |
+|---|---|
+| 1. advert + identity | PASS — `Qwen/Qwen3.8-27B` at the advertised URL |
+| 2. text / vision / Responses | PASS — all four probes; the frame description is accurate and the Responses reply carries no echo of its own input |
+| 3. G1 gate: codex → Responses → tool calls → actions.json | PASS — T1 wrote a file, T2 produced a valid 3-entry plan |
+
+Rung 3 also settles two configuration questions by demonstration: `qwen3_xml` is the
+right tool-call parser (T1 could not have written a file otherwise), and vLLM's
+Responses path carries codex's requests intact.
+
+**No reasoning parser is needed.** Qwen3.8 emits its thinking as untagged prose
+before the answer, with `reasoning_content` empty, so a parser has no boundary to
+split on — but `extract_json_from_response` already recovers the object by brace
+matching, verified against the exact response shape. Checking that avoided an
+unnecessary server restart.
+
+With a shared server the gate is a pure client, so rung 3 ran on the login node in
+two minutes instead of waiting for an allocation. Rung 4 (job 2957472) needs the
+Minecraft sandbox and therefore a node.
