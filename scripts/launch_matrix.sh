@@ -26,11 +26,18 @@ SERVER=${SERVER:-qwen38-27b}
 # their walltime, which silently truncated the very arm they were being compared to.
 MAX_STEPS=${MAX_STEPS:-300}
 SCENES=${SCENES:-"0313 0802"}
-# 10h, not 8: the arms that call the model once per step need ~300 generations, and at
-# the TP=1 server's 2.4 min/step a 6h walltime cut two baseline seeds off at 1/2 while
-# PRO-LONG finished. A walltime that binds one arm is a confound, so it is set from the
-# slowest arm. 12h or more would classify the run as E2.
-WALL=${WALL:-10:00:00}
+# Matched to the server's own walltime, not chosen independently. The arms that call
+# the model once per step need ~300 generations and a 6h limit cut two baseline seeds
+# off at 1/2 while PRO-LONG finished, so the limit has to be set from the slowest arm --
+# but an episode cannot outlive the server it queries either, so setting it longer than
+# the server buys nothing. Raise both together.
+WALL=${WALL:-08:00:00}
+# Attach only to a server that can outlive the episode, and wait for the successor
+# rather than start against one that is about to expire: a run that loses its server at
+# hour six has burned the node and produced nothing. These travel in the job's own `env`
+# prefix -- exporting them here would reach the launcher, not the job.
+MIN_REMAINING=${MODEL_SERVER_MIN_REMAINING:-360}
+SERVER_WAIT=${MODEL_SERVER_WAIT:-5400}
 SEED_TAG=${SEED_TAG:-}
 export SBATCH_EXCLUDE=${SBATCH_EXCLUDE:-$(bash "$ROOT_DIR/scripts/bad_nodes.sh")}
 
@@ -51,6 +58,7 @@ for cell in $CELLS; do
     cmd=(bash scripts/launch.sh -s "$slug" -t E1 -p "$purpose" -T "$WALL" -g 1 -c 16 -m 100G
          -- env MODEL_SERVER="$SERVER" MODEL_ID="$MODEL_ID" AGENT_MODE="$mode"
             MILESTONE_HINT=1 MAX_STEPS="$MAX_STEPS" SCENES="$scene" CODEX_EFFORT=low
+            MODEL_SERVER_MIN_REMAINING="$MIN_REMAINING" MODEL_SERVER_WAIT="$SERVER_WAIT"
             bash scripts/snapshot_exec.sh scripts/with_minecraft_arm64.sh --
             bash scripts/snapshot_exec.sh "$runner")
     if [[ ${DRY:-0} == 1 ]]; then
