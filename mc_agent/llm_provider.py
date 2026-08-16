@@ -356,14 +356,18 @@ class CodexProvider(BaseLLMProvider):
             ]
             for img in images:
                 cmd += ["-i", str(img)]
-            cmd.append(prompt)
+            # `-i/--image` is variadic, so a positional prompt appended after it is
+            # swallowed as one more image path and codex silently falls back to
+            # stdin. Pass the prompt on stdin explicitly instead: `-` is codex's
+            # documented sentinel for that and cannot be captured by --image.
+            cmd.append("-")
 
             logger.info(
                 f"[CodexProvider] call {self._calls}: model={effective_model} "
                 f"images={len(images)} prompt_chars={len(prompt)}"
             )
             proc = subprocess.run(
-                cmd, cwd=workdir, stdin=subprocess.DEVNULL,
+                cmd, cwd=workdir, input=prompt,
                 capture_output=True, text=True,
                 timeout=timeout or self.timeout,
             )
@@ -395,5 +399,7 @@ class CodexProvider(BaseLLMProvider):
                 f"{reasons[-1] if reasons else proc.stderr[:300]}"
             )
         finally:
-            if self.transcript_dir is None:
-                shutil.rmtree(workdir, ignore_errors=True)
+            # Always remove it: the prompt and events are already copied into
+            # transcript_dir, and keeping ~20 frames per call would leave thousands
+            # of files in the node's tmpfs over a 300-step episode.
+            shutil.rmtree(workdir, ignore_errors=True)
