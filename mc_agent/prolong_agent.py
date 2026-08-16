@@ -24,7 +24,7 @@ import numpy as np
 from loguru import logger
 from PIL import Image
 
-from mc_agent.action_space import ActionState, BaseActionSpace
+from mc_agent.action_space import BaseActionSpace
 from mc_agent.llm_provider import BaseLLMProvider
 from prolong_mc import prompts
 from prolong_mc.actions import describe_entry, parse_actions
@@ -104,10 +104,14 @@ class ProlongAgent:
             )
         )
 
-    def get_default_action(self, is_call_failed: bool = True):
+    def get_default_action(self, is_call_failed: bool = True) -> tuple[str, dict]:
+        # A wire dict, not an ActionState: the caller feeds this straight to
+        # env.step() and to checker.augment_action_with_queries().
         if is_call_failed:
             logger.warning("[prolong] falling back to a no-op action")
-        return "", self.action_space.load_default_action()
+        return "", self.action_space.dump_action_to_dict(
+            self.action_space.load_default_action()
+        )
 
     def on_esc_rejected(self, step: int) -> None:
         self.log.set_plan(
@@ -169,9 +173,9 @@ class ProlongAgent:
         item = self.queue.popleft()
         self._last_entry = item["entry"]
         self._action_num += 1
-        state = _state_from_wire(self.action_space, item["wire"])
-        state.think = item["think"]
-        return state.think, state, ""
+        # (thought, wire action dict, memory_update) -- the same triple DefaultAgent
+        # returns. PRO-LONG has no memory_update: the log is the memory.
+        return item["think"], item["wire"], ""
 
     # -- the mechanism ---------------------------------------------------
 
@@ -224,23 +228,3 @@ def _png(frame: np.ndarray) -> bytes:
     buf = io.BytesIO()
     Image.fromarray(np.asarray(frame).astype(np.uint8), "RGB").save(buf, format="PNG")
     return buf.getvalue()
-
-
-def _state_from_wire(space: BaseActionSpace, wire: dict[str, Any]) -> ActionState:
-    """The queue holds wire dicts; the eval loop wants an ActionState back."""
-    state = ActionState()
-    for key, value in wire.items():
-        if key == "camera":
-            state.camera = list(value)
-        elif key.startswith("hotbar."):
-            idx = int(key.split(".", 1)[1])
-            hotbars = list(state.hotbars)
-            hotbars[idx - 1] = int(value)
-            state.hotbars = hotbars
-        elif key == "pickItem":
-            state.pick_item = int(value)
-        elif key == "swapHands":
-            state.swap_hands = int(value)
-        else:
-            setattr(state, key, int(value))
-    return state

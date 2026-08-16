@@ -106,18 +106,23 @@ check("AGENTS.md written once", (ws / "wsp" / "AGENTS.md").exists())
 
 frame = np.zeros((64, 64, 3), np.uint8)
 pos = {"x": 0.0, "y": 71.0, "z": 0.0, "pitch": 0.0, "yaw": 0.0}
-acts = []
+acts, thoughts = [], []
 for step in range(1, 6):  # plan 1 gives 4 steps, plan 2 gives 1
     p_ = dict(pos, z=float(step))
     think, action, _ = agent.get_action([frame], [], [], step, info={"player_pos": p_})
-    acts.append(action)
+    acts.append(action); thoughts.append(think)
 
 check("one analyzer turn covered four steps", turns["n"] == 2, f"turns={turns['n']}")
 check("queue drained exactly", len(agent.queue) == 0)
-check("first action is forward+sprint", acts[0].forward == 1 and acts[0].sprint == 1)
-check("fourth action is the camera turn", acts[3].camera == [0.0, 45.0])
-check("fifth action comes from the second plan", acts[4].ESC == 1)
-check("plan text reaches the thought", "walk north" in (acts[0].think or ""))
+# Assert against the consumer's contract -- eval_benchmark feeds this straight into
+# checker.augment_action_with_queries() and env.step() -- not against whatever type
+# the agent happens to build internally.
+check("action is a wire dict", isinstance(acts[0], dict) and "hotbar.1" in acts[0])
+check("first action is forward+sprint", acts[0]["forward"] == 1 and acts[0]["sprint"] == 1)
+check("fourth action is the camera turn", acts[3]["camera"] == [0.0, 45.0])
+check("fifth action comes from the second plan", acts[4]["ESC"] == 1)
+check("plan text reaches the thought", "walk north" in (thoughts[0] or ""))
+check("default action is a wire dict too", isinstance(agent.get_default_action(False)[1], dict))
 
 text2 = (ws / "wsp" / "logs.txt").read_text()
 check("agent log has initial + actions", text2.count(SEPARATOR) >= 5, f"got {text2.count(SEPARATOR)}")
