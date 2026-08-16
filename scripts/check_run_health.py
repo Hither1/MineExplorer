@@ -84,7 +84,25 @@ def check(run_dir: Path) -> tuple[str, list[str]]:
             )
             notes.append(f"displacement_last_{len(window)}={span:.2f}")
             if span < 0.5:
-                flag("BROKEN", f"player has not moved in {len(window)} steps")
+                # Two very different causes, and conflating them wastes the alert. If
+                # the environment is answering and states keep arriving, the actions
+                # are landing and it is the agent that has stopped -- a result, not a
+                # defect. Only silence from the environment means the run is invalid.
+                if lost:
+                    flag("BROKEN", f"player has not moved in {len(window)} steps and "
+                                   f"the environment is failing")
+                else:
+                    flag("WARN", f"player has not moved in {len(window)} steps; the "
+                                 f"environment is healthy, so the agent has stalled")
+
+    # The stall has a signature worth naming: a model that believes it succeeded, will
+    # not press ESC because nothing verified it, and returns an empty action "to
+    # preserve the successful state". gpt-5.6 spent 150 steps that way on 0802.
+    empty = len(re.findall(r'"action":\s*\{\}', text))
+    if empty >= 20:
+        notes.append(f"empty_actions={empty}")
+        flag("WARN", f"agent returned an empty action {empty} times; it has given up "
+                     f"without ending the episode")
 
     calls = len(re.findall(r"\[CodexProvider\] call|\[codex\] turn", text))
     if calls:
