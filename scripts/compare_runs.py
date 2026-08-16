@@ -21,8 +21,40 @@ def label(run_id: str) -> tuple[str, str, str]:
     r = run_id.lower()
     agent = "prolong" if "prolong" in r else "hypothesis" if "hypothesis" in r else "default"
     model = "gpt-5.6" if "gpt56" in r else "Qwen3.5-27B"
-    path = "vllm" if "vllm" in r or ("codex" not in r and "prolong" not in r) else "codex"
-    return agent, model, path
+    return agent, model, channel(run_id)
+
+
+def channel(run_id: str) -> str:
+    """Which channel reached the model, for runs predating the recorded `provider`.
+
+    Guessing this from the slug was wrong in the way that matters: a run named
+    `m1-qwen38-default-0313-s2` contains neither "codex" nor "vllm", so the guess
+    called it plain-vLLM when every one of those runs went through the Codex CLI.
+    That mislabel turned the central comparison -- PRO-LONG against its baseline --
+    into an apparent agent-vs-channel difference. The launcher records the actual
+    command, so read it instead.
+    """
+    manifest = ROOT / ".harness" / "runs" / run_id / "manifest.yaml"
+    if manifest.exists():
+        cmd = manifest.read_text(errors="replace")
+        # The command names a runner script rather than the flags themselves, so the
+        # answer lives one level down, in the script it invoked.
+        texts = [cmd]
+        for name in re.findall(r"scripts/[\w./-]+\.sh", cmd):
+            path = ROOT / name
+            if path.exists():
+                texts.append(path.read_text(errors="replace"))
+        joined = "\n".join(texts)
+        if "--use-codex" in joined:
+            return "codex"
+        if "--use-vllm" in joined:
+            return "vllm"
+    r = run_id.lower()
+    if "vllm" in r:
+        return "vllm"
+    if "codex" in r or "prolong" in r:
+        return "codex"
+    return "?"
 
 
 def load_invalid() -> dict[str, str]:
