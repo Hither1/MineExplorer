@@ -22,6 +22,12 @@ SERVED_NAME=${SERVED_NAME:-$MODEL_ID}
 PORT=${VLLM_PORT:-$(( 30000 + ${SLURM_JOB_ID:-$$} % 10000 ))}
 MAX_LEN=${VLLM_MAX_MODEL_LEN:-131072}
 GPU_FRAC=${VLLM_GPU_FRACTION:-0.90}
+# Qwen3.8 emits XML tool calls -- <tool_call><function=name><parameter=p>value --
+# not Hermes JSON, so `qwen3_xml` is the parser that turns them into structured
+# tool_calls. Without it vLLM returns the raw text, codex sees no tool call at all,
+# and the agent silently cannot act: a failure that looks like a bad model rather
+# than a missing flag.
+TOOL_PARSER=${VLLM_TOOL_PARSER:-qwen3_xml}
 SERVER_SLUG=${SERVER_SLUG:-qwen38-27b}
 DISCOVERY_DIR=${DISCOVERY_DIR:-$ROOT_DIR/artifacts/servers}
 DISCOVERY=$DISCOVERY_DIR/$SERVER_SLUG.json
@@ -54,6 +60,7 @@ setsid "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
   --max-model-len "$MAX_LEN" \
   --gpu-memory-utilization "$GPU_FRAC" \
   --trust-remote-code \
+  --enable-auto-tool-choice --tool-call-parser "$TOOL_PARSER" \
   > "$LOG" 2>&1 &
 SERVER_PID=$!
 SERVER_PGID=$SERVER_PID
