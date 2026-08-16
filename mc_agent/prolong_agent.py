@@ -132,6 +132,13 @@ class ProlongAgent:
             self.action_space.load_default_action()
         )
 
+    def _milestone_note(self, hint: str) -> str:
+        hint = (hint or "").strip()
+        if not hint or hint == self._last_milestone_hint:
+            return ""
+        self._last_milestone_hint = hint
+        return f"[MILESTONE] {hint}"
+
     def on_esc_rejected(self, step: int) -> None:
         # Collected, not written here: under the hint protocol a model that believes
         # it is finished presses ESC on every remaining step, and one log line per
@@ -206,7 +213,12 @@ class ProlongAgent:
                 pos=pos,
                 prev_pos=self._prev_pos,
                 frame_name=frame_name,
-                milestone_note=f"[MILESTONE] {milestone_hint}" if milestone_hint.strip() else "",
+                # Only on change. The baseline re-renders this every step because it
+                # rebuilds its context every step; an append-only log would instead
+                # accumulate 150 copies of the same sentence, crowding out the trace
+                # it annotates and hastening the context overflow. The transition --
+                # which is the whole signal -- is still recorded the step it happens.
+                milestone_note=self._milestone_note(milestone_hint),
             )
             self._prev_pos = pos
             # Consume it. Without this, a failed refill leaves the entry set and every
@@ -241,6 +253,7 @@ class ProlongAgent:
     _last_step: int = 0
     _current_frame: str | None = None
     _esc_rejections: int = 0
+    _last_milestone_hint: str = ""
 
     def _refill(self, step: int) -> bool:
         log_name = "logs.txt"

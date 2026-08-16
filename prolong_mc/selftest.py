@@ -258,6 +258,24 @@ check("the refusal note does not erase the analyzer's plan",
       "keep going north" in text5)
 check("refusals are counted for the audit", agent5._esc_rejections == 4)
 
+# The status is re-sent every step; the log must record the transition, not 150 copies.
+agent6 = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
+                      workspace=ws / "wsp6", milestone_hint=True)
+agent6.codex.run = lambda prompt, images=(): {
+    "ok": True, "error": None, "overflow": False, "message": "[PLAN]\ngo",
+    "actions_json": json.dumps({"actions": [{"action": {"forward": 1}, "repeat": 8}]})}
+agent6.load_system_prompt("t")
+NOT_YET = "The environment has NOT verified the task as complete yet."
+DONE = "The environment HAS verified the task as complete."
+for step in range(1, 7):
+    agent6.get_action([frame], [], [], step, info={"player_pos": dict(pos, z=float(step))},
+                      milestone_hint=NOT_YET if step < 4 else DONE)
+text6 = (ws / "wsp6" / "logs.txt").read_text()
+check("the unchanged status is logged once, not once per step",
+      text6.count(NOT_YET) == 1, f"got {text6.count(NOT_YET)}")
+check("the transition to verified-complete is logged the step it happens",
+      text6.count(DONE) == 1, f"got {text6.count(DONE)}")
+
 print()
 print(f"{'ALL PASS' if not fails else 'FAILURES: ' + ', '.join(fails)}")
 sys.exit(1 if fails else 0)
