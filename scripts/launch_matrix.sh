@@ -26,7 +26,11 @@ SERVER=${SERVER:-qwen38-27b}
 # their walltime, which silently truncated the very arm they were being compared to.
 MAX_STEPS=${MAX_STEPS:-300}
 SCENES=${SCENES:-"0313 0802"}
-WALL=${WALL:-08:00:00}
+# 10h, not 8: the arms that call the model once per step need ~300 generations, and at
+# the TP=1 server's 2.4 min/step a 6h walltime cut two baseline seeds off at 1/2 while
+# PRO-LONG finished. A walltime that binds one arm is a confound, so it is set from the
+# slowest arm. 12h or more would classify the run as E2.
+WALL=${WALL:-10:00:00}
 SEED_TAG=${SEED_TAG:-}
 export SBATCH_EXCLUDE=${SBATCH_EXCLUDE:-$(bash "$ROOT_DIR/scripts/bad_nodes.sh")}
 
