@@ -190,3 +190,24 @@ failures and replans, verification, commits, pushes, and handoffs. Do not log ev
   spending GPU hours on another episode.
 - Also carried forward: partial latency data from the cancelled full run — 26.6 / 24.0 / 23.1 s
   for steps 1-4 with hints enabled, still on the ramp, plateau unmeasured.
+
+## 2026-08-15 — fix verified, then re-scored under the paper protocol
+
+- Fix verified first (run `20260815-190627-mc-arm64-info-passthrough-2835`, Slurm 2955272):
+  `/step` info now carries `player_pos {'x': -3009.5, 'y': 71.0, 'z': -5572.5, …}` plus
+  `inventory`, `location_stats`, `voxels`, `mobs`. Committed as `9ad678e`.
+- User chose the strict paper protocol (`MILESTONE_HINT=0`) so the score stays comparable.
+- Run `20260815-210755-qwen35-0313-0544-scored-33ea` (Slurm 2955919), 10 min 35 s, both scenes:
+
+  | scene | steps | termination | milestones |
+  |---|---|---|---|
+  | 0313 | 13 | agent_esc | **1/2** — `find_cut_sandstone` at frame 2 |
+  | 0544 | 3 | agent_esc | 0/2 |
+
+  Aggregate `Scenes: 2 | Tasks: 0/2 | Milestones: 1/4 (25.0%)`, against 0/4 before the fix
+  under identical settings.
+- Interpretation: the single-variable comparison confirms the scoring path was the cause of
+  the earlier zero. What remains is a genuine capability failure — the agent clears the first
+  hop, then declares the hidden second hop complete from a distance and presses ESC.
+- Still true: one seed, two scenes; no claim about model quality, and no comparison against
+  the published x86 sandbox.
