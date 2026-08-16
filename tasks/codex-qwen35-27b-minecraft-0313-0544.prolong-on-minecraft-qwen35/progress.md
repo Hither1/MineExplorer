@@ -266,9 +266,13 @@ episode.
    the 4096 cap (expect exactly 4096, finish_reason `length`), decode ≥30 tok/s, and
    thinking off at effort `none`. A failure here is a serving-layer failure; do not
    spend a matrix seed on it.
-3. One 40-step prolong episode, ledgered as a probe (`TRUNCATED`/probe convention, not
+3. `scripts/prolong_g1_gate.sh` again, not only because it is the next rung: pinning
+   thinking off changes the rendered prompt, and this is the cheapest check that
+   `qwen3_xml` still parses a tool call and that codex still writes a valid
+   `actions.json` under it. It runs on the login node against a shared server.
+4. One 40-step prolong episode, ledgered as a probe (`TRUNCATED`/probe convention, not
    in the comparison pool), then `grep -l compact` over its `codex_turns/*.events.jsonl`
    — plus the `compactions` field in `prolong_vision_audit.json`, which must read 0. A
    nonzero count means `model_auto_compact_token_limit` does not hold the line and the
    arm needs re-describing, not re-running.
-4. Only then the matrix, staged.
+5. Only then the matrix, staged.
