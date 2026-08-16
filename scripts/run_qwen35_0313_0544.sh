@@ -5,8 +5,8 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 PYTHON_BIN=${PYTHON_BIN:-/work/nvme/bdrx/dzhang5/conda/envs/mineexplorer-qwen35-tf/bin/python}
 TRANSFORMERS_BIN=${TRANSFORMERS_BIN:-$(dirname "$PYTHON_BIN")/transformers}
 HF_HOME=${HF_HOME:-/work/nvme/bdrx/dzhang5/huggingface}
-MODEL_REVISION=${MODEL_REVISION:-fc05daec18b0a78c049392ed2e771dde82bdf654}
-MODEL_ID=${MODEL_ID:-Qwen/Qwen3.5-27B@$MODEL_REVISION}
+MODEL_REVISION=${MODEL_REVISION:-1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0}
+MODEL_ID=${MODEL_ID:-Qwen/Qwen3.8-27B}
 # Derived from the job id: ghx4 nodes are shared, and a fixed port let two of our
 # own jobs collide -- the loser exited while /health still answered from the
 # winner's server, so the run scored against the wrong process.

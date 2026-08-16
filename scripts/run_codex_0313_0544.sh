@@ -17,17 +17,14 @@ PYTHON_BIN=${PYTHON_BIN:-/work/nvme/bdrx/dzhang5/conda/envs/mineexplorer-qwen35-
 CODEX_BIN=${CODEX_BIN:-/u/dzhang5/.nvm/versions/node/v22.16.0/bin/codex}
 MODEL_ID=${MODEL_ID:-gpt-5.6-sol}
 CODEX_EFFORT=${CODEX_EFFORT:-xhigh}
-# LOCAL_MODEL=1 starts the transformers-serve shim and points codex at it, so the
-# same harness can be driven by Qwen3.5-27B instead of a hosted model.
-LOCAL_MODEL=${LOCAL_MODEL:-0}
-# Derived from the job id, not fixed: ghx4 nodes are shared, so two of our own jobs
-# landing on one node both tried to bind 30000. The loser exited while /health still
-# answered -- from the winner's server, which has no shim -- and the whole run 422'd
-# against a stranger's process while looking healthy.
-QWEN_PORT=${QWEN_PORT:-$(( 20000 + ${SLURM_JOB_ID:-$$} % 20000 ))}
+# MODEL_SERVER names a shared vLLM server (see scripts/serve_vllm.sh) to drive codex
+# with instead of a hosted model. Unset means the hosted account model.
+#
+# This replaces a per-run `transformers serve` process. That started 52 GB of weights
+# per job, had no paged KV cache -- a PRO-LONG episode died of allocator
+# fragmentation, not capacity -- and needed a shim to tolerate the Codex CLI at all.
+MODEL_SERVER=${MODEL_SERVER:-}
 CODEX_BASE_URL=${CODEX_BASE_URL:-}
-SERVER_PID=""
-SERVER_PGID=""
 MAX_STEPS=${MAX_STEPS:-300}
 LOADING_COMMAND_STEPS=${LOADING_COMMAND_STEPS:-20}
 TEMPERATURE=${TEMPERATURE:-0.7}
@@ -36,7 +33,6 @@ MILESTONE_HINT=${MILESTONE_HINT:-0}
 RUN_ROOT=${ART_DIR:-$ROOT_DIR/artifacts/manual-codex-0313-0544}
 OUTPUT_DIR=${OUTPUT_DIR:-$RUN_ROOT/results}
 TASK_VIEW=$RUN_ROOT/benchmark-view
-SERVER_LOG=$RUN_ROOT/qwen-server.log
 
 if [[ -z ${MC_SANDBOX_URL:-} ]]; then
   echo "MC_SANDBOX_URL is required; wrap this with scripts/with_minecraft_arm64.sh" >&2
@@ -65,42 +61,12 @@ done
 
 curl -fsS "${MC_SANDBOX_URL%/}/monitor/alive" > "$RUN_ROOT/minecraft-alive.json"
 
-cleanup() {
-  if [[ -n "$SERVER_PGID" ]] && kill -0 -- "-$SERVER_PGID" 2>/dev/null; then
-    kill -TERM -- "-$SERVER_PGID" 2>/dev/null || true
-    for _ in $(seq 1 20); do kill -0 -- "-$SERVER_PGID" 2>/dev/null || break; sleep 0.5; done
-    kill -KILL -- "-$SERVER_PGID" 2>/dev/null || true
-  fi
-  [[ -n "$SERVER_PID" ]] && wait "$SERVER_PID" 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
-
-if [[ "$LOCAL_MODEL" == 1 ]]; then
+if [[ -n "$MODEL_SERVER" ]]; then
   export LOCAL_API_KEY=EMPTY
-  # 27B weights leave roughly 40 GiB for KV and activations on a 95 GiB GH200, and a
-  # PRO-LONG prompt grows every turn (the log, plus an attached frame). What runs out
-  # first is not capacity but fragmentation: one run died with 9 GiB reserved and
-  # unallocated while a 2.3 GiB allocation failed.
-  export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
-  export HF_HOME=${HF_HOME:-/work/nvme/bdrx/dzhang5/huggingface}
-  setsid "$PYTHON_BIN" "$ROOT_DIR/scripts/serve_qwen_for_codex.py" serve "$MODEL_ID" \
-    --host 127.0.0.1 --port "$QWEN_PORT" --device cuda:0 --dtype auto \
-    --reasoning off --log-level info > "$SERVER_LOG" 2>&1 &
-  SERVER_PID=$!
-  SERVER_PGID=$SERVER_PID
-  for _ in $(seq 1 360); do
-    curl -fsS "http://127.0.0.1:$QWEN_PORT/health" >/dev/null 2>&1 && break
-    kill -0 "$SERVER_PID" 2>/dev/null || { echo "model server died; see $SERVER_LOG" >&2; exit 1; }
-    sleep 5
-  done
-  # A healthy /health is not proof the server is ours; confirm we are still running
-  # and that nothing else claimed the port first.
-  if ! kill -0 "$SERVER_PID" 2>/dev/null || grep -q "address already in use" "$SERVER_LOG"; then
-    echo "our model server is not the one answering on $QWEN_PORT; see $SERVER_LOG" >&2
-    exit 1
-  fi
-  CODEX_BASE_URL=${CODEX_BASE_URL:-http://127.0.0.1:$QWEN_PORT/v1}
-  echo "local model server ready; codex -> $CODEX_BASE_URL"
+  # Resolving a URL is not the same as confirming what answers on it; the helper
+  # asserts the live server serves the model this run claims to measure.
+  CODEX_BASE_URL=$(bash "$ROOT_DIR/scripts/use_model_server.sh" "$MODEL_SERVER" "$MODEL_ID") || exit 1
+  echo "codex -> $CODEX_BASE_URL"
 fi
 
 eval_args=(

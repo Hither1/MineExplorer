@@ -6,7 +6,7 @@
 # the smallest thing that can answer it: no Minecraft, no PRO-LONG runner, just the
 # CLI, a model, and PRO-LONG's own actions.json parser as the oracle.
 #
-# GATE_BACKEND=local  (default) local Qwen3.5-27B behind the transformers-serve shim.
+# GATE_BACKEND=local  (default) local Qwen3.8-27B on the shared vLLM server.
 # GATE_BACKEND=openai      hosted gpt-5.6-sol, no GPU and no local server.
 #
 # The two arms share the prompts, the flags and the oracle byte for byte, so a
@@ -16,29 +16,20 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 PYTHON_BIN=${PYTHON_BIN:-/work/nvme/bdrx/dzhang5/conda/envs/mineexplorer-qwen35-tf/bin/python}
-TRANSFORMERS_BIN=${TRANSFORMERS_BIN:-$(dirname "$PYTHON_BIN")/transformers}
 HF_HOME=${HF_HOME:-/work/nvme/bdrx/dzhang5/huggingface}
-MODEL_REVISION=${MODEL_REVISION:-fc05daec18b0a78c049392ed2e771dde82bdf654}
-MODEL_ID=${MODEL_ID:-Qwen/Qwen3.5-27B@$MODEL_REVISION}
+MODEL_ID=${MODEL_ID:-Qwen/Qwen3.8-27B}
+MODEL_SERVER=${MODEL_SERVER:-qwen38-27b}
 # GATE_BACKEND, not BACKEND: the research harness exports BACKEND itself (it held the
 # launcher's own path), so a run script that reads BACKEND silently gets the harness's
 # value. This gate took the hosted branch that way while claiming to test a local model.
 GATE_BACKEND=${GATE_BACKEND:-local}
 OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.6-sol}
 OPENAI_EFFORT=${OPENAI_EFFORT:-xhigh}
-# Derived from the job id, not fixed: ghx4 nodes are shared, so two of our own jobs
-# landing on one node both tried to bind 30000. The loser exited while /health still
-# answered -- from the winner's server, which has no shim -- and the whole run 422'd
-# against a stranger's process while looking healthy.
-QWEN_PORT=${QWEN_PORT:-$(( 20000 + ${SLURM_JOB_ID:-$$} % 20000 ))}
-QWEN_API_URL=http://127.0.0.1:$QWEN_PORT/v1
+QWEN_API_URL=
 CODEX_BIN=${CODEX_BIN:-/u/dzhang5/.nvm/versions/node/v22.16.0/bin/codex}
 PROLONG_DIR=${PROLONG_DIR:?set PROLONG_DIR to the PRO-LONG checkout}
 RUN_ROOT=${ART_DIR:-$ROOT_DIR/artifacts/manual-prolong-g1-$GATE_BACKEND}
 WS=$RUN_ROOT/workspace
-SERVER_LOG=$RUN_ROOT/qwen-server.log
-SERVER_PID=""
-SERVER_PGID=""
 
 # A throwaway CODEX_HOME is not hygiene, it is the experiment's control: the user's
 # real home carries auth.json plus `model = "gpt-5.6-sol"`, and any leak of those
@@ -50,46 +41,15 @@ export HF_HOME PYTHONNOUSERSITE=1
 mkdir -p "$WS" "$CODEX_HOME"
 rm -f "$WS"/actions.json "$WS"/last_message.txt "$WS"/hello.txt
 
-cleanup() {
-  if [[ -n "$SERVER_PGID" ]] && kill -0 -- "-$SERVER_PGID" 2>/dev/null; then
-    kill -TERM -- "-$SERVER_PGID" 2>/dev/null || true
-    for _ in $(seq 1 20); do
-      kill -0 -- "-$SERVER_PGID" 2>/dev/null || break
-      sleep 0.5
-    done
-    kill -KILL -- "-$SERVER_PGID" 2>/dev/null || true
-  fi
-  [[ -n "$SERVER_PID" ]] && wait "$SERVER_PID" 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
 
 if [[ "$GATE_BACKEND" == local ]]; then
-# Not `transformers serve` directly: Codex sends `client_metadata`, which the stock
-# server 422s on. The shim drops unknown fields and logs each one.
-setsid "$PYTHON_BIN" "$ROOT_DIR/scripts/serve_qwen_for_codex.py" serve "$MODEL_ID" \
-  --host 127.0.0.1 --port "$QWEN_PORT" --device cuda:0 --dtype auto \
-  --reasoning off --log-level info > "$SERVER_LOG" 2>&1 &
-SERVER_PID=$!
-SERVER_PGID=$SERVER_PID
-
-for _ in $(seq 1 360); do
-  curl -fsS "http://127.0.0.1:$QWEN_PORT/health" >/dev/null 2>&1 && break
-  kill -0 "$SERVER_PID" 2>/dev/null || { echo "server died; see $SERVER_LOG" >&2; exit 1; }
-  sleep 5
-done
-if ! kill -0 "$SERVER_PID" 2>/dev/null || grep -q "address already in use" "$SERVER_LOG"; then
-  echo "our model server is not the one answering on $QWEN_PORT; see $SERVER_LOG" >&2
-  exit 1
-fi
-curl -fsS "$QWEN_API_URL/models" > "$RUN_ROOT/qwen-models.json"
-echo "== server up: $(cat "$RUN_ROOT/qwen-models.json" | head -c 200)"
-
-# Codex puts -m straight into the request's `model` field, and the server compares it
-# for exact equality against force_model (utils.py:1120-1127) -- so it must be MODEL_ID
-# verbatim, revision included. /v1/models is no help: it lists every cached model in
-# unstable order, and reading data[0] once picked the 4B and got the request rejected.
-SERVED_MODEL=$MODEL_ID
-echo "== serving as: $SERVED_MODEL"
+  # The shared vLLM server (scripts/serve_vllm.sh), not a per-run process. vLLM
+  # implements the Responses API the Codex CLI speaks, so the transformers-serve shim
+  # -- which had to drop `client_metadata`, alias `developer` to `system` and merge
+  # system messages -- is gone entirely.
+  QWEN_API_URL=$(bash "$ROOT_DIR/scripts/use_model_server.sh" "$MODEL_SERVER" "$MODEL_ID") || exit 1
+  SERVED_MODEL=$MODEL_ID
+  echo "== local backend: $SERVED_MODEL at $QWEN_API_URL"
 else
   # The hosted arm needs the account credential but must not inherit config.toml's
   # model/effort -- those stay on the command line so both arms are configured the
@@ -110,9 +70,8 @@ codex_common+=(
   -c model_provider=local
   -c 'model_providers.local.name="qwen-local"'
   -c "model_providers.local.base_url=\"$QWEN_API_URL\""
-  # codex 0.147 dropped wire_api="chat"; only the Responses API is left, which
-  # transformers serve does implement (cli/serving/response.py) -- note it ignores
-  # previous_response_id, so any continuity has to come from the client side.
+  # codex 0.147 dropped wire_api="chat"; only the Responses API is left, and vLLM
+  # implements it natively (entrypoints/openai/responses/).
   -c 'model_providers.local.wire_api="responses"'
   -c 'model_providers.local.env_key="LOCAL_API_KEY"'
   -c 'model_reasoning_effort="low"'
@@ -201,10 +160,5 @@ for f in sorted(pathlib.Path(sys.argv[1]).glob("t*.jsonl")):
     print(f"   {f.name}: {kinds}")
     if usage: print(f"     usage: {json.dumps(usage)[:300]}")
 PY
-
-if [[ "$GATE_BACKEND" == local ]]; then
-  echo "== server-side view of the requests codex actually made"
-  grep -iE "POST /v1|responses|error|Traceback|unsupported" "$SERVER_LOG" | tail -15
-fi
 
 echo "== G1 done -> $RUN_ROOT"
