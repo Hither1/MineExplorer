@@ -71,6 +71,16 @@ def check(run_dir: Path) -> tuple[str, list[str]]:
         if calls >= 5 and ratio < 1.5:
             flag("BROKEN", f"only {ratio:.2f} steps per analyzer turn; queue not working")
 
+    # An episode the agent ends in a handful of steps produced a score, but not an
+    # answer: nothing about memory or navigation is observable in three steps. Qwen
+    # does this in every non-PRO-LONG cell, so it is a property of the arm, not a
+    # crash -- WARN, and read the number in the ledger's terms.
+    for m in re.finditer(r"Episode finished \(agent_esc\)", text):
+        at = [s[0] for s in states if s[0]]
+        ended_at = max(at) if at else 0
+        if ended_at < 20:
+            flag("WARN", f"episode ended by agent ESC after ~{ended_at} steps")
+
     if re.search(r"unexpected argument|Traceback \(most recent", text):
         last = re.findall(r"^\w*Error.*$|^error: .*$", text, re.M)
         if last:
