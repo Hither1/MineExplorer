@@ -20,12 +20,29 @@ cd "$ROOT_DIR"
 
 TAG=${TAG:-m2}
 MODEL_ID=${MODEL_ID:-Qwen/Qwen3.8-27B}
-SERVER=${SERVER:-qwen38-27b}
+# Empty SERVER means the hosted account model rather than a local vLLM one, which is how
+# the reference arm is launched from this same file. It reaches run_codex as an empty
+# MODEL_SERVER, the one value that makes it link the account credential.
+#
+# `${SERVER-...}` and not `${SERVER:-...}`: the colon form substitutes the default for an
+# explicitly empty value too, which silently sent the hosted arm at the local qwen server.
+SERVER=${SERVER-qwen38-27b}
+# Slug label for the model, kept separate from MODEL_ID because the id carries a slash
+# and the reference model is not qwen38. Two models in one cell name would be unreadable.
+MODEL_TAG=${MODEL_TAG:-qwen38}
 # One cap for every cell. Capping the arms differently was a real defect: the
 # non-PRO-LONG arms call the model once per step and were given a lower cap to fit
 # their walltime, which silently truncated the very arm they were being compared to.
 MAX_STEPS=${MAX_STEPS:-300}
 SCENES=${SCENES:-"0313 0802"}
+# Reasoning effort on the codex channel. Against a local server effort_for() collapses
+# this to "none" anyway, so it is the hosted arm that this value actually reaches.
+EFFORT=${CODEX_EFFORT:-low}
+# Per-call ceiling, and empty means each path keeps its own default. Those defaults do
+# not agree -- 900s in llm_provider (default, hypothesis) against 1800s in codex_backend
+# (PRO-LONG) -- so leaving it unset bounds one arm's stalls and not the other's. Set it
+# and both arms cost the same when a call hangs.
+TIMEOUT=${CODEX_TIMEOUT:-}
 # Matched to the server's own walltime, not chosen independently. The arms that call
 # the model once per step need ~300 generations and a 6h limit cut two baseline seeds
 # off at 1/2 while PRO-LONG finished, so the limit has to be set from the slowest arm --
@@ -53,11 +70,12 @@ for cell in $CELLS; do
     *) echo "unknown channel: $chan" >&2; exit 2 ;;
   esac
   for scene in $SCENES; do
-    slug="$TAG-qwen38-$mode-$chan-$scene${SEED_TAG:+-$SEED_TAG}"
-    purpose="Qwen3.8-27B $mode agent reached through $chan on $scene, hint protocol, cap $MAX_STEPS: the agent axis is the question and the channel axis is the control that keeps a PRO-LONG result from being a Codex-CLI result"
+    slug="$TAG-$MODEL_TAG-$mode-$chan-$scene${SEED_TAG:+-$SEED_TAG}"
+    purpose="$MODEL_ID $mode agent reached through $chan on $scene, hint protocol, cap $MAX_STEPS, effort $EFFORT: the agent axis is the question and the channel axis is the control that keeps a PRO-LONG result from being a Codex-CLI result"
     cmd=(bash scripts/launch.sh -s "$slug" -t E1 -p "$purpose" -T "$WALL" -g 1 -c 16 -m 100G
          -- env MODEL_SERVER="$SERVER" MODEL_ID="$MODEL_ID" AGENT_MODE="$mode"
-            MILESTONE_HINT=1 MAX_STEPS="$MAX_STEPS" SCENES="$scene" CODEX_EFFORT=low
+            MILESTONE_HINT=1 MAX_STEPS="$MAX_STEPS" SCENES="$scene" CODEX_EFFORT="$EFFORT"
+            ${TIMEOUT:+CODEX_TIMEOUT=$TIMEOUT}
             MODEL_SERVER_MIN_REMAINING="$MIN_REMAINING" MODEL_SERVER_WAIT="$SERVER_WAIT"
             bash scripts/snapshot_exec.sh scripts/with_minecraft_arm64.sh --
             bash scripts/snapshot_exec.sh "$runner")
