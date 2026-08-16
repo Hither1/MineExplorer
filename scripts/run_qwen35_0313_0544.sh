@@ -3,18 +3,16 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 PYTHON_BIN=${PYTHON_BIN:-/work/nvme/bdrx/dzhang5/conda/envs/mineexplorer-qwen35-tf/bin/python}
-TRANSFORMERS_BIN=${TRANSFORMERS_BIN:-$(dirname "$PYTHON_BIN")/transformers}
 HF_HOME=${HF_HOME:-/work/nvme/bdrx/dzhang5/huggingface}
 MODEL_REVISION=${MODEL_REVISION:-1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0}
 MODEL_ID=${MODEL_ID:-Qwen/Qwen3.8-27B}
 # Derived from the job id: ghx4 nodes are shared, and a fixed port let two of our
 # own jobs collide -- the loser exited while /health still answered from the
 # winner's server, so the run scored against the wrong process.
-QWEN_PORT=${QWEN_PORT:-$(( 20000 + ${SLURM_JOB_ID:-$$} % 20000 ))}
-QWEN_API_URL=${QWEN_API_URL:-http://127.0.0.1:$QWEN_PORT/v1}
-QWEN_API_URL=${QWEN_API_URL%/}
-QWEN_SERVER_URL=${QWEN_API_URL%/v1}
-START_QWEN_SERVER=${START_QWEN_SERVER:-1}
+# The shared vLLM server (scripts/serve_vllm.sh), resolved at run time. Each job used
+# to start its own transformers-serve: 52 GB of weights per job and no paged KV cache.
+MODEL_SERVER=${MODEL_SERVER:-qwen38-27b}
+QWEN_API_URL=${QWEN_API_URL:-}
 MAX_STEPS=${MAX_STEPS:-300}
 LOADING_COMMAND_STEPS=${LOADING_COMMAND_STEPS:-20}
 TEMPERATURE=${TEMPERATURE:-0.7}
@@ -23,17 +21,10 @@ MILESTONE_HINT=${MILESTONE_HINT:-0}
 RUN_ROOT=${ART_DIR:-$ROOT_DIR/artifacts/manual-qwen35-0313-0544}
 OUTPUT_DIR=${OUTPUT_DIR:-$RUN_ROOT/results}
 TASK_VIEW=$RUN_ROOT/benchmark-view
-SERVER_LOG=$RUN_ROOT/qwen-server.log
-SERVER_PID=""
-SERVER_PGID=""
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
   echo "missing task Python: $PYTHON_BIN" >&2
   echo "run scripts/setup_deltaai_qwen35.sh first" >&2
-  exit 2
-fi
-if [[ ! -x "$TRANSFORMERS_BIN" ]]; then
-  echo "missing Transformers CLI: $TRANSFORMERS_BIN" >&2
   exit 2
 fi
 if [[ -z ${MC_SANDBOX_URL:-} ]]; then
@@ -65,53 +56,13 @@ for scene in ${SCENES:-0313 0544}; do
   ln -sfn "$ROOT_DIR/benchmark/$scene" "$TASK_VIEW/$scene"
 done
 
-cleanup() {
-  if [[ -n "$SERVER_PGID" ]] && kill -0 -- "-$SERVER_PGID" 2>/dev/null; then
-    kill -TERM -- "-$SERVER_PGID" 2>/dev/null || true
-    for _ in $(seq 1 20); do
-      if ! kill -0 -- "-$SERVER_PGID" 2>/dev/null; then
-        break
-      fi
-      sleep 0.5
-    done
-    if kill -0 -- "-$SERVER_PGID" 2>/dev/null; then
-      kill -KILL -- "-$SERVER_PGID" 2>/dev/null || true
-    fi
-  fi
-  if [[ -n "$SERVER_PID" ]]; then
-    wait "$SERVER_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT INT TERM
 
 curl -fsS "${MC_SANDBOX_URL%/}/monitor/alive" > "$RUN_ROOT/minecraft-alive.json"
 
-if [[ "$START_QWEN_SERVER" == 1 ]]; then
-  # Transformers may spawn a serving child. Give the service its own process
-  # group so cleanup releases every descendant and the Slurm step can exit.
-  setsid "$TRANSFORMERS_BIN" serve \
-    "$MODEL_ID" \
-    --host 127.0.0.1 \
-    --port "$QWEN_PORT" \
-    --device cuda:0 \
-    --dtype auto \
-    --reasoning off \
-    --log-level info \
-    > "$SERVER_LOG" 2>&1 &
-  SERVER_PID=$!
-  SERVER_PGID=$SERVER_PID
-
-  for _ in $(seq 1 360); do
-    if curl -fsS "$QWEN_SERVER_URL/health" > "$RUN_ROOT/qwen-health.json" 2>/dev/null; then
-      break
-    fi
-    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-      echo "Qwen server exited before becoming ready; see $SERVER_LOG" >&2
-      exit 1
-    fi
-    sleep 5
-  done
+if [[ -z "$QWEN_API_URL" ]]; then
+  QWEN_API_URL=$(bash "$ROOT_DIR/scripts/use_model_server.sh" "$MODEL_SERVER" "$MODEL_ID") || exit 1
 fi
+export AGENT_API_BASE=$QWEN_API_URL
 
 curl -fsS "$QWEN_API_URL/models" > "$RUN_ROOT/qwen-models.json"
 
