@@ -31,6 +31,17 @@ def check(run_dir: Path) -> tuple[str, list[str]]:
     text = log.read_text(errors="replace")
     notes, verdict = [], "OK"
 
+    # Invariants are per scene. A job runs several scenes into one log, and the step
+    # counter restarts at each while the model-call count keeps climbing, so measuring
+    # across the whole file made steps-per-turn collapse the moment scene two began:
+    # a healthy PRO-LONG run reporting "0.32 steps per analyzer turn, queue not
+    # working" at the exact step its queue was working fine.
+    scenes = re.split(r"\[\d+/\d+\] (\d{4})\n", text)
+    if len(scenes) > 1:
+        current_scene = scenes[-2]
+        text = scenes[-1]
+        notes.append(f"scene={current_scene}")
+
     def flag(level: str, msg: str) -> None:
         nonlocal verdict
         notes.append(f"{level}: {msg}")
