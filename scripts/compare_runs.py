@@ -77,9 +77,18 @@ def main() -> int:
         hits = [m["milestone_id"] for m in ms if m.get("completed")]
         # Results written before the flag existed are all from the no-hint protocol.
         proto = "hint" if d.get("milestone_hint") else "no-hint"
+        # How much vision and how much analysis produced this score. A PRO-LONG number
+        # is not interpretable without it: the same agent scores differently blind.
+        audit_path = f.parent / "prolong_vision_audit.json"
+        audit = {}
+        if audit_path.exists():
+            try:
+                audit = json.loads(audit_path.read_text())
+            except Exception:
+                audit = {}
         rows.append({
             "run": run_id, "scene": scene, "agent": agent, "model": model, "path": path,
-            "proto": proto, "cap": d.get("max_steps", 0),
+            "proto": proto, "cap": d.get("max_steps", 0), "audit": audit,
             "steps": d.get("total_steps", 0), "term": d.get("termination_reason", ""),
             "done": d.get("milestones_completed", 0),
             "track": d.get("milestones_trackable", 0),
@@ -103,6 +112,20 @@ def main() -> int:
         print(f"{r['agent']:11s} {r['model']:12s} {r['path']:6s} {r['proto']:8s} "
               f"{r['scene']:6s} {r['steps']:5d} {r['term']:15s} "
               f"{r['done']:2d}/{r['track']:<3d}  {','.join(r['hits']) or '-'}")
+
+    audited = [r for r in rows if r["audit"]]
+    if audited:
+        print()
+        print("PRO-LONG analyzer audit (a score is only readable next to the vision "
+              "that produced it):")
+        print(f"  {'run':44s} {'scene':6s} {'turns':>5s} {'frames':>6s} "
+              f"{'view_image':>10s} {'overflow':>8s} {'esc_rej':>7s}")
+        for r in sorted(audited, key=lambda r: (r["scene"], r["run"])):
+            a = r["audit"]
+            print(f"  {r['run'][:44]:44s} {r['scene']:6s} "
+                  f"{a.get('analyzer_turns', 0):5d} {a.get('frames_attached', 0):6d} "
+                  f"{a.get('view_image_calls', 0):10d} "
+                  f"{a.get('overflow_resets', 0):8d} {a.get('esc_rejections', 0):7d}")
 
     print()
     print("per-configuration totals (scenes pooled, read with the caveat above):")
