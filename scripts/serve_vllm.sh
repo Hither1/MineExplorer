@@ -36,6 +36,14 @@ TOOL_PARSER=${VLLM_TOOL_PARSER:-qwen3_xml}
 # workload is one agent request at a time, so CUDA graphs buy little. Set
 # VLLM_EAGER=0 to re-enable compilation once the stack has proven itself.
 EAGER=${VLLM_EAGER:-1}
+# One GPU holds the model comfortably -- 27B in bf16 is ~54 GB of a 120 GB GH200 --
+# so tensor parallelism here buys latency, not capacity. It is worth buying: the
+# per-step cost of the non-PRO-LONG arms is one full generation, and at TP=1 with
+# eager execution the server decodes ~10-13 tokens/s per request, which is what puts
+# a 150-step baseline episode past its walltime while PRO-LONG, making a sixth as
+# many calls, finishes comfortably. A serving-speed asymmetry that lands on one arm
+# is not a neutral cost.
+TP=${VLLM_TP:-1}
 SERVER_SLUG=${SERVER_SLUG:-qwen38-27b}
 DISCOVERY_DIR=${DISCOVERY_DIR:-$ROOT_DIR/artifacts/servers}
 DISCOVERY=$DISCOVERY_DIR/$SERVER_SLUG.json
@@ -78,6 +86,7 @@ setsid "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
   --served-model-name "$SERVED_NAME" \
   --host 0.0.0.0 --port "$PORT" \
   --max-model-len "$MAX_LEN" \
+  --tensor-parallel-size "$TP" \
   --gpu-memory-utilization "$GPU_FRAC" \
   --trust-remote-code \
   --enable-auto-tool-choice --tool-call-parser "$TOOL_PARSER" \
