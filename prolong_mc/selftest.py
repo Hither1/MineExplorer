@@ -326,8 +326,36 @@ _os2.chdir(_tmp)
 try:
     check("CodexTurn resolves a relative workspace",
           CodexTurn(pathlib.Path("rel_ws"), model="m", codex_bin="/bin/true").workspace.is_absolute())
+
 finally:
     _os2.chdir(_cwd)
+
+# Attachments must be absolute: codex resolves -i against ITS cwd (the workspace), so a
+# relative path that exists for the runner does not exist for codex. The sibling port
+# lost all 20 attachments of a run this way, and the only trace was a line in the
+# conversation that the event stream never shows.
+from prolong_mc.codex_backend import scan_rollout
+_ct = CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true")
+try:
+    _ct.run("p", images=[pathlib.Path("frames/x.png")])
+    check("a relative attachment is refused", False, "run() accepted a relative -i path")
+except ValueError as e:
+    check("a relative attachment is refused", "absolute" in str(e))
+except Exception as e:
+    check("a relative attachment is refused", False, f"raised {type(e).__name__} instead")
+
+# The rollout scanner, against a conversation shaped like the one that caught this.
+_roll = pathlib.Path(tempfile.mkdtemp()) / "rollout.jsonl"
+_roll.write_text("\n".join([
+    json.dumps({"type": "response_item", "payload": {"type": "custom_tool_call", "name": "exec",
+                "input": 'const r = await tools.view_image({path:"/abs/frames/f0.png"}); image(r.image_url)'}}),
+    json.dumps({"type": "response_item", "payload": {"type": "message", "role": "user", "content": [
+        {"type": "input_text", "text": "Codex could not read the local image at `frames/f0.png`: No such file"}]}}),
+    json.dumps({"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": []}}),
+]))
+_counts = scan_rollout(_roll)
+check("the rollout scanner sees a nested view_image call", _counts["view_image_calls"] == 1, str(_counts))
+check("the rollout scanner sees a failed attachment", _counts["image_attach_failures"] == 1, str(_counts))
 
 # The sandbox wrapper the runner defaults to, and the two things it must never lose.
 _wrapper = pathlib.Path(__file__).resolve().parent / "codex_sandbox.sh"
@@ -465,7 +493,8 @@ check("a model writing the word 'compact' is not a compaction",
 
 
 # One view_image call emits two events. Counting lines counted it about twice, and
-# this number is the evidence for whether a vision-on-demand analyzer ever looked.
+# this number USED to be the evidence for whether a vision-on-demand analyzer ever
+# looked; it is now read from the rollout instead (CodexTurn.vision_audit).
 def _view_image_calls(events) -> int:
     turn = _cb.CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true")
 
@@ -479,13 +508,20 @@ def _view_image_calls(events) -> int:
     return turn.view_image_calls
 
 
+# The event stream is NOT where vision is counted any more, and this is the check that
+# says so. codex 0.147 runs the model's tools inside an `exec` cell and `--json` reports
+# only shell commands, so a nested `tools.view_image(...)` never appears here at all --
+# measured as 0 mentions across every events.jsonl of a run whose conversation holds 20
+# calls returning 60 images. A counter over this stream is a constant, which is what made
+# "the analyzer opened none across 8 turns" (finding #30) unfalsifiable rather than false.
 one_call = [{"type": "item.started", "item": {"id": "i1", "type": "view_image",
                                               "path": "frames/step_0001.png"}},
             {"type": "item.completed", "item": {"id": "i1", "type": "view_image",
                                                 "path": "frames/step_0001.png"}}]
-check("one view_image call counts once, not once per event",
-      _view_image_calls(one_call) == 1, f"got {_view_image_calls(one_call)}")
-check("two view_image calls count twice", _view_image_calls(one_call * 2) == 2)
+check("the event stream is no longer trusted for vision",
+      _view_image_calls(one_call) == 0,
+      "a nonzero count here means someone re-added an events-based counter; codex does "
+      "not emit these items, so it would read 0 on real runs and mislead exactly as before")
 
 
 # --- RUN_LEDGER bookkeeping must not double as a verdict --------------------------

@@ -177,8 +177,11 @@ class ProlongAgent:
             json.dumps(
                 {
                     "analyzer_turns": self.codex.calls,
-                    "frames_attached": self.codex.images_attached,
-                    "view_image_calls": self.codex.view_image_calls,
+                    # From the rollout, not the event stream: codex 0.147 hides the
+                    # model's nested tool calls from `--json`, so the old counters said
+                    # "N frames attached, 0 looked at" whether or not a single frame ever
+                    # reached the model. `image_attach_failures` must be 0.
+                    **self.codex.vision_audit(),
                     "overflow_resets": self.codex.overflow_resets,
                     # Expected 0. Nonzero means codex compacted the conversation, which
                     # is a different memory architecture than the one being measured.

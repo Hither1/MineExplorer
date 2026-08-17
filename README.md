@@ -431,6 +431,23 @@ unbounded read of the repository. No transcript shows an agent using either, but
 that is an audit of the runs we looked at, not a property of the harness — record
 it next to any number quoted from them.
 
+**Re-check finding #30 before quoting it.** "The analyzer could open `frames/` with
+the image viewer but never looked (zero `view_image` calls)" was measured from
+`codex_turns/*.events.jsonl`. Codex 0.147 runs the model's tools inside an `exec`
+code-mode cell and `--json` reports only *shell* commands, so a nested
+`tools.view_image(...)` **never appears in that stream at all** — the counter reads 0
+whether or not the model looked. Verified on the sibling mllm-search port: an episode
+whose event stream mentions `view_image` zero times has a conversation containing 20
+calls that returned 60 images. The vision audit now reads the rollout instead, and
+also counts `image_attach_failures` — the "Codex could not read the local image" line
+that means `-i` never landed and the arm silently became vision-on-demand. Whether the
+v3/v4 runs were actually blind is still answerable, but only from their rollouts:
+
+```bash
+grep -ho 'view_image' <run>/codex-home/sessions/*/*/*/rollout-*.jsonl | wc -l
+grep -c 'could not read the local image' <run>/codex-home/sessions/*/*/*/rollout-*.jsonl
+```
+
 **PRO-LONG's own ablations** vary the scaffold inside the agent, and are read
 only by `AGENT_MODE=prolong`: `PROLONG_LOG_WINDOW=N` truncates its log to the
 last N entries (`0` is upstream's "latest state only") and `PROLONG_STATELESS=1`

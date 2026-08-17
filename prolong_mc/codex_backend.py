@@ -284,6 +284,50 @@ def is_overflow(name: str, text: str) -> bool:
     )
 
 
+# Codex 0.147 runs the model's tools inside a `exec` code-mode cell, and the `--json`
+# event stream reports only *shell* commands (`command_execution`). A nested
+# `tools.view_image(...)` -- which is how the model looks at a frame -- never appears
+# there at all. Measured on the sibling mllm-search port's runs/cal_sbx/microvqa: 0 events mentioning view_image, while
+# the conversation shows 20 calls returning 60 images.
+#
+# So the vision audit reads the rollout instead. That is the conversation as codex stored
+# it, it is per-episode now that each episode has its own CODEX_HOME, and it is the only
+# place two things are recorded:
+#
+#   view_image calls        what the model chose to look at
+#   "could not read the     an `-i` attachment that did not land. This is the failure the
+#    local image"           audit exists to catch: the run still scores, the counter still
+#                           says images_attached=N, and the arm has silently become
+#                           vision-on-demand instead of the forced-vision arm it claims.
+_ROLLOUT_VIEW_IMAGE = re.compile(r"view_image")
+_ROLLOUT_ATTACH_FAIL = re.compile(r"could not read the local image", re.I)
+
+
+def scan_rollout(path: Path) -> dict[str, int]:
+    """Count what the transcripts cannot show: nested vision calls and failed attachments."""
+    out = {"view_image_calls": 0, "image_attach_failures": 0}
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        if '"custom_tool_call"' in line:
+            out["view_image_calls"] += len(_ROLLOUT_VIEW_IMAGE.findall(line))
+        if _ROLLOUT_ATTACH_FAIL.search(line):
+            out["image_attach_failures"] += 1
+    return out
+
+
+def find_rollout(codex_home: Path | None, workspace: Path, session_id: str | None) -> Path | None:
+    """The rollout file for this session, under whichever home the wrapper gave codex.
+
+    `codex_sandbox.sh` derives `<workspace>.codexhome` when nothing is set, so that is
+    the default guess; an explicit `codex_home` or $CODEX_HOME wins.
+    """
+    if not session_id:
+        return None
+
+
 class CodexTurn:
     def __init__(
         self,
@@ -320,7 +364,10 @@ class CodexTurn:
         # Audited in the comparison: an arm's score is only interpretable next to how
         # much vision it actually received.
         self.images_attached = 0
+        # Read off the rollout at audit time, not from the event stream, which does not
+        # carry them. See scan_rollout.
         self.view_image_calls = 0
+        self.image_attach_failures = 0
         self.overflow_resets = 0
         # Must stay 0. A nonzero count means codex compacted the conversation, so the
         # arm is no longer "PRO-LONG memory + a cold start on overflow" and cannot be
@@ -397,7 +444,26 @@ class CodexTurn:
             env["CODEX_HOME"] = str(self.codex_home)
         env.setdefault("LOCAL_API_KEY", "EMPTY")
 
-        images = [Path(p) for p in images if Path(p).exists()]
+        # Absolute, and present. Codex resolves `-i` against ITS cwd -- the workspace --
+        # so a relative path that exists for the runner does not exist for codex, and the
+        # only trace is a line in the conversation that the event stream never shows. The
+        # sibling mllm-search port lost all 20 attachments of a run that way. Raise rather
+        # than filter: an arm that quietly stops attaching frames is a different arm, and
+        # this one is compared against a baseline that gets 20 frames every step.
+        images = [Path(p) for p in images]
+        relative = [p for p in images if not p.is_absolute()]
+        if relative:
+            raise ValueError(
+                f"attachments must be absolute paths; codex resolves -i against its own "
+                f"cwd ({self.workspace}), not the runner's: {relative}"
+            )
+        missing = [p for p in images if not p.exists()]
+        if missing:
+            logger.error(
+                f"[codex] turn {self.calls + 1}: {len(missing)} attachment(s) do not "
+                f"exist and will not be sent: {missing}"
+            )
+        images = [p for p in images if p.exists()]
         args = self._args(images)
         self.images_attached += len(images)
         logger.info(
@@ -460,14 +526,13 @@ class CodexTurn:
                 event = json.loads(line)
             except Exception:
                 continue
-            # Completions only. One view_image call emits item.started AND
-            # item.completed, so matching every line containing the name counted each
-            # call about twice. Every observed value is 0, so nothing published is
-            # wrong yet -- but this number is what says whether a vision-on-demand
-            # analyzer ever actually looked, and it must not be doubled the first time
-            # it is nonzero and quoted.
-            if event.get("type") == "item.completed" and '"view_image"' in line:
-                self.view_image_calls += 1
+            # No view_image counting here. "Every observed value is 0" was not a
+            # measurement, it was the counter: codex 0.147 runs the model's tools inside
+            # an `exec` cell and this stream reports only shell commands, so a nested
+            # `tools.view_image(...)` never appears. `vision_audit()` reads the rollout.
+            # Finding #30 -- "the analyzer opened none across 8 turns" -- rests on this
+            # counter and has to be re-checked against those runs' rollouts before it is
+            # quoted again.
             if _COMPACTION_RE.search(line):
                 self.compactions += 1
                 logger.error(
@@ -509,6 +574,36 @@ class CodexTurn:
             "ok": actions_json is not None,
             "error": errors[-1] if errors else None,
             "overflow": overflowed,
+        }
+
+    def vision_audit(self) -> dict[str, Any]:
+        """What the model actually saw, read from the rollout rather than the events.
+
+        `image_attach_failures` must be 0. Nonzero means `-i` did not land, so the
+        episode ran vision-on-demand -- the arm the campaign relabelled v3/v4 as -- while
+        reporting itself as the forced-vision arm.
+        """
+        rollout = find_rollout(self.codex_home, self.workspace, self.session_id)
+        if rollout is not None:
+            counts = scan_rollout(rollout)
+            self.view_image_calls = counts["view_image_calls"]
+            self.image_attach_failures = counts["image_attach_failures"]
+            if self.image_attach_failures:
+                logger.error(
+                    f"[codex] {self.image_attach_failures} attachment(s) never reached "
+                    f"the model (\"could not read the local image\" in {rollout}); this "
+                    f"episode ran vision-on-demand, not forced vision"
+                )
+        elif self.images_attached:
+            logger.warning(
+                f"[codex] no rollout found for session {self.session_id}; the vision "
+                f"audit is unverified for this episode"
+            )
+        return {
+            "frames_attached": self.images_attached,
+            "view_image_calls": self.view_image_calls,
+            "image_attach_failures": self.image_attach_failures,
+            "vision_audit_source": str(rollout) if rollout else None,
         }
 
     @staticmethod
