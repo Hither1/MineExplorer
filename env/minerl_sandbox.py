@@ -15,6 +15,13 @@ from loguru import logger
 
 DOCKER_SANDBOX_DEFAULT_URL = "http://localhost:8000"
 
+# `reset_env` starts a Minecraft JVM and generates the scene's world, and 180s is
+# not enough for that on a cold container -- measured at 63s once warm and over
+# 180s cold on scene 0694. Every retry starts *another* JVM and leaks the one that
+# timed out, so a too-short ceiling degrades the sandbox instead of recovering it.
+MC_RESET_TIMEOUT = int(os.getenv("MC_RESET_TIMEOUT", 600))
+MC_STEP_TIMEOUT = int(os.getenv("MC_STEP_TIMEOUT", 120))
+
 
 def _get_server_address() -> str:
     addr = os.getenv("MC_SANDBOX_URL", "").rstrip("/")
@@ -194,7 +201,7 @@ class MineRLSandboxEnv(gym.Env):
         for attempt in range(max_retries):
             try:
                 logger.info(f"Resetting environment (attempt {attempt + 1}/{max_retries}) session_id={self.session_id}...")
-                response = self._post("reset_env", timeout=180)
+                response = self._post("reset_env", timeout=MC_RESET_TIMEOUT)
                 if response.get("status") != 0:
                     raise RuntimeError(f"Server error during reset: {response.get('msg')}")
                 return self._get_obs_from_response(response), {}
@@ -227,7 +234,7 @@ class MineRLSandboxEnv(gym.Env):
         for attempt in range(max_retries):
             try:
                 # session_id 由 self._post 统一注入到 body
-                response = self._post("step", {"action": serializable_action}, timeout=120)
+                response = self._post("step", {"action": serializable_action}, timeout=MC_STEP_TIMEOUT)
                 if response.get("status") != 0:
                     raise RuntimeError(f"Server error during step: {response.get('msg')}")
                 observation = self._get_obs_from_response(response)
