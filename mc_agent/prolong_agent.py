@@ -74,7 +74,15 @@ class ProlongAgent:
         self.milestone_hint = milestone_hint
         self._esc_rejected_at: list[int] = []
 
-        self.workspace = Path(workspace)
+        # Absolute, always -- the same rule CodexTurn applies to the workspace it is
+        # handed. Codex runs with cwd == the workspace and resolves `-i` against that,
+        # so a frame path built from a relative workspace points nowhere and
+        # CodexTurn's guard rejects every call. Nothing catches this earlier: the
+        # guard is asserted by selftest against paths it constructs itself, and the
+        # DeltaAI runners happened to pass an absolute --output-dir, so the runner
+        # path was never exercised with a relative one until it failed 300 steps of
+        # 20260818 s0694-prolong-codex in a row.
+        self.workspace = Path(workspace).resolve()
         # Under an ablation the canonical record moves out of the directory Codex is
         # given: a truncated log next to the full one, or a "workspace does not persist"
         # instruction next to the notes it wrote last turn, is a request, not a
