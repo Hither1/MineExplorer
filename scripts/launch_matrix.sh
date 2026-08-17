@@ -35,8 +35,11 @@ MODEL_TAG=${MODEL_TAG:-qwen38}
 # their walltime, which silently truncated the very arm they were being compared to.
 MAX_STEPS=${MAX_STEPS:-300}
 SCENES=${SCENES:-"0313 0802"}
-# Reasoning effort on the codex channel. Against a local server effort_for() collapses
-# this to "none" anyway, so it is the hosted arm that this value actually reaches.
+# Reasoning effort on the codex channel, and on a local server it is also the thinking
+# switch: vLLM synthesises enable_thinking = (effort != "none") from the request and lets
+# it override the server's own default. So this must agree with the server's
+# --default-chat-template-kwargs, or the codex cells and the vllm control cells differ in
+# thinking as well as in channel. `none` here is thinking off; anything else is on.
 EFFORT=${CODEX_EFFORT:-low}
 # Per-call ceiling, and empty means each path keeps its own default. Those defaults do
 # not agree -- 900s in llm_provider (default, hypothesis) against 1800s in codex_backend

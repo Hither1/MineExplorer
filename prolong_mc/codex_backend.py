@@ -70,8 +70,30 @@ def effort_for(base_url: str | None, effort: str) -> str:
 
     Hosted models keep the caller's effort: there the field means what codex means by it,
     and nothing downstream reinterprets it as a template switch.
+
+    **The invariant this function exists to hold: the codex arms and the direct-vLLM arm
+    must agree about thinking.** They are configured from opposite ends -- the server's
+    `--default-chat-template-kwargs` governs the direct arm, this value governs the codex
+    arms -- so nothing but care keeps them together, and a matrix whose channel control
+    differs in thinking cannot separate the agent axis from the channel axis.
+
+    So a local server gets the caller's effort through, and thinking is on for both by
+    default, matching `scripts/serve_vllm.sh`. Turning it off is one variable changed on
+    two sides: `CODEX_LOCAL_EFFORT=none` here and `VLLM_CHAT_TEMPLATE_KWARGS` there.
+    Setting one without the other is the bug this note is about; `selftest.py` asserts the
+    two defaults agree.
+
+    Both settings are worth having because the choice has a measured cost. With thinking
+    off the default arm looped on `echo ok` 85 times inside one call and burned the client
+    timeout -- 6 of 13 calls returned nothing on the 0313 diagnostic -- where the same arm
+    with thinking on never exceeded 3 tool calls across 46, and PRO-LONG was unaffected
+    either way. That measurement changed thinking and the sampling recipe together, so it
+    does not yet say which is responsible; separating them needs both switches reachable
+    from a run's environment rather than from an edit.
     """
-    return "none" if base_url else effort
+    if not base_url:
+        return effort
+    return os.environ.get("CODEX_LOCAL_EFFORT", effort)
 
 
 def _metadata_args(context_window: int) -> list[str]:

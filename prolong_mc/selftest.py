@@ -310,8 +310,17 @@ check("a hosted model keeps codex's own metadata",
 # enable_thinking = (effort != "none") from the Responses request and lets it override
 # --default-chat-template-kwargs, and codex sends effort verbatim with no template
 # kwargs of its own, so this one string is what decides whether the codex arms think.
-check("a locally served model is asked for no reasoning, which is what pins thinking off",
-      'model_reasoning_effort="none"' in " ".join(local), " ".join(local))
+check("a locally served model keeps the effort it was given, which is what leaves thinking on",
+      'model_reasoning_effort="low"' in " ".join(
+          CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true",
+                    reasoning_effort="low", base_url="http://node:30000/v1")._args()))
+import os as _os
+from prolong_mc.codex_backend import effort_for as _effort_for
+check("the local thinking switch is reachable from the environment, not only from an edit",
+      _effort_for("http://node:1/v1", "low") == "low"
+      and (_os.environ.update(CODEX_LOCAL_EFFORT="none") or
+           _effort_for("http://node:1/v1", "xhigh") == "none")
+      and (_os.environ.pop("CODEX_LOCAL_EFFORT", None) or True))
 check("a hosted model keeps the effort the caller asked for",
       'model_reasoning_effort="low"' in " ".join(
           CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true",
@@ -344,8 +353,8 @@ def _provider_argv(**kw):
     return " ".join(seen["cmd"])
 
 
-check("the provider path pins thinking the same way the prolong path does",
-      'model_reasoning_effort="none"' in
+check("the provider path treats local effort the same way the prolong path does",
+      'model_reasoning_effort="xhigh"' in
       _provider_argv(base_url="http://node:30000/v1", reasoning_effort="xhigh"))
 check("the hosted provider path keeps the effort the run asked for",
       'model_reasoning_effort="xhigh"' in _provider_argv(reasoning_effort="xhigh"))
@@ -644,23 +653,48 @@ check("serving: max_num_seqs is small enough for cudagraph capture to be possibl
       flag_value(argv, "--max-num-seqs"))
 check("serving: tensor parallelism defaults to 2",
       flag_value(argv, "--tensor-parallel-size") == "2", flag_value(argv, "--tensor-parallel-size"))
-check("serving: every arm gets the same 4096 output cap",
-      json.loads(flag_value(argv, "--override-generation-config") or "{}").get("max_new_tokens") == 4096,
+# The cap has to clear what the model actually emits in the mode being served. Across the
+# finished Qwen3.8 runs the model-authored items were p50 237 and p90 1933 tokens with 24
+# over 4096, the largest a single 12,918-token message; a 4096 cap would have cut those
+# mid-deliberation, and since the JSON follows the prose a truncated response yields no
+# action at all. It still forecloses a repetition loop running to the 131k context end.
+check("serving: the output cap clears the longest response observed with thinking on",
+      json.loads(flag_value(argv, "--override-generation-config") or "{}").get("max_new_tokens") == 16384,
       flag_value(argv, "--override-generation-config"))
-# Sampling is set once on the server because the codex arms send none of it. The values
-# are Qwen3.8's own recipe for the mode we serve -- its shipped generation_config.json
-# carries the *thinking* recipe (1.0 / 0.95), which is not the mode this server runs.
+# Sampling is set once on the server because the codex arms send none of it. These are
+# Qwen3.8's recipe for thinking mode, which is also what its shipped generation_config.json
+# carries -- so this pins what was already in force rather than changing it, the point
+# being that it is now pinned for both channels instead of one.
 _gen = json.loads(flag_value(argv, "--override-generation-config") or "{}")
-check("serving: sampling follows the model card's non-thinking recipe",
-      (_gen.get("temperature"), _gen.get("top_p"), _gen.get("top_k")) == (0.7, 0.8, 20),
+check("serving: sampling follows the model card's thinking recipe",
+      (_gen.get("temperature"), _gen.get("top_p"), _gen.get("top_k")) == (1.0, 0.95, 20),
       json.dumps(_gen))
 check("serving: the codex arms and the vLLM arm cannot end up on different sampling",
-      _gen.get("temperature") == 0.7, json.dumps(_gen))
+      _gen.get("temperature") == 1.0, json.dumps(_gen))
 check("serving: presence_penalty is left unset, since only one arm could receive it",
       "presence_penalty" not in _gen, json.dumps(_gen))
-check("serving: thinking is pinned off in the chat template",
-      json.loads(flag_value(argv, "--default-chat-template-kwargs") or "{}") == {"enable_thinking": False},
+# Reverses the earlier pin, on measurement rather than preference: with thinking off the
+# default arm looped on `echo ok` 85 times inside one call and burned the client timeout,
+# where the same arm with thinking on never exceeded 3 tool calls across 46. The damage was
+# one-sided -- PRO-LONG was unaffected -- and a comparison whose baseline our own serving
+# choice crippled is worse than no comparison. Untested confound: that measurement changed
+# thinking and the sampling recipe together, and the card prescribes presence_penalty=1.5
+# for the non-thinking mode specifically to stop repetition, which cannot be delivered here.
+check("serving: thinking is pinned on in the chat template",
+      json.loads(flag_value(argv, "--default-chat-template-kwargs") or "{}") == {"enable_thinking": True},
       flag_value(argv, "--default-chat-template-kwargs"))
+# The one invariant spanning both files. The direct-vLLM arm is configured on the server
+# and the codex arms are configured in effort_for, so nothing else stops a matrix from
+# running its channel control with a different thinking setting than the cells it
+# controls -- which is precisely the confound the channel axis exists to rule out. This
+# check failed once, when the server was moved to thinking-on and effort_for was left
+# pinned to "none".
+_server_thinking = json.loads(
+    flag_value(argv, "--default-chat-template-kwargs") or "{}").get("enable_thinking")
+_codex_thinking = _effort_for("http://node:1/v1", "low") != "none"
+check("serving: the codex arms and the direct-vLLM arm default to the same thinking setting",
+      _server_thinking == _codex_thinking,
+      f"server={_server_thinking} codex={_codex_thinking}")
 # The escape hatch has to keep working: if a cudagraph capture ever fails on a node,
 # eager is how the run happens at all, and it must not need a mid-flight script edit.
 eager_argv = serve_argv(VLLM_EAGER="1")

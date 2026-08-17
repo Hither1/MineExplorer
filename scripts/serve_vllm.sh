@@ -69,59 +69,54 @@ MAX_NUM_SEQS=${VLLM_MAX_NUM_SEQS:-32}
 # is close to a wash. TP=4 divides every head count cleanly too, but 1N/4G queues too
 # slowly on ghx4 to be worth the wait (dz, 2026-08-16).
 TP=${VLLM_TP:-2}
-# One per-request output cap for every arm. VLLMProvider already asks for 4096 on the
-# direct path; the codex path cannot -- it ignores max_tokens by design and codex
-# 0.147 has no max-output-tokens config key (confirmed absent from the vendored
-# binary) -- so the server is the only place the two arms can be made to match.
+# One per-request output cap for every arm, sized not to bind. VLLMProvider asks for
+# 4096 on the direct path; the codex path cannot ask for anything -- it ignores
+# max_tokens by design and codex 0.147 has no max-output-tokens key -- so the server is
+# the only place the arms can be made to match.
 #
-# vLLM applies this as a hard ceiling, not a default: get_max_tokens() takes a min
-# over the request's own value and this one (entrypoints/serve/utils/api_utils.py),
-# so a client asking for more is clamped rather than obeyed. It merges into the model's
-# own generation config rather than replacing it (--generation-config defaults to
-# "auto"; config.model:1608-1613), so Qwen's sampling defaults survive alongside it.
-#
-# The cap and the thinking pin are coupled, and the earlier note here -- "outputs
-# self-terminate around 1.4k, so this binds nothing" -- was measured on one call and is
-# wrong for the corpus. Tokenising every model-authored item across the finished Qwen3.8
+# 16384 rather than 4096, because the cap has to clear what this model actually emits
+# with thinking on. Tokenising every model-authored item across the finished Qwen3.8
 # runs: p50 237, p90 1933, and 24 items over 4096, the largest a single 12,918-token
-# message (0802 prolong turn_0008, whose turn spent 13,681 output tokens). Capping at
-# 4096 with thinking ON would have truncated those mid-deliberation -- and since the
-# JSON comes *after* the prose, a truncated response yields no actions.json at all.
-# Those long outputs were the thinking channel; with it pinned off they should collapse,
-# which is what makes 4096 safe here. "Should" is a prediction: the probe measures the
-# output-length distribution before the matrix, and this is one env var if it is wrong.
-MAX_OUTPUT_TOKENS=${VLLM_MAX_OUTPUT_TOKENS:-4096}
+# message. A 4096 cap would have cut those mid-deliberation, and since the JSON comes
+# *after* the prose, a truncated response yields no action at all. This still forecloses
+# the runaway it was introduced for -- a repetition loop generating toward the 131k
+# context end -- while leaving the longest observed response 20% of headroom.
+#
+# vLLM applies it as a hard ceiling, not a default: get_max_tokens() takes a min over the
+# request's own value and this one, and --override-generation-config merges into the
+# model's own generation config rather than replacing it (--generation-config defaults to
+# "auto"; config/model.py:1608-1613), so the sampling below survives alongside it.
+MAX_OUTPUT_TOKENS=${VLLM_MAX_OUTPUT_TOKENS:-16384}
 # Sampling, set once on the server so both channels get the same one. The codex arms
 # send no sampling parameters at all (captured off the wire: no temperature, no top_p),
-# so without this they run on whatever the model ships, while the direct-vLLM arm sends
+# so without this they run on whatever the model ships while the direct-vLLM arm sends
 # temperature=0.7 from eval_benchmark -- two arms of one matrix sampling differently.
+# vLLM applies these defaults on the Responses path as well as the chat path
+# (responses/serving.py:195,438), which is the path codex speaks.
 #
-# The values are Qwen3.8's own, for the mode we serve. The model card gives two recipes,
-# and the shipped generation_config.json carries the *thinking* one (temperature 1.0,
-# top_p 0.95): "Instruct (or non-thinking) mode: temperature=0.7, top_p=0.80, top_k=20,
-# min_p=0.0, presence_penalty=1.5, repetition_penalty=1.0". Since thinking is pinned
-# off, that is the recipe that applies, and its temperature is also MineExplorer main's
-# default (VLLMProvider, 0.7) -- the two agree.
+# The values are Qwen3.8's own recipe for thinking mode, which is the mode this server
+# runs and the mode the finished runs were taken in: "Thinking Mode: temperature=1.0,
+# top_p=0.95, top_k=20, min_p=0.0, presence_penalty=0.0, repetition_penalty=1.0". They
+# are also what the shipped generation_config.json carries, so this pins what was already
+# in force rather than changing it -- the point being that it is now pinned for *both*
+# channels instead of one, and recorded in the advert.
+SAMPLING=${VLLM_SAMPLING:-'"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.0, "repetition_penalty": 1.0'}
+# Thinking on, pinned rather than inherited, and pinned to match the runs already taken.
 #
-# presence_penalty=1.5 is the one part deliberately left out. vLLM only accepts
-# repetition_penalty, temperature, top_k, top_p, min_p and max_new_tokens as server-side
-# defaults (config/model.py:1615-1622), and codex cannot send it per request, so setting
-# it would apply to the vLLM arm alone. An asymmetry between arms costs more than the
-# repetition it would damp, and the output cap already bounds that failure.
-SAMPLING=${VLLM_SAMPLING:-'"temperature": 0.7, "top_p": 0.8, "top_k": 20, "min_p": 0.0, "repetition_penalty": 1.0'}
-# Thinking off, pinned rather than inherited. Qwen3.8's chat template defaults
-# thinking ON -- with no kwarg it ends the generation prompt with a bare `<think>`
-# and injects a "Reasoning effort is set to ..." instruction into the system message
-# (verified by rendering the pinned revision's chat_template.jinja both ways). Main's
-# contract is tolerate-and-strip in the parser; the 3.5 protocol served with
-# reasoning off. Pinning it here matches the 3.5 protocol and stops a vLLM or
-# template upgrade from flipping cost and behaviour silently.
+# The alternative was measured and rejected. Pinning it off aligns with MineExplorer
+# main's protocol, but Qwen3.8 defaults to thinking and its card warns that low reasoning
+# effort in multi-turn agentic tasks "can lead to insufficient analysis, more failures,
+# and repeated retries". That is what happened: with thinking off, the default arm looped
+# on `echo ok` 87 times inside one call and burned the client timeout, where the same arm
+# with thinking on never exceeded 3 tool calls across 46 calls. The damage was one-sided
+# -- the PRO-LONG arm was unaffected -- and a comparison whose baseline our own serving
+# choice crippled is worse than no comparison.
 #
-# Scope worth knowing before trusting it: request-level chat_template_kwargs override
-# this default, and vLLM *synthesises* enable_thinking=true from a Responses request's
-# `reasoning.effort` field. So this governs the direct-vLLM arm, and the codex arms
-# need the matching client-side setting (see mc_agent/llm_provider.py) to agree.
-CHAT_TEMPLATE_KWARGS=${VLLM_CHAT_TEMPLATE_KWARGS:-'{"enable_thinking": false}'}
+# Scope: this governs the direct-vLLM arm. The codex arms carry `reasoning.effort` on
+# every request and vLLM synthesises enable_thinking from it, overriding this default, so
+# they are pinned client-side instead (CODEX_LOCAL_EFFORT, mc_agent/llm_provider.py).
+# Both are set to thinking-on so the two channels agree.
+CHAT_TEMPLATE_KWARGS=${VLLM_CHAT_TEMPLATE_KWARGS:-'{"enable_thinking": true}'}
 SERVER_SLUG=${SERVER_SLUG:-qwen38-27b}
 DISCOVERY_DIR=${DISCOVERY_DIR:-$ROOT_DIR/artifacts/servers}
 DISCOVERY=$DISCOVERY_DIR/$SERVER_SLUG.json
