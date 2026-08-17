@@ -371,6 +371,66 @@ CODEX_LOCAL_EFFORT=none                                  # cells
 `python -m prolong_mc.selftest` asserts the two defaults agree, so a
 half-applied change fails there rather than in a matrix.
 
+### The codex arms' sandbox
+
+Upstream PRO-LONG runs its agent in a Docker container on an `--internal` network
+whose only exit is a squid allowlist proxy to the model API. The earlier decision
+here was "no containers — codex's own bubblewrap sandbox is enough"
+(`-s workspace-write`, findings #12–14). That was right about the mechanism and
+wrong about the coverage: codex's inner sandbox bounds *writes* and the agent
+shell's network, but **not reads** — and on this benchmark the answers are files.
+Every milestone is `position_near_with_facing` against a spawn-relative
+coordinate written in `benchmark/<scene>/multi-agent/metadata.json`; reading it is
+the solution to a navigation task, not a hint about one. `milestone_checker.py`
+and other arms' `result.json` are equally readable.
+
+Worse, one route to those coordinates never touches this filesystem at all.
+Codex hands the model whatever the authenticated account carries, *before* any
+sandbox applies, because those tools run server-side. Measured on codex-cli
+0.147.0 with this account: `web_search` defaults to `"cached"` and the model used
+it; ~250 `mcp__codex_apps__*` connectors (github, gmail, slack, drive,
+hugging_face) were in the tool list; `spawn_agent` was offered, so one analyzer
+turn could fan out into threads the request accounting never sees. This is also
+the 275 KB of tool schema per request that overflowed a 65536-token context and
+failed 94% of one run's calls — the same defect, seen as cost.
+
+So there are now two pieces, and both are on by default:
+
+| what | where |
+|---|---|
+| only the workspace is reachable; no network but the model API | `prolong_mc/codex_sandbox.sh` — one bwrap mount + **network** namespace per `codex exec`, with an allowlisting CONNECT proxy on a unix socket (`prolong_mc/sandbox_proxy.py`) |
+| a minimal, declared tool surface | `prolong_mc.codex_backend.SAFE_CODEX_FLAGS`, applied on the first turn and on `codex exec resume`, to `CodexTurn` and `CodexProvider` alike |
+
+With the flags in force the model's whole tool surface is `apply_patch`,
+`exec_command`, `update_plan`, `view_image`, `write_stdin`; anything else in a
+transcript raises `SandboxViolation` and stops the run. (`--disable multi_agent`
+does *not* remove the sub-agent tools; `agents.enabled=false` does.)
+
+**The Minecraft server is deliberately not on the allowlist.** `MC_SANDBOX_URL`
+is the runner's, not the agent's — the runner steps the world, the agent only
+writes `actions.json` — and upstream draws the same line. A *local model* server
+is different and is added automatically from `CODEX_BASE_URL` by
+`scripts/run_codex_0313_0544.sh`.
+
+`scripts/run_codex_0313_0544.sh` sets `CODEX_BIN` to the wrapper by default and
+runs `python -m prolong_mc.sandbox_selftest` before the job; each result records
+`codex_bin` and `codex_sandboxed`, because a run taken with the sandbox is not
+the same arm as one taken without and the two must not be pooled. On DeltaAI
+(aarch64) bwrap need not be installed — codex ships one that works as the outer
+wrapper too:
+
+```bash
+export BWRAP_BIN=$NODE_DIR/lib/node_modules/@openai/codex/node_modules/\
+@openai/codex-linux-arm64/vendor/aarch64-unknown-linux-musl/codex-resources/bwrap
+python -m prolong_mc.sandbox_selftest              # no model, no quota
+python -m prolong_mc.sandbox_selftest --with-model # + the live tool surface
+```
+
+**Runs taken before this landed** carried the full account tool surface and an
+unbounded read of the repository. No transcript shows an agent using either, but
+that is an audit of the runs we looked at, not a property of the harness — record
+it next to any number quoted from them.
+
 **PRO-LONG's own ablations** vary the scaffold inside the agent, and are read
 only by `AGENT_MODE=prolong`: `PROLONG_LOG_WINDOW=N` truncates its log to the
 last N entries (`0` is upstream's "latest state only") and `PROLONG_STATELESS=1`

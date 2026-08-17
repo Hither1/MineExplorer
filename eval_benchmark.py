@@ -608,6 +608,14 @@ def _run_benchmark(
         # The slug-based guess mislabelled codex-driven runs as plain-vLLM ones purely
         # because the word "codex" was absent from a name someone typed once.
         "provider": "codex" if use_codex else ("vllm" if use_vllm else "openai"),
+        # Whether this run was sandboxed, recorded rather than assumed. It changes what
+        # the agent *is* -- what it can read, what it can reach, which tools codex hands
+        # the model -- and not merely where it runs, so a score taken with it must not be
+        # pooled with one taken without.
+        **({"codex_bin": os.environ.get("CODEX_BIN", "codex"),
+            "codex_sandboxed": os.path.basename(
+                os.environ.get("CODEX_BIN", "codex")) == "codex_sandbox.sh"}
+           if use_codex else {}),
         "milestone_hint": use_milestone_hint,
         "max_steps": max_steps,
         # Which PRO-LONG arm this is. Recorded only where it means something, and

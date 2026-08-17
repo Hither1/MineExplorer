@@ -281,6 +281,64 @@ check("sandbox set via config on both paths",
       first.count('sandbox_mode="workspace-write"') == 1 and resumed.count('sandbox_mode="workspace-write"') == 1)
 check("session id precedes the stdin sentinel", resumed[-2] == ct.session_id and resumed[-1] == "-")
 
+# --- the tool surface, which no filesystem sandbox is on the path of --------------
+# Measured on codex-cli 0.147.0 with this account: without these flags the model was
+# handed `web__run` (it used it), ~250 `mcp__codex_apps__*` connectors, and the
+# sub-agent tools. On this benchmark a web search or a repo-fetching connector reaches
+# `benchmark/<scene>/multi-agent/metadata.json`'s target coordinates without touching
+# this filesystem, so the flags are the control, not hygiene.
+from prolong_mc.codex_backend import (
+    EXPECTED_NESTED_TOOLS, SAFE_CODEX_FLAGS, SandboxViolation, request_stats,
+)
+check("safety flags reach the first turn", all(f in first for f in SAFE_CODEX_FLAGS))
+check("safety flags reach the resume turn", all(f in resumed for f in SAFE_CODEX_FLAGS))
+check("web search is disabled", 'web_search="disabled"' in SAFE_CODEX_FLAGS)
+check("account apps are disabled", "features.apps=false" in SAFE_CODEX_FLAGS)
+# `--disable multi_agent` does not remove spawn_agent; this key does (measured).
+check("sub-agents are disabled", "agents.enabled=false" in SAFE_CODEX_FLAGS)
+check("the expected surface is the five local tools",
+      EXPECTED_NESTED_TOOLS == frozenset(
+          {"apply_patch", "exec_command", "update_plan", "view_image", "write_stdin"}))
+
+# ... and the tripwire that fires when the surface is not what the flags describe.
+_violating = "\n".join(json.dumps(e) for e in [
+    {"type": "thread.started", "thread_id": "T1"},
+    {"type": "item.completed", "item": {"type": "web_search", "query": "0313 milestone"}},
+    {"type": "item.completed", "item": {"type": "mcp_tool_call", "server": "codex_apps"}},
+    {"type": "thread.started", "thread_id": "T2"},
+    {"type": "turn.completed", "usage": {}},
+])
+_st = request_stats(_violating)
+check("a web search is counted", _st["web_searches"] == 1, str(_st))
+check("a connector call is counted", _st["mcp_tool_calls"] == 1)
+check("a spawned sub-agent is counted", _st["subthreads"] == 1)
+check("a clean stream trips nothing",
+      not any(request_stats(json.dumps({"type": "turn.completed", "usage": {}}))[k]
+              for k in ("web_searches", "mcp_tool_calls", "subthreads")))
+
+# The workspace codex is handed must be absolute: codex runs with cwd == workspace, so a
+# relative one made every `-i` frame and `-o last_message.txt` resolve against the wrong
+# directory. The sibling mllm-search port lost every attached image that way, silently.
+import os as _os2
+_cwd = _os2.getcwd()
+_tmp = tempfile.mkdtemp()
+_os2.chdir(_tmp)
+try:
+    check("CodexTurn resolves a relative workspace",
+          CodexTurn(pathlib.Path("rel_ws"), model="m", codex_bin="/bin/true").workspace.is_absolute())
+finally:
+    _os2.chdir(_cwd)
+
+# The sandbox wrapper the runner defaults to, and the two things it must never lose.
+_wrapper = pathlib.Path(__file__).resolve().parent / "codex_sandbox.sh"
+check("the sandbox wrapper exists and is executable",
+      _wrapper.exists() and _os2.access(_wrapper, _os2.X_OK), str(_wrapper))
+_w = _wrapper.read_text() if _wrapper.exists() else ""
+check("the wrapper unshares the network", "--unshare-net" in _w)
+check("the wrapper clears the inherited environment", "--clearenv" in _w)
+check("the wrapper does not put the game server on the egress allowlist",
+      "MC_SANDBOX_URL" not in _w.split("CODEX_SANDBOX_ALLOW")[-1].split("BWRAP_ARGS")[0])
+
 # -i is variadic: anything positional after it is eaten as another image path. On the
 # resume path that positional is the session id, so images must be terminated by a flag.
 imgs = [pathlib.Path("/tmp/a.png"), pathlib.Path("/tmp/b.png")]

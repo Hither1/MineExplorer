@@ -16,7 +16,15 @@ set -euo pipefail
 # location points at the run directory rather than the repo.
 ROOT_DIR=${MINEEXPLORER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 PYTHON_BIN=${PYTHON_BIN:-/work/nvme/bdrx/dzhang5/conda/envs/mineexplorer-qwen35-tf/bin/python}
-CODEX_BIN=${CODEX_BIN:-/u/dzhang5/.nvm/versions/node/v22.16.0/bin/codex}
+# The sandbox wrapper, not codex itself. It is a drop-in -- same argv, cwd is still the
+# workspace -- and it is what keeps the agent off the scene metadata (whose milestone
+# coordinates *are* the answer to a navigation task), off other runs' results, and off
+# every network destination but the model API. CODEX_BIN=<the real codex> opts out
+# deliberately, and the choice is recorded in each run's manifest.
+CODEX_BIN=${CODEX_BIN:-$ROOT_DIR/prolong_mc/codex_sandbox.sh}
+# The real binary the wrapper execs, and where the account credential lives.
+CODEX_REAL_BIN=${CODEX_REAL_BIN:-/u/dzhang5/.nvm/versions/node/v22.16.0/bin/codex}
+export CODEX_REAL_BIN
 MODEL_ID=${MODEL_ID:-gpt-5.6-sol}
 CODEX_EFFORT=${CODEX_EFFORT:-xhigh}
 # MODEL_SERVER names a shared vLLM server (see scripts/serve_vllm.sh) to drive codex
@@ -52,21 +60,31 @@ if [[ -z ${MC_SANDBOX_URL:-} ]]; then
   exit 2
 fi
 
-# Throwaway CODEX_HOME with only the credential linked in: the real one carries
-# `model = "gpt-5.6-sol"` and project trust settings we do not want silently applied,
-# and PRO-LONG refuses to mount the global ~/.codex for the same reason.
-export CODEX_HOME=$RUN_ROOT/codex-home
-mkdir -p "$CODEX_HOME" "$RUN_ROOT" "$OUTPUT_DIR" "$TASK_VIEW"
-# Only for the hosted arm. Linking the account credential also pulls in the account's
-# MCP app tools -- github, slack, gmail, drive, sites -- which add 275 KB of JSON
-# schema to *every* request: 23 tools and 312 KB instead of 10 tools and 18 KB, about
-# 78k tokens against 4.6k. That alone overflowed a 65536-token context and failed 94%
-# of one run's calls. A locally served model authenticates with a dummy key and needs
-# none of it.
+# The master CODEX_HOME: it holds the credential and nothing else, and the wrapper binds
+# only its auth.json, read-only, into a home it derives per episode. The global ~/.codex
+# is never used -- it carries `model = "gpt-5.6-sol"`, project trust settings and an
+# AGENTS.md that `--ignore-user-config` does NOT suppress, and its sessions/ would let
+# one episode read another's conversation.
+export CODEX_EVAL_HOME=${CODEX_EVAL_HOME:-$RUN_ROOT/codex-home}
+mkdir -p "$CODEX_EVAL_HOME" "$RUN_ROOT" "$OUTPUT_DIR" "$TASK_VIEW"
+# Hosted arm only. Linking the account credential used to also pull in the account's MCP
+# app tools -- github, slack, gmail, drive, sites -- which added 275 KB of JSON schema to
+# *every* request: 23 tools and 312 KB instead of 10 and 18 KB, about 78k tokens against
+# 4.6k, enough to overflow a 65536-token context and fail 94% of one run's calls. That is
+# now closed at the source by SAFE_CODEX_FLAGS (prolong_mc/codex_backend.py), which is a
+# correctness fix as much as a cost one: those same tools are a route to the answers that
+# no filesystem sandbox sits on. A locally served model authenticates with a dummy key and
+# needs no credential at all.
 if [[ -z "$MODEL_SERVER" ]]; then
-  ln -sfn "$HOME/.codex/auth.json" "$CODEX_HOME/auth.json"
+  ln -sfn "$HOME/.codex/auth.json" "$CODEX_EVAL_HOME/auth.json"
+else
+  export CODEX_SANDBOX_NO_AUTH=1
 fi
 export CODEX_BIN MC_SANDBOX_URL PYTHONNOUSERSITE=1
+# What the agent may reach through the sandbox's one exit. MC_SANDBOX_URL is deliberately
+# absent: the runner steps the world, the agent only writes actions.json, and upstream
+# draws the same line. A local model server is added below, once its URL is known.
+export CODEX_SANDBOX_ALLOW=${CODEX_SANDBOX_ALLOW:-.chatgpt.com:443,.openai.com:443,chatgpt.com:443}
 # eval_benchmark.py:33-37 hard-fails at import unless both of these are set, before
 # any provider is chosen. The Codex path reads neither; these just get past the check.
 export AGENT_API_KEY=${AGENT_API_KEY:-EMPTY}
@@ -88,6 +106,11 @@ if [[ -n "$MODEL_SERVER" ]]; then
   # asserts the live server serves the model this run claims to measure.
   CODEX_BASE_URL=$(bash "$ROOT_DIR/scripts/use_model_server.sh" "$MODEL_SERVER" "$MODEL_ID") || exit 1
   echo "codex -> $CODEX_BASE_URL"
+  # The sandbox has no route out except the allowlist, so the served model has to be on
+  # it or codex cannot reach the model at all.
+  CODEX_SANDBOX_ALLOW="$CODEX_SANDBOX_ALLOW,$(printf '%s' "$CODEX_BASE_URL" | sed -E 's#^https?://##; s#/.*##')"
+  export CODEX_SANDBOX_ALLOW
+  echo "sandbox egress allowlist: $CODEX_SANDBOX_ALLOW"
   # Codex has no catalog entry for a locally served model, so it guesses the context
   # window. Take the number from the server's own advert rather than restating it
   # here: the two would drift, and the direction that hurts is codex believing there
@@ -100,6 +123,14 @@ if [[ -n "$MODEL_SERVER" ]]; then
   else
     echo "warning: $DISCOVERY has no max_model_len; codex keeps its built-in default" >&2
   fi
+fi
+
+# The sandbox's own assertions, through the wrapper this run will use. A bind that
+# stopped binding, a home pointed back at a shared one, or a namespace that kept the
+# host's network all produce runs that look exactly like isolated ones.
+if [[ "$(basename "$CODEX_BIN")" == "codex_sandbox.sh" ]]; then
+  "$PYTHON_BIN" -m prolong_mc.sandbox_selftest || {
+    echo "sandbox selftest FAILED; not running" >&2; exit 1; }
 fi
 
 eval_args=(

@@ -119,6 +119,56 @@ def _metadata_args(context_window: int) -> list[str]:
     ]
 
 
+# What the model is allowed to hold in its hands, fixed here rather than left to codex's
+# defaults. Measured on codex-cli 0.147.0 (2026-08-17) on the sibling mllm-search port,
+# same subscription account: without these the tool list carried `web__run` -- and the
+# model used it to fetch a Wikipedia article -- plus ~250 account-level
+# `mcp__codex_apps__*` connectors (github, gmail, slack, google_drive, hugging_face, ...)
+# and the sub-agent tools (`spawn_agent`, ...). All of them run server-side or in the
+# codex process itself, so no local sandbox is on their path; only config is.
+#
+# This matters more here than the filesystem does. A scene's milestones are
+# `position_near_with_facing` against coordinates that sit in
+# `benchmark/<scene>/multi-agent/metadata.json`, and a connector that can fetch a repo --
+# or a web search against a public benchmark -- is a way to those coordinates that never
+# touches this host's filesystem.
+#
+#   web_search          default "cached": OpenAI's web index.
+#   features.apps       account connectors; the docs say their "traffic [is] not
+#                       controlled by sandboxed-command network proxy".
+#   agents.enabled      the sub-agent tools. `--disable multi_agent` does NOT remove
+#                       them (measured); this key does. Off so one analyzer turn is one
+#                       thread and `request_stats` means what it says.
+#   plugins/remote      the plugin catalog and its `request_plugin_install` tool.
+#   image/goals         server-side image generation and goal state; off so the nested
+#                       tool list is exactly EXPECTED_NESTED_TOOLS and a new default
+#                       cannot slip in unnoticed.
+SAFE_CODEX_FLAGS: tuple[str, ...] = (
+    "-c", 'web_search="disabled"',
+    "-c", "features.apps=false",
+    "-c", "apps._default.enabled=false",
+    "-c", "agents.enabled=false",
+    "-c", "features.remote_plugin=false",
+    "-c", "features.plugins=false",
+    "-c", "features.image_generation=false",
+    "-c", "features.goals=false",
+)
+
+EXPECTED_NESTED_TOOLS: frozenset[str] = frozenset({
+    "apply_patch", "exec_command", "update_plan", "view_image", "write_stdin",
+})
+
+
+class SandboxViolation(RuntimeError):
+    """A turn reached a capability the arm is defined not to have.
+
+    Raised, not recorded: a web search or a connector call means the configuration in
+    force is not the one the results claim, and the episode that follows it is
+    contaminated -- the result sits in the resumed conversation and in whatever the
+    agent wrote into its workspace.
+    """
+
+
 # A tool result is what makes codex send the model another request, so these are what
 # turn one call into several. Named rather than inferred, so an unfamiliar item type is
 # undercounted visibly instead of inflating the count silently.
@@ -151,7 +201,9 @@ def request_stats(events: str) -> dict[str, int]:
     counter, which is exactly the boundary the totals should respect.
     """
     out: dict[str, Any] = dict(turns=0, requests=0, tool_calls=0, agent_messages=0,
-                               usage_by_thread={})
+                               usage_by_thread={},
+                               # Must all stay 0; see SAFE_CODEX_FLAGS.
+                               web_searches=0, mcp_tool_calls=0, subthreads=0)
     thread = ""
     for line in events.splitlines():
         line = line.strip()
@@ -163,13 +215,21 @@ def request_stats(events: str) -> dict[str, int]:
             continue
         kind = event.get("type")
         if kind == "thread.started":
-            thread = event.get("thread_id") or ""
+            new_thread = event.get("thread_id") or ""
+            if thread and new_thread and new_thread != thread:
+                # A second thread inside one `codex exec` is a spawned sub-agent.
+                out["subthreads"] += 1
+            thread = new_thread
         elif kind == "item.completed":
             item_type = (event.get("item") or {}).get("type")
             if item_type in _TOOL_ITEM_TYPES:
                 out["tool_calls"] += 1
             elif item_type == "agent_message":
                 out["agent_messages"] += 1
+            if item_type == "web_search":
+                out["web_searches"] += 1
+            elif item_type == "mcp_tool_call":
+                out["mcp_tool_calls"] += 1
         elif kind == "turn.completed":
             out["turns"] += 1
             usage = event.get("usage") or {}
@@ -188,10 +248,12 @@ def merge_stats(parts: Sequence[dict[str, Any]]) -> dict[str, int]:
     every turn of a resumed thread reports the whole thread's usage so far.
     """
     total = dict(turns=0, requests=0, tool_calls=0, agent_messages=0,
-                 input_tokens=0, cached_input_tokens=0, output_tokens=0, threads=0)
+                 input_tokens=0, cached_input_tokens=0, output_tokens=0, threads=0,
+                 web_searches=0, mcp_tool_calls=0, subthreads=0)
     per_thread: dict[str, dict[str, int]] = {}
     for part in parts:
-        for key in ("turns", "requests", "tool_calls", "agent_messages"):
+        for key in ("turns", "requests", "tool_calls", "agent_messages",
+                    "web_searches", "mcp_tool_calls", "subthreads"):
             total[key] += int(part.get(key) or 0)
         for thread, usage in (part.get("usage_by_thread") or {}).items():
             seen = per_thread.setdefault(
@@ -238,7 +300,11 @@ class CodexTurn:
         transcript_dir: Path | None = None,
         context_window: int | None = None,
     ) -> None:
-        self.workspace = Path(workspace)
+        # Absolute, always. Codex runs with cwd == this directory, so every path derived
+        # from it -- `-o last_message.txt`, the `-i` frames -- is handed to codex relative
+        # to *its* cwd. The sibling mllm-search port measured a relative workspace losing
+        # every attached frame and every last_message.txt, silently.
+        self.workspace = Path(workspace).resolve()
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.base_url = base_url
@@ -305,6 +371,7 @@ class CodexTurn:
         # sandbox entirely on resume; that would leave every turn after the first
         # unconfined, so the config form is used on both paths instead.
         args += ["-c", 'sandbox_mode="workspace-write"']
+        args += list(SAFE_CODEX_FLAGS)
         if self.session_id:
             # Documented order: codex exec resume [OPTIONS] [SESSION_ID] [PROMPT]
             args = args[:2] + ["resume"] + args[2:] + [self.session_id]
@@ -363,12 +430,21 @@ class CodexTurn:
             )
             return {"actions_json": None, "message": "", "ok": False, "error": "timeout"}
 
+        stats = request_stats(proc.stdout)
+        violated = {k: stats[k] for k in ("web_searches", "mcp_tool_calls", "subthreads") if stats[k]}
         if self.transcript_dir:
             stem = self.transcript_dir / f"turn_{self.calls:04d}"
             stem.with_suffix(".events.jsonl").write_text(proc.stdout, encoding="utf-8")
             stem.with_suffix(".prompt.txt").write_text(prompt, encoding="utf-8")
             if proc.stderr:
                 stem.with_suffix(".stderr.txt").write_text(proc.stderr, encoding="utf-8")
+
+        if violated:
+            raise SandboxViolation(
+                f"codex turn {self.calls} used capabilities this arm must not have: "
+                f"{violated}. The tool surface in force is not the one SAFE_CODEX_FLAGS "
+                f"describes; see the transcript under {self.transcript_dir}."
+            )
 
         # Keep the thread id so the next turn resumes rather than restarting cold.
         if self.session_id is None:

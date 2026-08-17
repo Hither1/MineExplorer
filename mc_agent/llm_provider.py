@@ -28,7 +28,10 @@ from mc_agent.utils import deco_retry_on_ratelimit
 # One definition of what codex is told about a locally served model, so the two codex
 # paths -- this provider and PRO-LONG's own turn runner -- cannot drift apart on the
 # setting that decides whether the conversation gets compacted underneath them.
-from prolong_mc.codex_backend import DEFAULT_CONTEXT_WINDOW, _metadata_args, effort_for
+from prolong_mc.codex_backend import (
+    DEFAULT_CONTEXT_WINDOW, SAFE_CODEX_FLAGS, SandboxViolation, _metadata_args,
+    effort_for, request_stats,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +374,10 @@ class CodexProvider(BaseLLMProvider):
                 "-c", f'model_reasoning_effort="{effort_for(self.base_url, self.reasoning_effort)}"',
                 "-s", "workspace-write",
                 "-o", str(out_file),
+                # The same tool surface the PRO-LONG turns get. This provider is the
+                # scaffold control: an arm whose baseline could web-search while the
+                # arm under test could not would measure the tool surface, not memory.
+                *SAFE_CODEX_FLAGS,
             ]
             if self.base_url:
                 cmd += [
@@ -421,12 +428,24 @@ class CodexProvider(BaseLLMProvider):
                     )
                 raise
 
+            stats = request_stats(proc.stdout)
+            violated = {k: stats[k] for k in ("web_searches", "mcp_tool_calls", "subthreads")
+                        if stats[k]}
+
             if self.transcript_dir:
                 stem = self.transcript_dir / f"call_{self._calls:04d}"
                 stem.with_suffix(".events.jsonl").write_text(proc.stdout)
                 stem.with_suffix(".prompt.txt").write_text(prompt)
                 if proc.stderr:
                     stem.with_suffix(".stderr.txt").write_text(proc.stderr)
+
+            # Raised after the transcript is on disk: the violating call's event stream
+            # is the evidence, and a run that dies without it teaches nothing.
+            if violated:
+                raise SandboxViolation(
+                    f"codex call {self._calls} used capabilities this channel must not "
+                    f"have: {violated}; see {self.transcript_dir or 'the event stream'}."
+                )
 
             if out_file.exists():
                 reply = out_file.read_text().strip()
