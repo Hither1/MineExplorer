@@ -264,9 +264,10 @@ without populating the model cache.
 
 The runner pins the official model revision
 `fc05daec18b0a78c049392ed2e771dde82bdf654`, selects exactly the directory
-IDs `0313` and `0544`, uses one sandbox worker, disables model thinking for
-action-JSON reliability, and defaults to the paper-comparable
-`--no-milestone-hint` protocol.
+IDs `0313` and `0544`, uses one sandbox worker, and defaults to the
+paper-comparable `--no-milestone-hint` protocol. Thinking is not set here: it
+is a property of the server and the codex effort value, described under
+[the thinking invariant](#the-thinking-invariant) below.
 
 ```bash
 export MC_SANDBOX_URL=http://<x86-sandbox-host>:8000
@@ -283,6 +284,105 @@ scripts/launch.sh \
 
 Use `scripts/monitor.sh <run-id>` to inspect the recorded Slurm run. Heavy
 logs and results are written under the harness-provided artifact directory.
+
+### Running the agent × scaffold × task matrix
+
+Three things vary independently. Keeping them separate is the whole design: the
+agent axis is the question, the scaffold axis is the control that keeps a
+PRO-LONG result from being a Codex-CLI result, and the task axis is what makes
+either readable.
+
+| Axis | Variable | Values |
+|---|---|---|
+| **agent** | `AGENT_MODE` | `default`, `hypothesis`, `prolong` |
+| **scaffold** | channel half of `CELLS` | `codex` (through the Codex CLI), `vllm` (straight at the server) |
+| **task** | `SCENES` | any directory under `benchmark/`, space-separated |
+
+There is no `prolong:vllm` cell. PRO-LONG is built on `codex exec resume`
+sessions, so outside the CLI that agent does not exist.
+
+**One cell, by hand.** Both runners take the same variables; only the channel
+differs. `scripts/run_codex_0313_0544.sh` is the codex channel and
+`scripts/run_qwen35_0313_0544.sh` is the direct one.
+
+```bash
+export MC_SANDBOX_URL=http://<x86-sandbox-host>:8000
+
+env MODEL_SERVER=qwen38-27b MODEL_ID=Qwen/Qwen3.8-27B \
+    AGENT_MODE=prolong SCENES="0694 0311" MAX_STEPS=300 \
+    MILESTONE_HINT=1 CODEX_EFFORT=low CODEX_TIMEOUT=300 \
+    bash scripts/with_minecraft_arm64.sh -- bash scripts/run_codex_0313_0544.sh
+```
+
+`SCENES` takes more than one id, and `eval_benchmark.py` walks every scene in
+the benchmark directory in one process, so several tasks per job costs nothing
+extra. `--resume` skips any scene that already wrote a `result.json`, which
+makes a resubmission cheap. `--num-workers` runs them concurrently instead;
+the sandbox routes by a per-instance `session_id` and `/list_sessions` shows
+them, but concurrent use is untested here — verify before relying on it.
+
+**The whole matrix, as Slurm jobs.** `scripts/launch_matrix.sh` submits one job
+per (cell × scene). `DRY=1` prints the commands instead of submitting them,
+which is the cheapest way to check a change.
+
+```bash
+DRY=1 TAG=m1 MODEL_TAG=qwen38 MODEL_ID=Qwen/Qwen3.8-27B SERVER=qwen38-27b \
+  SCENES="0694 0311 0182" MAX_STEPS=300 WALL=05:00:00 \
+  CODEX_EFFORT=low CODEX_TIMEOUT=300 \
+  CELLS="default:codex hypothesis:codex prolong:codex default:vllm hypothesis:vllm" \
+  bash scripts/launch_matrix.sh
+```
+
+Set `SERVER=` (empty) with a hosted `MODEL_ID` to run the reference arm through
+the same file; that is the one value which makes the runner link the account
+credential instead of resolving a local server. Use `SEED_TAG` to distinguish
+repeat seeds of an otherwise identical cell.
+
+**The server comes first.** Both channels talk to one shared vLLM server, and a
+cell refuses to start against a server that cannot outlive it
+(`MODEL_SERVER_MIN_REMAINING`, minutes) rather than losing it mid-episode; it
+waits `MODEL_SERVER_WAIT` seconds for a suitable one to appear.
+
+```bash
+env VLLM_TP=1 VLLM_MAX_MODEL_LEN=131072 SERVER_SLUG=qwen38-27b \
+    MODEL_ID=Qwen/Qwen3.8-27B MODEL_REVISION=1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0 \
+    bash scripts/serve_vllm.sh
+```
+
+Pass anything a run's meaning depends on in the job's own `env` prefix rather
+than editing the script: `snapshot_exec.sh` copies `scripts/` at job *start*,
+so a queued job picks up edits made after it was submitted, and the manifest's
+`commit` field records that state without pinning it.
+
+<a id="the-thinking-invariant"></a>
+**The thinking invariant.** The two channels are configured from opposite ends
+and must agree, or the scaffold control differs in thinking as well as in
+scaffold. The direct arm follows the server's
+`VLLM_CHAT_TEMPLATE_KWARGS`; the codex arms follow `CODEX_EFFORT`, because vLLM
+synthesises `enable_thinking = (effort != "none")` from the request and lets it
+override the server default. Both default to thinking **on**. To turn it off,
+change both sides:
+
+```bash
+VLLM_CHAT_TEMPLATE_KWARGS='{"enable_thinking": false}'   # server
+CODEX_LOCAL_EFFORT=none                                  # cells
+```
+
+`python -m prolong_mc.selftest` asserts the two defaults agree, so a
+half-applied change fails there rather than in a matrix.
+
+**PRO-LONG's own ablations** vary the scaffold inside the agent, and are read
+only by `AGENT_MODE=prolong`: `PROLONG_LOG_WINDOW=N` truncates its log to the
+last N entries (`0` is upstream's "latest state only") and `PROLONG_STATELESS=1`
+removes the carried workspace. Setting either on another agent is refused at
+launch rather than silently ignored.
+
+**Reading the results.** `scripts/export_results.py` writes one row per scored
+episode — task, pass/fail, and the settings it actually ran under — joining the
+result files with each run's manifest and the trust judgements in
+`RUN_LEDGER.txt`. `scripts/compare_runs.py` builds the comparison table.
+`experiments/RESULTS.md` records what the DeltaAI campaign established, and
+`experiments/results.csv` is the exported table.
 
 ### Output Structure
 

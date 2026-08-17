@@ -276,3 +276,25 @@ episode.
    nonzero count means `model_auto_compact_token_limit` does not hold the line and the
    arm needs re-describing, not re-running.
 5. Only then the matrix, staged.
+
+## 2026-08-16 — campaign closed on DeltaAI; the plan above is stale in one specific way
+
+The allocation ended. Every remaining job was cancelled while queued; `experiments/RESULTS.md`
+is the synthesis and `experiments/results.csv` the per-episode table. Read those first.
+
+**What is stale here:** the checklist above verifies "thinking off at effort `none`" and
+treats that as the serving contract. It is now the opposite. The branch defaults to thinking
+**on**, on both channels, because thinking off was measured to break the arms it was supposed
+to make comparable — the default arm returned nothing on 6 of 13 calls on the 0313 diagnostic,
+looping on `echo ok` 85 times inside a single call, while PRO-LONG was unaffected. A baseline
+crippled by our own serving choice is worse than no comparison.
+
+The confound is not resolved: that measurement changed thinking and the sampling recipe
+together, and the model card prescribes `presence_penalty=1.5` for the non-thinking mode
+specifically to stop repetition, which vLLM cannot apply as a server-side default and codex
+cannot send per request. The factorial that separates them was never run.
+
+Everything else in the checklist still holds. Steps 1-4 are still the right order, with the
+expectation inverted: effort `none` is now the deliberate override (`CODEX_LOCAL_EFFORT=none`
+plus `VLLM_CHAT_TEMPLATE_KWARGS`), not the default, and `python -m prolong_mc.selftest`
+asserts the two sides agree so a half-applied change fails there instead of in a matrix.
