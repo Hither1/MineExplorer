@@ -64,6 +64,47 @@ def satisfied_at_spawn(milestone: dict) -> bool:
     return math.dist((0, 0, 0), tuple(target)) <= max_distance
 
 
+def hop_slack(milestone: dict) -> float | None:
+    """How far past its own trigger radius a milestone's target sits.
+
+    `position_near_with_facing` fires when the player is within `max_distance`
+    of the target, so `|target| - max_distance` is the distance actually
+    separating spawn from the trigger -- the honest measure of how hard a hop
+    is to reach, where `|target|` alone overstates a generous radius.
+    """
+    rules = milestone.get("rules") or []
+    if not rules or rules[0].get("type") != "position_near_with_facing":
+        return None
+    params = rules[0].get("params", {})
+    target, max_distance = params.get("target"), params.get("max_distance")
+    if target is None or max_distance is None:
+        return None
+    return math.dist((0, 0, 0), tuple(target)) - max_distance
+
+
+def satisfiable_out_of_order(milestones: list) -> bool:
+    """True when a later hop is easier to reach than an earlier one.
+
+    Filtering scenes satisfied *at spawn* is not enough: a scene can also be
+    satisfied *backwards*. On 0694 the slacks run 11.2, 9.5, 3.5, 0.1 in task
+    order, so the fourth hop's trigger sits a tenth of a block outside its own
+    radius and the first sits eleven blocks out. Both a Qwen3.8 run and a
+    gpt-5.6 run scored it 3/4 by completing hops 4, 3, 2 in that order with
+    hop 1 never completed -- two unrelated models, one signature, so it is the
+    scene and not the agent. A scene scored that way measures wandering, and
+    reporting it as a depth-4 result would credit multi-hop reasoning that
+    never happened.
+
+    Conservative on purpose: scenes whose hops are not all position rules
+    cannot be checked this way and are not dropped.
+    """
+    raw = [hop_slack(m) for m in milestones]
+    if len(raw) < 2 or any(s is None for s in raw):
+        return False
+    slacks = [s for s in raw if s is not None]
+    return any(b < a for a, b in zip(slacks, slacks[1:]))
+
+
 def verification_tier(milestones: list) -> str:
     """What the scene needs the environment to report, which is also its risk order."""
     types = {r["type"] for m in milestones for r in (m.get("rules") or [])}
