@@ -416,8 +416,17 @@ def test_with_model(model: str) -> None:
             except Exception:
                 names = set(_re.findall(r'"([a-z_]+)"', m.group(1)))
             extra = names - EXPECTED_NESTED_TOOLS
+            missing = EXPECTED_NESTED_TOOLS - names
             check("ALL_TOOLS carries no tool beyond the whitelist",
                   not extra, f"unexpected: {sorted(extra)}")
+            # Both directions. A tool that DISAPPEARS is as much a change of arm as one
+            # that appears, and it fails in the quiet direction: without `view_image` the
+            # analyzer cannot act on the `[FRAME] frames/step_NNNN.png` paths its log is
+            # built around -- the prompt tells it to use the viewer on older frames -- so
+            # an episode would navigate on coordinates alone while still reporting itself
+            # as the vision arm.
+            check("ALL_TOOLS still carries every tool the arm depends on",
+                  not missing, f"missing: {sorted(missing)}")
         else:
             check("the model reported ALL_TOOLS", False, "no TOOLS= line in the reply")
         check("no web/connector/sub-agent tool is offered outside exec",
