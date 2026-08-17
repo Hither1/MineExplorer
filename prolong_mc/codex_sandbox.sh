@@ -103,8 +103,17 @@ mkdir -p "$EPISODE_HOME/skills/.system"
 # read-only from the master rather than copied: one token file on disk, and an episode
 # home that holds no secret.
 : > "$EPISODE_HOME/skills/.system/.codex-system-skills.marker"
-cleanup() { [ -n "$CLEANUP_HOME" ] && rm -rf "$CLEANUP_HOME"; [ -n "${SOCK_DIR:-}" ] && rm -rf "$SOCK_DIR"; }
-trap cleanup EXIT
+# Cleanup runs on the way out, which is why the bwrap below is NOT `exec`ed: an exec
+# replaces this shell and the trap never fires. That leaked a socket directory per turn
+# and -- worse -- a throwaway CODEX_HOME per stateless call, each holding a bound-in
+# credential path. TERM/INT are trapped too: a runner that times out kills this process,
+# and the default disposition would skip the EXIT trap entirely.
+cleanup() {
+    [ -n "${CLEANUP_HOME:-}" ] && rm -rf "$CLEANUP_HOME"
+    [ -n "${SOCK_DIR:-}" ] && rm -rf "$SOCK_DIR"
+    return 0
+}
+trap cleanup EXIT INT TERM
 
 NET_ARGS=()
 PROXY_SETENV=()
@@ -181,8 +190,15 @@ BWRAP_ARGS=(
     --unshare-pid
 )
 
+# Foreground, not exec (see cleanup above), and not backgrounded either: a `&` in a
+# non-interactive shell redirects stdin from /dev/null, and stdin is how every caller
+# passes the turn's prompt. `--die-with-parent` still ties bwrap's life to this shell.
+set +e
 if [ -n "$INNER_PREAMBLE" ]; then
-    exec "$BWRAP" "${BWRAP_ARGS[@]}" -- /bin/bash -c "$INNER_PREAMBLE" -- "$SANDBOX_EXEC" "$@"
+    "$BWRAP" "${BWRAP_ARGS[@]}" -- /bin/bash -c "$INNER_PREAMBLE" -- "$SANDBOX_EXEC" "$@"
 else
-    exec "$BWRAP" "${BWRAP_ARGS[@]}" -- "$SANDBOX_EXEC" "$@"
+    "$BWRAP" "${BWRAP_ARGS[@]}" -- "$SANDBOX_EXEC" "$@"
 fi
+rc=$?
+set -e
+exit $rc
