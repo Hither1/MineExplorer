@@ -695,6 +695,42 @@ _codex_thinking = _effort_for("http://node:1/v1", "low") != "none"
 check("serving: the codex arms and the direct-vLLM arm default to the same thinking setting",
       _server_thinking == _codex_thinking,
       f"server={_server_thinking} codex={_codex_thinking}")
+
+
+def _runner_temperature(advert_temp, **env_overrides) -> str:
+    """What the direct-vLLM runner would sample at, given a server advertising this.
+
+    Exits non-zero -- the endpoints it contacts do not exist -- but the resolution is
+    printed before them, which is why it was moved above the curls.
+    """
+    tmp = pathlib.Path(tempfile.mkdtemp())
+    (tmp / "servers").mkdir()
+    (tmp / "servers" / "t.json").write_text(json.dumps(
+        {"url": "http://x/v1", "max_model_len": 131072, "sampling": {"temperature": advert_temp}}))
+    env = dict(os.environ, PYTHON_BIN="/bin/true", MODEL_SERVER="t",
+               DISCOVERY_DIR=str(tmp / "servers"), ART_DIR=str(tmp / "art"),
+               MC_SANDBOX_URL="http://127.0.0.1:1", QWEN_API_URL="http://127.0.0.1:1/v1",
+               SCENES="0313", MINEEXPLORER_ROOT=str(ROOT),
+               **{k: str(v) for k, v in env_overrides.items()})
+    if "TEMPERATURE" not in env_overrides:
+        # Or an ambient value would make the no-override case pass for the wrong reason.
+        env.pop("TEMPERATURE", None)
+    out = subprocess.run(["bash", str(ROOT / "scripts" / "run_qwen35_0313_0544.sh")],
+                         env=env, capture_output=True, text=True, timeout=120).stdout
+    for line in out.splitlines():
+        if line.startswith("temperature <-"):
+            return line.rsplit(":", 1)[1].strip()
+    return ""
+
+
+# The other half of the same trap the thinking check covers. --override-generation-config
+# is a *default*, and VLLMProvider sends `temperature` on every request, where an explicit
+# value wins -- so restating a temperature in the runner silently gave the direct arm a
+# different one from the codex arms, on top of the server's top_p.
+check("serving: the direct-vLLM arm samples at whatever the server advertises",
+      _runner_temperature(1.0) == "1.0", _runner_temperature(1.0))
+check("serving: an explicit TEMPERATURE still overrides the advert, for a probe",
+      _runner_temperature(1.0, TEMPERATURE="0.3") == "", "advert was read despite an explicit value")
 # The escape hatch has to keep working: if a cudagraph capture ever fails on a node,
 # eager is how the run happens at all, and it must not need a mid-flight script edit.
 eager_argv = serve_argv(VLLM_EAGER="1")

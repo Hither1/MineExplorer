@@ -17,6 +17,10 @@ MODEL_SERVER=${MODEL_SERVER:-qwen38-27b}
 QWEN_API_URL=${QWEN_API_URL:-}
 MAX_STEPS=${MAX_STEPS:-300}
 LOADING_COMMAND_STEPS=${LOADING_COMMAND_STEPS:-20}
+# Captured before the default is applied: `${TEMPERATURE+1}` is set only when the caller
+# exported one, which is the difference between "asked for 0.7" and "did not ask", and the
+# advert below defers to the first.
+TEMPERATURE_SET=${TEMPERATURE+1}
 TEMPERATURE=${TEMPERATURE:-0.7}
 AGENT_MODE=${AGENT_MODE:-default}
 MILESTONE_HINT=${MILESTONE_HINT:-0}
@@ -58,6 +62,28 @@ for scene in ${SCENES:-0313 0544}; do
   ln -sfn "$ROOT_DIR/benchmark/$scene" "$TASK_VIEW/$scene"
 done
 
+# Take the temperature from the server's own advert rather than from this script.
+#
+# The server pins sampling for both channels with --override-generation-config, but that
+# is a *default*, and VLLMProvider puts `temperature` in every request, where an explicit
+# value wins. So the codex arms ran the server's recipe while this arm sent 0.7 on top of
+# the server's top_p -- a mixture matching neither recipe, and a channel control differing
+# from the cells it controls in the variable it exists to hold fixed. Reading the advert
+# keeps the value in one place; restating it here is exactly what let the two drift.
+#
+# Same pattern as the codex runner taking CODEX_MODEL_CONTEXT_WINDOW from max_model_len.
+# An explicit TEMPERATURE still wins, for a deliberate probe. Read before the endpoints
+# are contacted, since it needs only the advert, which is also what makes it testable.
+if [[ -z ${TEMPERATURE_SET:-} ]]; then
+  DISCOVERY=${DISCOVERY_DIR:-$ROOT_DIR/artifacts/servers}/$MODEL_SERVER.json
+  if T=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sampling"]["temperature"])' \
+           "$DISCOVERY" 2>/dev/null); then
+    TEMPERATURE=$T
+    echo "temperature <- $DISCOVERY: $TEMPERATURE"
+  else
+    echo "warning: $DISCOVERY has no sampling.temperature; using $TEMPERATURE" >&2
+  fi
+fi
 
 curl -fsS "${MC_SANDBOX_URL%/}/monitor/alive" > "$RUN_ROOT/minecraft-alive.json"
 
@@ -67,6 +93,7 @@ fi
 export AGENT_API_BASE=$QWEN_API_URL
 
 curl -fsS "$QWEN_API_URL/models" > "$RUN_ROOT/qwen-models.json"
+#
 
 eval_args=(
   --model "$MODEL_ID"

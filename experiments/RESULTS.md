@@ -110,6 +110,17 @@ or the sampling recipe was never separated -- both were changed together, and th
 card prescribes `presence_penalty=1.5` for the non-thinking mode specifically to stop
 repetition, which vLLM cannot apply as a server-side default and codex cannot send.
 
+**A server-side sampling default does not reach a client that sends its own.** Pinning
+sampling with `--override-generation-config` was supposed to stop the two channels
+diverging, and it only half worked: the codex arms send no sampling parameters and got the
+pin, while `VLLMProvider` puts `temperature` in every request, where an explicit value
+wins. The direct arm ran the runner's temperature on top of the server's `top_p` -- a
+mixture matching neither recipe -- for the entire campaign. The runner now reads the
+temperature out of the server's own advert, and `selftest.py` checks it. The same trap
+took thinking: `enable_thinking` is synthesised from the request's `reasoning.effort` and
+overrides the server default too, so the two channels have to be configured from opposite
+ends and nothing but a test keeps them together.
+
 **Serving configuration silently changes what is being measured.** Qwen3.8's chat template
 opens a `<think>` block in the *prompt*, so an output with zero `<think>` tags and
 `reasoning_output_tokens: 0` looks exactly like thinking being off when it is not. vLLM
