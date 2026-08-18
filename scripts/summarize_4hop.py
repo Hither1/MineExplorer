@@ -41,7 +41,8 @@ def wall_and_server(log: Path) -> tuple[str, str, int, int]:
         if ("Querying vLLM" in line or ("[codex] turn" in line and "model=" in line)
                 or "[CodexProvider] call " in line and "model=" in line):
             calls += 1
-        if "timed out after" in line:
+        # The provider's own line, once per call; the agent's traceback repeats the message.
+        if "[CodexProvider] call" in line and "timed out after" in line:
             timeouts += 1
     wall = f"{(last - first).total_seconds() / 60:.0f}m" if first and last else ""
     return wall, server, calls, timeouts

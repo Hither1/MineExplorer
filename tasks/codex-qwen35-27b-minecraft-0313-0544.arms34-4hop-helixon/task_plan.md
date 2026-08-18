@@ -24,19 +24,14 @@ Continues the archived task prolong-vs-default-4hop-helixon (2026-08-18 campaign
 
 ## Current Cycle
 
-- Working hypothesis: default x codex loops `view_image` on the 20 attached frames at the 20-frame
-  steady state with thinking off (measured 13:03 and 13:13; the calls succeeded, the model just
-  kept viewing), so its steps end at the per-call ceiling; hypothesis x vllm runs like default x
-  vllm (~20 s/step, s0694 05:38-06:20 ran 127 steps cleanly).
-- Main uncertainty: the loop's base rate per step (every step >= N frames? stochastic?) and how
-  fast one loop iteration is with prefix caching -- both decide the ceiling and the campaign wall.
-- Next decisive experiment or implementation: relaunch serving (3 x TP=2, prefix cache) ->
-  20-frame probe x3 + 8/12-frame probes -> pick CODEX_TIMEOUT for the arm -> smoke both arms ->
-  launch 14 cells.
-- Expected pass/fail signal: probe: fraction of 20-frame calls that answer within 120 s; smoke:
-  3-step cells finish with result.json (codex_sandboxed true). Campaign: 14 result.json.
-- Fallback: if default x codex loops at every step, the arm is scored as run (no-op steps) and the
-  report says the score is the ceiling policy, not the agent.
+- Outcome: confirmed and closed. default x codex stalls at any frame count (33% of its calls hit
+  the 120 s ceiling; 4.5% return degenerate `!!!!`), scores 9/28 and costs 44.6 h of cell-time;
+  hypothesis x vllm behaves like default x vllm and scores the same 10/28 while maintaining a
+  26-75 node DAG. Four arms land within two milestones of each other at n=1, i.e. the design
+  cannot separate the agents at this sample size.
+- Next question for dz (not started): the only informative next run is seeds, not arms --
+  7 scenes x 5 seeds of default x vllm + prolong x codex is ~10 h wall on the 3-server layout.
+  That is a new fixed-n decision (memory `fix-seed-count-up-front`).
 
 ## Scenes (strict 4-hop set)
 
@@ -48,13 +43,13 @@ Continues the archived task prolong-vs-default-4hop-helixon (2026-08-18 campaign
       caching on, cap 1024 / thinking off verified on both channels of each.
 - [x] default x codex path smoke-tested through run_cell.sh + codex_sandbox.sh (per-cell episode
       home, rollouts kept); loop probe done and the ceiling recorded (120 s).
-- [ ] 14 cells finished; 4-arm table in experiments/RESULTS_helixon_4hop.md; committed.
+- [x] 14 cells finished; 4-arm table in experiments/RESULTS_helixon_4hop.md; committed.
 
 ## Parallel Tracks
 
 | track | owner | mode | worktree / branch | dependency | deliverable | status |
 |---|---|---|---|---|---|---|
-| primary | primary | integrate | current branch | none | serving, harness, launches, synthesis | active |
+| primary | primary | integrate | current branch | none | serving, harness, launches, synthesis | complete |
 
 ## Phases
 
@@ -80,8 +75,8 @@ Continues the archived task prolong-vs-default-4hop-helixon (2026-08-18 campaign
 ### Phase 3: Campaign
 
 - [x] launch 14 cells (7 hypothesis x vllm at 00:03, 7 default x codex at 00:37) across the three servers.
-- [ ] monitor to completion; summarize; write the 4-arm table + interpretation; commit + push.
-- **Status:** active
+- [x] monitor to completion; summarize; write the 4-arm table + interpretation; commit + push.
+- **Status:** complete
 - **Evidence:** outputs/log-c4h-launcher-hyp.txt, outputs/log-c4h-launcher-dc.txt
 
 ## Decisions And Blockers
@@ -102,4 +97,4 @@ Continues the archived task prolong-vs-default-4hop-helixon (2026-08-18 campaign
 
 ## Next Action
 
-monitor the 14 cells; summarize + write the 4-arm table when done (Phase 3)
+none - ready to archive
