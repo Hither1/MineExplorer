@@ -371,6 +371,27 @@ CODEX_LOCAL_EFFORT=none                                  # cells
 `python -m prolong_mc.selftest` asserts the two defaults agree, so a
 half-applied change fails there rather than in a matrix.
 
+**The request layout (`--prompt-layout`, `PROMPT_LAYOUT` for `run_cell.sh` /
+`launch_4hop.sh`).** The default and hypothesis agents resend ~5–8k tokens per
+step (instructions, memory, 20 captions, 20 images). In the `legacy` layout —
+the default, today's prompt byte for byte — the memory and hints sit between
+the goal and the instructions and the 20-frame window slides, so consecutive
+steps share under 150 tokens and vLLM's prefix cache (800-token blocks on the
+hybrid Qwen3.x servers) reuses nothing; every step re-prefills the whole prompt,
+and on a shared server those prefills halve the neighbours' decode speed.
+`static-first` moves the per-step state after the frames so the instruction
+block caches; `append-only` also keeps the frame buffer append-only (rebased
+every 10 steps, so the window is 20–29 frames) with captions that do not name a
+frame's position, so the frames cache too. Measured on three cells sharing one
+TP=1 server: 7.3 s/step legacy, 6.8 s static-first, 4.4 s append-only
+(`experiments/EVAL_LATENCY_helixon.md`). Anything but `legacy` changes what
+the model reads — order, and for `append-only` the window — so it is a
+different arm: `result.json` records `prompt_layout`, `launch_4hop.sh` gives
+such cells a `-<layout>` tag suffix, and `summarize_4hop.py` keeps them out of
+the legacy arms. `scripts/prompt_layout_check.py` shows the structure and,
+against a server, the shared prefix; `scripts/bench_agent_latency.py` replays a
+recorded cell to time the layouts on a given server.
+
 ### The codex arms' sandbox
 
 Upstream PRO-LONG runs its agent in a Docker container on an `--internal` network
