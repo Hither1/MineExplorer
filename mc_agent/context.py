@@ -4,6 +4,28 @@ from io import StringIO
 from typing_extensions import Self
 
 
+# How the per-step request is laid out. This exists because of the serving side, not the
+# agent: vLLM's prefix cache reuses KV blocks (800 tokens on the hybrid Qwen3.5/3.8 servers)
+# only for a prefix identical to an earlier request. In `legacy` the memory and hints sit
+# between the goal and the instructions, so a memory rewrite invalidates everything after it
+# and consecutive steps share ~140 tokens -- measured 2026-08-19, zero cache blocks per step.
+#   legacy       -- today's prompt, byte for byte: [intro+goal, state, instructions][frames].
+#   static-first -- the same text with the state moved out of the instruction block and
+#                   appended after the frames: [intro+goal, instructions][frames][state].
+#                   The instruction block is now identical every step and caches; the
+#                   20-frame window still slides, so the frames do not.
+#   append-only  -- static-first, plus captions that do not name the frame's position in the
+#                   window ("Frame [Step 37]" instead of "Frame 3 (total frame num is 20)
+#                   [Step 37]"), so that with an append-only frame buffer (eval_benchmark.py
+#                   rebases it every FRAME_WINDOW_REBASE steps instead of sliding by one)
+#                   every frame but the newest is a cache hit too.
+# The two non-legacy layouts change what the model reads (order, and for append-only the
+# window size), so a run taken with them is a different arm and result.json records it.
+PROMPT_LAYOUTS = ("legacy", "static-first", "append-only")
+
+STATE_BLOCK_HEADER = "\n**Current state for this step:**"
+
+
 class DefaultContextBuilder:
     def __init__(self) -> None:
         self.buffer = StringIO()
@@ -18,7 +40,8 @@ class DefaultContextBuilder:
         total_images_length: int,
         frame_step: int | None = None,
         hist_action: dict | None = None,
-        hist_thought: str | None = None
+        hist_thought: str | None = None,
+        layout: str = "legacy",
     ) -> Self:
         builder = cls()
         if frame_step:
@@ -26,7 +49,12 @@ class DefaultContextBuilder:
         else:
             step_info = ""
 
-        builder.buffer.write(f"Frame {images_idx} (total frame num is {total_images_length}){step_info}:")
+        if layout == "append-only":
+            # No window-relative index or count: the caption must stay byte-identical as the
+            # frame ages through the window, or the cached prefix breaks at the first frame.
+            builder.buffer.write(f"Frame {step_info}:" if step_info else "Frame:")
+        else:
+            builder.buffer.write(f"Frame {images_idx} (total frame num is {total_images_length}){step_info}:")
 
         # frame_buffer[i] corresponds to the observation at step frame_step
         # If frame_step > 1, then this obs came from executing action at step (frame_step-1)
@@ -44,38 +72,75 @@ class DefaultContextBuilder:
         return builder
 
     @classmethod
+    def _state_sections(
+        cls,
+        long_term_memory: str = "",
+        milestone_hint: str = "",
+        camera_hint: str = "",
+        movement_hint: str = "",
+    ) -> dict[str, str]:
+        """The per-step sections, rendered from the same templates whichever layout uses them."""
+        return {
+            "memory_section": (
+                MEMORY_SECTION_TEMPLATE.format(long_term_memory=long_term_memory.strip())
+                if long_term_memory and long_term_memory.strip() else ""),
+            "milestone_section": (
+                MILESTONE_SECTION_TEMPLATE.format(milestone_hint=milestone_hint.strip())
+                if milestone_hint and milestone_hint.strip() else ""),
+            "camera_section": (
+                CAMERA_SECTION_TEMPLATE.format(camera_hint=camera_hint.strip())
+                if camera_hint and camera_hint.strip() else ""),
+            "movement_section": (
+                MOVEMENT_SECTION_TEMPLATE.format(movement_hint=movement_hint.strip())
+                if movement_hint and movement_hint.strip() else ""),
+        }
+
+    @classmethod
     def system_prompt(
         cls,
         task_desc: str,
         long_term_memory: str = "",
         milestone_hint: str = "",
         camera_hint: str = "",
-        movement_hint: str = ""
+        movement_hint: str = "",
+        layout: str = "legacy",
     ) -> Self:
         TASK_SUFFIX = "end the episode by setting the 'ESC' action to 1."
         goal_desc = f"{task_desc}, {TASK_SUFFIX}"
 
         builder = cls()
-        if long_term_memory and long_term_memory.strip():
-            memory_section = MEMORY_SECTION_TEMPLATE.format(long_term_memory=long_term_memory.strip())
+        if layout == "legacy":
+            sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint)
         else:
-            memory_section = ""
-        if milestone_hint and milestone_hint.strip():
-            milestone_section = MILESTONE_SECTION_TEMPLATE.format(milestone_hint=milestone_hint.strip())
-        else:
-            milestone_section = ""
-        if camera_hint and camera_hint.strip():
-            camera_section = CAMERA_SECTION_TEMPLATE.format(camera_hint=camera_hint.strip())
-        else:
-            camera_section = ""
-        if movement_hint and movement_hint.strip():
-            movement_section = MOVEMENT_SECTION_TEMPLATE.format(movement_hint=movement_hint.strip())
-        else:
-            movement_section = ""
-        builder.buffer.write(BASE_PROMPT.format(
-            goal_desc=goal_desc, memory_section=memory_section, milestone_section=milestone_section,
-            camera_section=camera_section, movement_section=movement_section))
+            # The state goes into state_block() after the frames; what is left here is the same
+            # text every step, which is the point.
+            sections = dict(memory_section="", milestone_section="", camera_section="", movement_section="")
+        text = BASE_PROMPT.format(goal_desc=goal_desc, **sections)
+        if layout == "append-only":
+            text = text.replace(APPEND_ONLY_WINDOW_PHRASE[0], APPEND_ONLY_WINDOW_PHRASE[1])
+        builder.buffer.write(text)
         return builder
+
+    @classmethod
+    def state_block(
+        cls,
+        long_term_memory: str = "",
+        milestone_hint: str = "",
+        camera_hint: str = "",
+        movement_hint: str = "",
+    ) -> str:
+        """The per-step state as one text part, for the non-legacy layouts (empty if nothing to say)."""
+        sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint)
+        body = "".join(sections.values())
+        return STATE_BLOCK_HEADER + body if body else ""
+
+
+# What the append-only layout says about the window instead of "the last 20 frames" (the
+# window is FRAME_BUFFER_SIZE..FRAME_BUFFER_SIZE+FRAME_WINDOW_REBASE-1 frames there).
+APPEND_ONLY_WINDOW_PHRASE = (
+    "a sequence of the last 20 frames from your point of view",
+    "a sequence of your most recent frames (20 to 29 of them, oldest first) from your point of view",
+)
 
 
 MEMORY_SECTION_TEMPLATE = """

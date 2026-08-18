@@ -28,6 +28,7 @@ from loguru import logger
 
 from mc_agent.action_space import BaseActionSpace, extract_json_from_response
 from mc_agent.context import (
+    APPEND_ONLY_WINDOW_PHRASE, PROMPT_LAYOUTS, STATE_BLOCK_HEADER,
     DefaultContextBuilder, MEMORY_SECTION_TEMPLATE, MILESTONE_SECTION_TEMPLATE,
     CAMERA_SECTION_TEMPLATE, MOVEMENT_SECTION_TEMPLATE,
 )
@@ -41,6 +42,21 @@ class HypothesisContextBuilder(DefaultContextBuilder):
     prompt that adds hypothesis-DAG + planning instructions and sections."""
 
     @classmethod
+    def _hypothesis_sections(cls, hypothesis_summary: str = "", plan_summary: str = "") -> dict[str, str]:
+        return {
+            "hypothesis_section": (
+                HYPOTHESIS_SECTION_TEMPLATE.format(hypothesis_summary=hypothesis_summary.strip())
+                if hypothesis_summary and hypothesis_summary.strip()
+                else HYPOTHESIS_EMPTY_TEMPLATE
+            ),
+            "plan_section": (
+                PLAN_SECTION_TEMPLATE.format(plan_summary=plan_summary.strip())
+                if plan_summary and plan_summary.strip()
+                else ""
+            ),
+        }
+
+    @classmethod
     def system_prompt(
         cls,
         task_desc: str,
@@ -50,53 +66,41 @@ class HypothesisContextBuilder(DefaultContextBuilder):
         movement_hint: str = "",
         hypothesis_summary: str = "",
         plan_summary: str = "",
+        layout: str = "legacy",
     ):
         TASK_SUFFIX = "end the episode by setting the 'ESC' action to 1."
         goal_desc = f"{task_desc}, {TASK_SUFFIX}"
 
         builder = cls()
-        memory_section = (
-            MEMORY_SECTION_TEMPLATE.format(long_term_memory=long_term_memory.strip())
-            if long_term_memory and long_term_memory.strip()
-            else ""
-        )
-        milestone_section = (
-            MILESTONE_SECTION_TEMPLATE.format(milestone_hint=milestone_hint.strip())
-            if milestone_hint and milestone_hint.strip()
-            else ""
-        )
-        camera_section = (
-            CAMERA_SECTION_TEMPLATE.format(camera_hint=camera_hint.strip())
-            if camera_hint and camera_hint.strip()
-            else ""
-        )
-        movement_section = (
-            MOVEMENT_SECTION_TEMPLATE.format(movement_hint=movement_hint.strip())
-            if movement_hint and movement_hint.strip()
-            else ""
-        )
-        hypothesis_section = (
-            HYPOTHESIS_SECTION_TEMPLATE.format(hypothesis_summary=hypothesis_summary.strip())
-            if hypothesis_summary and hypothesis_summary.strip()
-            else HYPOTHESIS_EMPTY_TEMPLATE
-        )
-        plan_section = (
-            PLAN_SECTION_TEMPLATE.format(plan_summary=plan_summary.strip())
-            if plan_summary and plan_summary.strip()
-            else ""
-        )
-        builder.buffer.write(
-            HYPOTHESIS_BASE_PROMPT.format(
-                goal_desc=goal_desc,
-                memory_section=memory_section,
-                milestone_section=milestone_section,
-                camera_section=camera_section,
-                movement_section=movement_section,
-                hypothesis_section=hypothesis_section,
-                plan_section=plan_section,
-            )
-        )
+        if layout == "legacy":
+            sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint)
+            sections.update(cls._hypothesis_sections(hypothesis_summary, plan_summary))
+        else:
+            # Same idea as DefaultContextBuilder: the state -- memory, hints, hypothesis graph,
+            # plan -- moves to state_block() after the frames, and this block never changes.
+            sections = dict(memory_section="", milestone_section="", camera_section="",
+                            movement_section="", hypothesis_section="", plan_section="")
+        text = HYPOTHESIS_BASE_PROMPT.format(goal_desc=goal_desc, **sections)
+        if layout == "append-only":
+            text = text.replace(APPEND_ONLY_WINDOW_PHRASE[0], APPEND_ONLY_WINDOW_PHRASE[1])
+        builder.buffer.write(text)
         return builder
+
+    @classmethod
+    def state_block(
+        cls,
+        long_term_memory: str = "",
+        milestone_hint: str = "",
+        camera_hint: str = "",
+        movement_hint: str = "",
+        hypothesis_summary: str = "",
+        plan_summary: str = "",
+    ) -> str:
+        sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint)
+        sections.update(cls._hypothesis_sections(hypothesis_summary, plan_summary))
+        # The hypothesis section is never empty (HYPOTHESIS_EMPTY_TEMPLATE), so this block always
+        # exists for the hypothesis agent -- the graph is state the model must read every step.
+        return STATE_BLOCK_HEADER + "".join(sections.values())
 
 
 HYPOTHESIS_SECTION_TEMPLATE = """
@@ -355,19 +359,24 @@ class HypothesisAgent:
         context_builder_class: type[HypothesisContextBuilder] = HypothesisContextBuilder,
         model: str = None,
         max_hypotheses_in_prompt: int = 8,
+        prompt_layout: str = "legacy",
     ) -> None:
         self.action_space = action_space
         self.provider = provider
         self.context_builder_class = context_builder_class
         self.model = model
         self.max_hypotheses_in_prompt = max_hypotheses_in_prompt
+        if prompt_layout not in PROMPT_LAYOUTS:
+            raise ValueError(f"prompt_layout must be one of {PROMPT_LAYOUTS}, got {prompt_layout!r}")
+        self.prompt_layout = prompt_layout
 
         self.graph = HypothesisGraph()
         self.current_plan: list[str] = []
 
         logger.info(
             f"HypothesisAgent  action_space={self.action_space.__class__.__name__}  "
-            f"provider={self.provider.__class__.__name__}  model={self.model}"
+            f"provider={self.provider.__class__.__name__}  model={self.model}  "
+            f"prompt_layout={self.prompt_layout}"
         )
 
     def load_system_prompt(self, task_desc: str) -> None:
@@ -401,6 +410,7 @@ class HypothesisAgent:
 
         hypothesis_summary = self.graph.to_prompt_summary(max_items=self.max_hypotheses_in_prompt)
         plan_summary = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(self.current_plan))
+        layout = self.prompt_layout
 
         content = [{"type": "text", "text": self.context_builder_class.system_prompt(
             self.task_desc,
@@ -410,6 +420,7 @@ class HypothesisAgent:
             movement_hint=movement_hint,
             hypothesis_summary=hypothesis_summary,
             plan_summary=plan_summary,
+            layout=layout,
         ).build()}]
         save_content = copy.deepcopy(content)
 
@@ -426,12 +437,14 @@ class HypothesisAgent:
                     frame_step=frame_step,
                     hist_action=hist_action,
                     hist_thought=hist_thought,
+                    layout=layout,
                 ).build()
             else:
                 frame_text = self.context_builder_class.next_step(
                     images_idx=i,
                     total_images_length=len(base64_images),
                     frame_step=frame_step,
+                    layout=layout,
                 ).build()
 
             content.append({"type": "text", "text": frame_text})
@@ -444,6 +457,19 @@ class HypothesisAgent:
                 "type": "image_url",
                 "image_url": {"url": "data:image/png;base64,..."}
             })
+
+        if layout != "legacy":
+            state_text = self.context_builder_class.state_block(
+                long_term_memory=long_term_memory,
+                milestone_hint=milestone_hint,
+                camera_hint=camera_hint,
+                movement_hint=movement_hint,
+                hypothesis_summary=hypothesis_summary,
+                plan_summary=plan_summary,
+            )
+            if state_text:
+                content.append({"type": "text", "text": state_text})
+                save_content.append({"type": "text", "text": state_text})
 
         messages = [{"role": "user", "content": content}]
         save_messages = [{"role": "user", "content": save_content}]

@@ -71,8 +71,15 @@ export CODEX_LOCAL_EFFORT=none          # thinking off on the codex channel
 export CODEX_TIMEOUT=${CODEX_TIMEOUT:-900}
 export MC_RESET_TIMEOUT=${MC_RESET_TIMEOUT:-600}
 
+# PROMPT_LAYOUT (legacy | static-first | append-only) is how the default/hypothesis agents lay
+# out each request for the server's prefix cache -- see PROMPT_LAYOUTS in mc_agent/context.py.
+# legacy is today's prompt byte for byte; anything else is a different arm, so give it its
+# own tag. result.json records the value either way.
+PROMPT_LAYOUT=${PROMPT_LAYOUT:-legacy}
+
 ARGS=(--model "$MODEL" --benchmark-dir "$BENCH_DIR" --output-dir "$OUT"
-      --max-steps "$MAX_STEPS" --temperature 0.7 --agent-mode "$AGENT_MODE" --resume)
+      --max-steps "$MAX_STEPS" --temperature 0.7 --agent-mode "$AGENT_MODE" --resume
+      --prompt-layout "$PROMPT_LAYOUT")
 
 case "$CHANNEL" in
   vllm)  ARGS+=(--use-vllm --vllm-url "$VLLM_URL") ;;
@@ -90,5 +97,5 @@ case "$CHANNEL" in
   *) echo "channel must be vllm or codex, got '$CHANNEL'" >&2; exit 2 ;;
 esac
 
-echo "[cell] $TAG  agent=$AGENT_MODE channel=$CHANNEL steps=$MAX_STEPS bench=$BENCH_DIR"
+echo "[cell] $TAG  agent=$AGENT_MODE channel=$CHANNEL layout=$PROMPT_LAYOUT steps=$MAX_STEPS bench=$BENCH_DIR"
 exec .venv/bin/python eval_benchmark.py "${ARGS[@]}"

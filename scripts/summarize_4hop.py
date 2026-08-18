@@ -94,6 +94,10 @@ def main() -> int:
         j = json.loads(res.read_text())
         tag = res.parts[-5]
         agent, channel = j["agent_mode"], j["provider"]
+        # A non-legacy request layout is a different arm (mc_agent/context.py PROMPT_LAYOUTS);
+        # it must not be pooled with the legacy cells of the same agent x channel.
+        layout = j.get("prompt_layout", "legacy")
+        arm = f"{agent}x{channel}" + (f"[{layout}]" if layout != "legacy" else "")
         scene = j["scene_id"]
         wall, server, calls, timeouts = wall_and_server(ROOT / "outputs" / f"log-{tag}.txt")
         frames = [m["frame_completed"] for m in j["milestone_status"]]
@@ -101,7 +105,7 @@ def main() -> int:
         if channel == "codex":
             reqs, tin, tout, views = rollout_cost(codex_rollouts(res, tag))
         rows.append(dict(
-            scene=scene, arm=f"{agent}x{channel}", ms=f"{j['milestones_completed']}/{j['milestones_trackable']}",
+            scene=scene, arm=arm, ms=f"{j['milestones_completed']}/{j['milestones_trackable']}",
             steps=j["total_steps"], end=j["termination_reason"], frames=",".join(str(f) for f in frames),
             wall=wall, server=server, calls=calls, ceil=timeouts, reqs=reqs, views=views,
             tok_in=tin, tok_out=tout, sandboxed=j.get("codex_sandboxed", "-"),

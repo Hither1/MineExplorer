@@ -44,6 +44,13 @@ SERVERS=${SERVERS:-"http://192.168.2.20:8001/v1 http://192.168.2.20:8002/v1 http
 # admits the fast answers; it is a policy, and the results table says so.
 PROLONG_CODEX_TIMEOUT=${PROLONG_CODEX_TIMEOUT:-900}
 PROVIDER_CODEX_TIMEOUT=${PROVIDER_CODEX_TIMEOUT:-120}
+# Request layout for the default/hypothesis agents (run_cell.sh -> --prompt-layout). Anything
+# but legacy is a different arm, so it gets its own tag suffix and never resumes into, or is
+# summarised with, a legacy cell.
+PROMPT_LAYOUT=${PROMPT_LAYOUT:-legacy}
+LAYOUT_SUFFIX=""
+[[ "$PROMPT_LAYOUT" != "legacy" ]] && LAYOUT_SUFFIX="-$PROMPT_LAYOUT"
+export PROMPT_LAYOUT
 read -r -a servers <<< "$SERVERS"
 
 # Pending cells first, then deal servers: a finished cell must not consume a server slot.
@@ -51,7 +58,7 @@ cells=()
 for arm in $ARMS; do
   agent=${arm%%:*}; channel=${arm##*:}
   for s in $SCENES; do
-    tag="$PREFIX-$agent-$channel-$s"
+    tag="$PREFIX-$agent-$channel$LAYOUT_SUFFIX-$s"
     if [[ -f "outputs/$tag/Qwen3.8-27B/4-hop/$s/result.json" ]]; then
       echo "[launcher] $(date '+%H:%M:%S') skip $tag (result.json exists)"
       continue
@@ -59,7 +66,7 @@ for arm in $ARMS; do
     cells+=("$agent $channel $s")
   done
 done
-echo "[launcher] $(date '+%H:%M:%S') ${#cells[@]} cells pending, conc=$CONC, servers=${#servers[@]}"
+echo "[launcher] $(date '+%H:%M:%S') ${#cells[@]} cells pending, conc=$CONC, servers=${#servers[@]}, layout=$PROMPT_LAYOUT"
 
 running=0
 i=0
@@ -68,7 +75,7 @@ for cell in "${cells[@]}"; do
   agent=$1; channel=$2; scene=$3
   url=${servers[$(( i % ${#servers[@]} ))]}
   i=$((i + 1))
-  tag="$PREFIX-$agent-$channel-$scene"
+  tag="$PREFIX-$agent-$channel$LAYOUT_SUFFIX-$scene"
   while (( running >= CONC )); do
     wait -n || true
     running=$((running - 1))
@@ -89,7 +96,7 @@ echo "[launcher] $(date '+%H:%M:%S') all cells finished"
 for arm in $ARMS; do
   agent=${arm%%:*}; channel=${arm##*:}
   for s in $SCENES; do
-    tag="$PREFIX-$agent-$channel-$s"
+    tag="$PREFIX-$agent-$channel$LAYOUT_SUFFIX-$s"
     r="outputs/$tag/Qwen3.8-27B/4-hop/$s/result.json"
     if [[ -f "$r" ]]; then
       python3 -c "import json,sys; j=json.load(open(sys.argv[1])); print(f\"{sys.argv[2]:30s} steps={j['total_steps']:3d} {j['termination_reason']:10s} milestones={j['milestones_completed']}/{j['milestones_trackable']} sandboxed={j.get('codex_sandboxed','-')}\")" "$r" "$tag"
