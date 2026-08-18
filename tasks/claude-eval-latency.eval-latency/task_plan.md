@@ -49,12 +49,12 @@ of the c4h campaign (memory: eval-latency-breakdown). Branch `claude/eval-latenc
 
 ## Success Criteria
 
-- [ ] MTP k verdict with numbers (dev server, both k on the same GPU/prompts).
-- [ ] `--prompt-layout {legacy,static-first,append-only}` in eval_benchmark/agents/run_cell;
-      legacy byte-identical (golden sha256); layout recorded in result.json.
-- [ ] Token-prefix sharing per layout measured (scripts/prompt_layout_check.py) and a live smoke
-      per layout with step latency + server prefix hit rate.
-- [ ] Recommendation + decision table written (findings.md, then experiments/ or README section);
+- [x] MTP k verdict with numbers (dev server, both k on the same GPU/prompts): k=3 adopts (findings 06:43).
+- [x] `--prompt-layout {legacy,static-first,append-only}` in eval_benchmark/agents/run_cell;
+      legacy byte-identical (golden sha256); layout recorded in result.json (commit fce429a).
+- [x] Token-prefix sharing per layout measured (scripts/prompt_layout_check.py); bench of every
+      layout at 1/3 cells (outputs/bench/*.txt) and an append-only smoke through run_cell.sh.
+- [x] Recommendation + decision table written (experiments/EVAL_LATENCY_helixon.md, README);
       commits pushed to `claude/eval-latency`.
 
 ## Parallel Tracks
@@ -68,29 +68,29 @@ of the c4h campaign (memory: eval-latency-breakdown). Branch `claude/eval-latenc
 
 ### Phase 1: Serving knobs on the dev server (GPU 1)
 
-- [ ] dev server up (TP=1, :8004, prefix cache, MTP k=3, campaign wire contract); wire-verify cap
+- [x] dev server up (TP=1, :8004, prefix cache, MTP k=3, campaign wire contract); wire-verify cap
       1024 / thinking off.
-- [ ] bench: realistic default (5.3k) and hypothesis (8.3k) requests, single-stream and 3-concurrent
-      -> TTFT, decode tok/s, acceptance length; then k=1 on the same server.
-- **Status:** in_progress
-- **Evidence:** qwen35-serve/logs/qwen38-dev.log; scripts/bench_agent_latency.py output in findings
+- [x] bench: realistic default (5.3k) and hypothesis (8.3k) requests, single-stream and 3-concurrent
+      -> TTFT, decode tok/s, acceptance length; then k=1 and k=3+chunk 2048 on the same server.
+- **Status:** complete
+- **Evidence:** outputs/bench/k3.txt, outputs/bench/k1_and_k3b2048.txt; findings 06:07-06:59
 
 ### Phase 2: `--prompt-layout` (code) + measurements
 
-- [ ] context builders: static block / state block split; append-only captions; agents assemble
+- [x] context builders: static block / state block split; append-only captions; agents assemble
       per layout; runner window policy; CLI + run_cell passthrough; result.json records it.
-- [ ] golden check (legacy unchanged); token-prefix sharing per layout; 12-step smoke per layout
-      on the dev server (step latency, prefix hit rate).
-- **Status:** pending
-- **Evidence:** none
+- [x] golden check (legacy unchanged); token-prefix sharing per layout; bench per layout at 1/3
+      cells; 12-step append-only smoke through run_cell.sh (result.json prompt_layout set).
+- **Status:** complete
+- **Evidence:** commit fce429a; scratchpad golden_*.json; outputs/bench/*.txt; outputs/smoke-layout-append-only
 
 ### Phase 3: Interpret and hand off
 
-- [ ] decision table + recommended next-campaign contract in findings.md; commit; push branch.
-- [ ] production relaunch (3 x TP=2 with the chosen flags) only after the campaign ends and dz
-      agrees; then wire-verify as on 08-18 23:56.
-- **Status:** pending
-- **Evidence:** none
+- [x] decision table + recommended next-campaign contract (experiments/EVAL_LATENCY_helixon.md); commit; push branch.
+- [ ] production relaunch (3 x TP=2 or 7 x TP=1 with k=3) only after the campaign ends and dz
+      agrees; then wire-verify as on 08-18 23:56 and measure TP=2 k=3 vs TP=1 k=3.
+- **Status:** in_progress (waiting on dz + campaign end)
+- **Evidence:** qwen35-serve/run/qwen38-s{1,2,3}-k3.sh written; dev server :8004 up with k=3
 
 ## Decisions And Blockers
 
@@ -112,4 +112,4 @@ of the c4h campaign (memory: eval-latency-breakdown). Branch `claude/eval-latenc
 
 ## Next Action
 
-Phase 1: wait for the dev server, wire-verify, run bench_agent_latency.py (k=3); meanwhile Phase 2 code.
+dz decides: (a) relaunch production with MTP k=3 after the c4h campaign ends (and which layout, 3xTP=2 vs 7xTP=1, measured then); (b) whether the next campaign uses PROMPT_LAYOUT=append-only for all arms.
