@@ -354,8 +354,13 @@ def test_network() -> None:
                 f'echo mc=$(curl -s -o /dev/null -w "%{{http_code}}" --max-time 8 '
                 f'{json.dumps(mc.rstrip("/") + "/monitor/alive")})',
                 net=True)
+            # An http:// URL goes to the proxy as a plain request rather than a
+            # CONNECT, and the proxy answers 403 for an off-allowlist host; an https://
+            # one is a refused CONNECT, which curl reports as 000. Either is "denied":
+            # what would be a leak is a 2xx/3xx from the game server itself.
             check("the Minecraft sandbox is unreachable from inside",
-                  "mc=000" in proc.stdout, proc.stdout.strip()[-160:])
+                  ("mc=000" in proc.stdout or "mc=403" in proc.stdout),
+                  proc.stdout.strip()[-160:])
         else:
             note("MC_SANDBOX_URL is unset; skipping the game-server reachability check")
     finally:

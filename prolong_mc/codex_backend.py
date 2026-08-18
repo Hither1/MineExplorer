@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -321,11 +322,78 @@ def scan_rollout(path: Path) -> dict[str, int]:
 def find_rollout(codex_home: Path | None, workspace: Path, session_id: str | None) -> Path | None:
     """The rollout file for this session, under whichever home the wrapper gave codex.
 
-    `codex_sandbox.sh` derives `<workspace>.codexhome` when nothing is set, so that is
-    the default guess; an explicit `codex_home` or $CODEX_HOME wins.
+    Codex writes `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<session_id>.jsonl`.
+    Which home that was depends on the wrapper in front of codex, and none of them is
+    visible from here, so every candidate is searched in order of specificity:
+
+      1. `codex_home` given to CodexTurn, then $CODEX_HOME -- what the runner asked for;
+      2. $CODEX_EPISODE_HOME, then `<workspace>.codexhome` -- what `codex_sandbox.sh`
+         gives codex, regardless of what the runner asked for (it --clearenvs);
+      3. `~/.codex/runtime-home`, then `~/.codex` -- what the `codex` on PATH forces on
+         this cluster (a wrapper that overrides CODEX_HOME), and codex's own default.
+
+    The first version of this function returned None unconditionally, which made every
+    vision audit report zeros and log "no rollout found" while the rollouts sat under
+    the wrapper's home. Found 2026-08-18.
     """
     if not session_id:
         return None
+    workspace = Path(workspace)
+    home = Path(os.environ.get("HOME", "~")).expanduser()
+    candidates: list[Path] = []
+    for cand in (
+        codex_home,
+        os.environ.get("CODEX_HOME"),
+        os.environ.get("CODEX_EPISODE_HOME"),
+        workspace.with_name(workspace.name + ".codexhome"),
+        home / ".codex" / "runtime-home",
+        home / ".codex",
+    ):
+        if cand:
+            cand = Path(cand)
+            if cand not in candidates:
+                candidates.append(cand)
+    for cand in candidates:
+        sessions = cand / "sessions"
+        if not sessions.is_dir():
+            continue
+        hits = sorted(sessions.glob(f"*/*/*/rollout-*-{session_id}.jsonl"))
+        if hits:
+            return hits[-1]
+    return None
+
+
+def run_codex(
+    args: Sequence[str], *, cwd: Path | str, prompt: str, env: dict[str, str] | None,
+    timeout: float,
+) -> subprocess.CompletedProcess:
+    """`subprocess.run(capture_output=True, text=True)` that kills the whole process
+    group on timeout.
+
+    `subprocess.run` kills only its direct child. Here that child is a launcher -- the
+    `codex` on PATH is a bash wrapper that execs node, which spawns the native codex
+    binary; `codex_sandbox.sh` is bash around bwrap -- so on a timeout the process
+    that is actually talking to the model survives as an orphan and keeps looping.
+    Measured 2026-08-18: a default×codex call timed out at 420 s and its native codex
+    was still issuing requests eight minutes later. Codex is started in its own
+    session and the group is killed, so a timeout ends the requests as well as the
+    wait. Raises `subprocess.TimeoutExpired` carrying the partial stdout/stderr, like
+    `subprocess.run` does.
+    """
+    proc = subprocess.Popen(
+        list(args), cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(prompt, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        stdout, stderr = proc.communicate()
+        raise subprocess.TimeoutExpired(list(args), timeout, output=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(list(args), proc.returncode, stdout, stderr)
 
 
 class CodexTurn:
@@ -471,9 +539,8 @@ class CodexTurn:
             f"resume={'yes' if self.session_id else 'no'} images={len(images)}"
         )
         try:
-            proc = subprocess.run(
-                args, cwd=self.workspace, input=prompt, env=env,
-                capture_output=True, text=True, timeout=self.timeout,
+            proc = run_codex(
+                args, cwd=self.workspace, prompt=prompt, env=env, timeout=self.timeout,
             )
         except subprocess.TimeoutExpired as expired:
             # Keep what the turn had already emitted. Written after `run` returned, the

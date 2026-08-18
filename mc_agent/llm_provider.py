@@ -30,7 +30,7 @@ from mc_agent.utils import deco_retry_on_ratelimit
 # setting that decides whether the conversation gets compacted underneath them.
 from prolong_mc.codex_backend import (
     DEFAULT_CONTEXT_WINDOW, SAFE_CODEX_FLAGS, SandboxViolation, _metadata_args,
-    effort_for, request_stats,
+    effort_for, request_stats, run_codex,
 )
 
 
@@ -370,6 +370,18 @@ class CodexProvider(BaseLLMProvider):
             cmd = [
                 self.codex_bin, "exec",
                 "--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
+            ]
+            # Images BEFORE the next non-variadic flag, exactly as CodexTurn._args does.
+            # `-i/--image` is variadic, so anything positional that follows the last
+            # `-i` is read as one more image path -- including the `-` stdin sentinel.
+            # The first version put the images last and `-` after them: the prompt still
+            # arrived (codex falls back to stdin when it has no positional prompt) but
+            # every call's context carried "Codex could not read the local image at `-`:
+            # No such file or directory", measured on all 217 calls of the 2026-08-18
+            # s0694 default/hypothesis codex runs. `-m` terminates the image list.
+            for img in images:
+                cmd += ["-i", str(img)]
+            cmd += [
                 "-m", effective_model,
                 "-c", f'model_reasoning_effort="{effort_for(self.base_url, self.reasoning_effort)}"',
                 "-s", "workspace-write",
@@ -387,12 +399,8 @@ class CodexProvider(BaseLLMProvider):
                     "-c", 'model_providers.local.wire_api="responses"',
                     "-c", 'model_providers.local.env_key="LOCAL_API_KEY"',
                 ] + _metadata_args(self.context_window)
-            for img in images:
-                cmd += ["-i", str(img)]
-            # `-i/--image` is variadic, so a positional prompt appended after it is
-            # swallowed as one more image path and codex silently falls back to
-            # stdin. Pass the prompt on stdin explicitly instead: `-` is codex's
-            # documented sentinel for that and cannot be captured by --image.
+            # The prompt goes on stdin; `-` is codex's sentinel for that, and after a
+            # `-c key=value` it is read as the positional prompt rather than an image.
             cmd.append("-")
 
             logger.info(
@@ -400,9 +408,10 @@ class CodexProvider(BaseLLMProvider):
                 f"images={len(images)} prompt_chars={len(prompt)}"
             )
             try:
-                proc = subprocess.run(
-                    cmd, cwd=workdir, input=prompt,
-                    capture_output=True, text=True,
+                # run_codex, not subprocess.run: a timeout must end the model requests,
+                # not just the wait -- see prolong_mc.codex_backend.run_codex.
+                proc = run_codex(
+                    cmd, cwd=workdir, prompt=prompt, env=None,
                     timeout=timeout or self.timeout,
                 )
             except subprocess.TimeoutExpired as expired:

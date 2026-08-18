@@ -125,6 +125,10 @@ def main() -> int:
                     help="drop scenes containing a task the action space cannot perform")
     ap.add_argument("--min-depth", type=int, default=None,
                     help="require this real dependency depth, not just this milestone count")
+    ap.add_argument("--no-backwards", action="store_true",
+                    help="drop scenes whose later hops are easier to reach than earlier ones "
+                         "(satisfiable_out_of_order); only decidable when every hop is a "
+                         "position rule, so mixed-tier scenes are kept and shown as '?'")
     args = ap.parse_args()
 
     rows = []
@@ -145,9 +149,14 @@ def main() -> int:
         ]
         tasks = [t.lower() for t in (meta.get("atomic_tasks_ordered") or [])]
         gui = [t for t in tasks if t.startswith(GUI_ONLY_VERBS)]
+        slacks = [hop_slack(m) for m in milestones]
+        # None when the check cannot decide (a hop is not a position rule); the filter
+        # keeps those, per the docstring, and the table shows them as '?'.
+        backwards = satisfiable_out_of_order(milestones) if all(x is not None for x in slacks) else None
         rows.append({
             "scene": meta_path.parts[-3], "tier": tier, "depth": depth, "free": free,
             "unscorable": unscorable, "max_dist": max(distances or [0]), "gui": len(gui),
+            "backwards": backwards,
             "task": meta.get("task_text", "")[:64],
         })
 
@@ -155,18 +164,23 @@ def main() -> int:
              if (args.tier is None or r["tier"] == args.tier)
              and (args.max_free is None or r["free"] <= args.max_free)
              and (not args.reachable or r["gui"] == 0)
-             and (args.min_depth is None or r["depth"] >= args.min_depth)]
+             and (args.min_depth is None or r["depth"] >= args.min_depth)
+             and (not args.no_backwards or not r["backwards"])]
 
     print(f"{len(rows)} scenes with {args.hops} milestones; {len(shown)} pass the filter")
     print(f"  by verification tier: {dict(collections.Counter(r['tier'] for r in rows))}")
     print(f"  by real dependency depth: {dict(sorted(collections.Counter(r['depth'] for r in rows).items()))}")
     print(f"  by milestones free at spawn: {dict(sorted(collections.Counter(r['free'] for r in rows).items()))}")
     print(f"  containing a task the action space cannot perform: {sum(1 for r in rows if r['gui'])}")
+    print(f"  satisfiable out of order (all-position scenes only): "
+          f"{sum(1 for r in rows if r['backwards'])} of "
+          f"{sum(1 for r in rows if r['backwards'] is not None)} decidable")
     print()
-    print(f"{'scene':6s} {'tier':13s} {'depth':>5s} {'free':>4s} {'dead':>4s} {'gui':>3s} {'max_d':>6s}  task")
+    print(f"{'scene':6s} {'tier':13s} {'depth':>5s} {'free':>4s} {'dead':>4s} {'gui':>3s} {'bwd':>3s} {'max_d':>6s}  task")
     for r in sorted(shown, key=lambda r: (r["free"], -r["depth"], -r["max_dist"])):
+        bwd = "?" if r["backwards"] is None else ("Y" if r["backwards"] else "N")
         print(f"{r['scene']:6s} {r['tier']:13s} {r['depth']:5d} {r['free']:4d} "
-              f"{r['unscorable']:4d} {r['gui']:3d} {r['max_dist']:6.1f}  {r['task']}")
+              f"{r['unscorable']:4d} {r['gui']:3d} {bwd:>3s} {r['max_dist']:6.1f}  {r['task']}")
     return 0
 
 
