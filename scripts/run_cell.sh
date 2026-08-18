@@ -54,6 +54,17 @@ export CODEX_SANDBOX_ALLOW=${CODEX_SANDBOX_ALLOW:-.chatgpt.com:443,.openai.com:4
 CODEX_SANDBOX_ALLOW="$CODEX_SANDBOX_ALLOW,$(printf '%s' "$VLLM_URL" | sed -E 's#^https?://##; s#/.*##')"
 export CODEX_SANDBOX_ALLOW
 
+# The default/hypothesis agents drive codex through CodexProvider: one fresh `codex exec`
+# per step in a throwaway temp workspace. Left alone, the sandbox would derive a new
+# <workspace>.codexhome under /tmp for every call and nothing would clean it, and the
+# rollout -- the only record of what the model did inside the call (the --json event
+# stream does not list view_image calls) -- would go with it. One home per cell keeps
+# every step's rollout under the cell's own output tree. PRO-LONG keeps its per-workspace
+# home (one resumable session per episode), so it is not touched.
+if [[ "$CHANNEL" == "codex" && "$AGENT_MODE" != "prolong" ]]; then
+  export CODEX_EPISODE_HOME="$ROOT/$OUT/codex_home"
+fi
+
 export LOCAL_API_KEY=EMPTY
 export CODEX_MODEL_CONTEXT_WINDOW=131072
 export CODEX_LOCAL_EFFORT=none          # thinking off on the codex channel
@@ -69,8 +80,10 @@ case "$CHANNEL" in
     ARGS+=(--use-codex --codex-base-url "$VLLM_URL" --codex-effort low)
     # The sandbox's own assertions, through the wrapper this cell will use, before a
     # single step is spent. Set SKIP_SANDBOX_SELFTEST=1 only for a deliberate probe.
+    # (without the per-cell episode home: the selftest asserts the wrapper's own
+    # per-workspace derivation, which an exported CODEX_EPISODE_HOME overrides)
     if [[ "${SKIP_SANDBOX_SELFTEST:-0}" != "1" ]]; then
-      .venv/bin/python -m prolong_mc.sandbox_selftest || {
+      env -u CODEX_EPISODE_HOME .venv/bin/python -m prolong_mc.sandbox_selftest || {
         echo "sandbox selftest FAILED; not running" >&2; exit 1; }
     fi
     ;;

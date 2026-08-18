@@ -1,6 +1,7 @@
 from __future__ import annotations
 import copy
 import json
+import subprocess
 from typing import Any
 
 import numpy as np
@@ -135,6 +136,20 @@ class DefaultAgent:
                     f"[DefaultAgent] Response content that failed to parse:\n"
                     f"{response_content if 'response_content' in locals() else '<no response received>'}"
                 )
+
+                # A call that ran to the provider's ceiling is a stall, not a transient
+                # error, and the retries here are priced for transient errors (a parse
+                # failure, a dropped connection). Only CodexProvider raises this: with
+                # thinking off the model loops `view_image` on the attached frames until
+                # the ceiling (measured 2026-08-18), and a retry loops again -- three
+                # ceilings per step is 45 min at the 900 s default. One ceiling, then the
+                # no-op the ceiling was priced for.
+                if isinstance(e, subprocess.TimeoutExpired):
+                    logger.error("Provider call hit its ceiling; not retrying. Using default action.")
+                    thought, action = self.get_default_action()
+                    memory_update = long_term_memory
+                    response_content = "{}"
+                    break
 
                 if attempt < max_json_retries - 1:
                     logger.info("Retrying due to error...")

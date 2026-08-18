@@ -1,0 +1,10 @@
+# Progress: arms34-4hop-helixon
+
+- 2026-08-18 23:36 task opened after dz's request; previous task archived (tasks/archive/2026-08/...prolong-vs-default-4hop-helixon). Servers A/B idle (last requests 17:11 / 15:52); no runner processes.
+- 2026-08-18 23:38 servers A (:8001 TP=4) and B (:8002 TP=2) stopped; three TP=2 servers launched on a227 (qwen38-s1 GPUs 2,3 :8001; qwen38-s2 GPUs 4,5 :8002; qwen38-s3 GPUs 6,7 :8003), same generation config + `--enable-prefix-caching`; remote md5 of each run file verified before tmux. Expect ~12-15 min to ready.
+- 2026-08-18 23:50 harness: DefaultAgent/HypothesisAgent no longer retry a `subprocess.TimeoutExpired` (a codex call that hit its ceiling; the retry loop was 3x the ceiling per stalled step); run_cell.sh sets a per-cell CODEX_EPISODE_HOME for the provider path (rollouts kept under outputs/<tag>/codex_home, no /tmp litter); launch_4hop.sh generalised to ARMS x SERVERS round-robin with a per-arm codex ceiling; summarize_4hop.py adds ceil/views columns and reads provider-path rollouts.
+- 2026-08-18 23:54 all three servers up (12 min); wire-verified cap 1024 / thinking off on chat + Responses for :8001/:8002/:8003.
+- 2026-08-18 23:57-00:01 loop probe (7 parallel calls, 4-20 frames, ceiling 240 s): 5 stalls, answers at 67 s and 193 s -> ceiling for the provider-path codex arm set to 120 s (PROVIDER_CODEX_TIMEOUT in launch_4hop.sh).
+- 2026-08-19 00:03 launched 7 hypothesis x vllm cells (launcher log outputs/log-c4h-launcher-hyp.txt); 0306 finished 4/4 @107 steps (ESC) at 00:34; others at 100-140 steps by 00:37 (12-15 s/step).
+- 2026-08-19 00:15 default x codex smoke through run_cell.sh OK (after fixing: sandbox selftest must run without the per-cell CODEX_EPISODE_HOME).
+- 2026-08-19 00:37 launched 7 default x codex cells, ceiling 120 s, servers dealt 8003/8002/8001 (launcher log outputs/log-c4h-launcher-dc.txt). Expected wall ~10 h if every step stalls.

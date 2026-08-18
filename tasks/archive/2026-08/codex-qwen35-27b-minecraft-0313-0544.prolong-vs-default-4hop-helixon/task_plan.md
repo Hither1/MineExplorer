@@ -53,7 +53,7 @@ task, not satisfiable out of order (0694 and 0435 excluded for that).
 
 | track | owner | mode | worktree / branch | dependency | deliverable | status |
 |---|---|---|---|---|---|---|
-| primary | primary | integrate | current branch | none | fixes, server, launches, synthesis | active |
+| primary | primary | integrate | current branch | none | fixes, server, launches, synthesis | complete |
 
 ## Phases
 
@@ -101,4 +101,4 @@ task, not satisfiable out of order (0694 and 0435 excluded for that).
 
 ## Next Action
 
-none - ready to archive (dz to read experiments/RESULTS_helixon_4hop.md; a multi-seed round is a new fixed-n decision)
+none - ready to archive

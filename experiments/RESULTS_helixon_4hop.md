@@ -124,4 +124,4 @@ be nearer 1h30.
 - serving: `qwen35-serve/run/qwen-serve-qwen3-8-27b.sh` (A), `run/qwen38-b.sh` (B); the
   first relaunch of A ran a stale run file (NFS view lagged the write) — verify remote
   md5 before `tmux new-session`, or use `--dry-run` first
-- task record: `tasks/codex-qwen35-27b-minecraft-0313-0544.prolong-vs-default-4hop-helixon/`
+- task record: `tasks/archive/2026-08/codex-qwen35-27b-minecraft-0313-0544.prolong-vs-default-4hop-helixon/`
