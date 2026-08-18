@@ -42,12 +42,12 @@ task, not satisfiable out of order (0694 and 0435 excluded for that).
 
 ## Success Criteria
 
-- [ ] `find_rollout` implemented; vision audit reads real numbers.
-- [ ] `run_cell.sh` runs codex through `codex_sandbox.sh` (per-episode home, no personal
+- [x] `find_rollout` implemented; vision audit reads real numbers (33be080; view_image shape fix after).
+- [x] `run_cell.sh` runs codex through `codex_sandbox.sh` (per-episode home, no personal
       AGENTS.md/skills, read scope bounded); `-` sentinel ordering fixed; timeouts kill the
       process group.
-- [ ] a227 server relaunched with `max_new_tokens:1024`; verified on both channels.
-- [ ] 14 cells finished; `scripts/compare_runs.py`-style table written.
+- [x] a227 servers relaunched with `max_new_tokens:1024`; verified on both channels (A and B).
+- [x] 14 cells finished; table in `experiments/RESULTS_helixon_4hop.md` (`scripts/summarize_4hop.py`).
 
 ## Parallel Tracks
 
@@ -59,29 +59,29 @@ task, not satisfiable out of order (0694 and 0435 excluded for that).
 
 ### Phase 1: Harness fixes (items 1 and 2)
 
-- [ ] `prolong_mc/codex_backend.py`: implement `find_rollout`; kill process group on timeout.
-- [ ] `mc_agent/llm_provider.py`: `-i` before `-m` (stdin sentinel no longer eaten); process group on timeout.
-- [ ] `scripts/run_cell.sh`: `CODEX_BIN=prolong_mc/codex_sandbox.sh`, allowlist the model server, `CODEX_SANDBOX_NO_AUTH=1`; keep per-cell workspace.
-- [ ] `scripts/screen_scenes.py`: wire `satisfiable_out_of_order` into the filter.
-- [ ] selftests pass; commit.
-- **Status:** in_progress
-- **Evidence:** none yet
+- [x] `prolong_mc/codex_backend.py`: implement `find_rollout`; kill process group on timeout.
+- [x] `mc_agent/llm_provider.py`: `-i` before `-m` (stdin sentinel no longer eaten); process group on timeout.
+- [x] `scripts/run_cell.sh`: `CODEX_BIN=prolong_mc/codex_sandbox.sh`, allowlist the model server, `CODEX_SANDBOX_NO_AUTH=1`; keep per-cell workspace.
+- [x] `scripts/screen_scenes.py`: wire `satisfiable_out_of_order` into the filter.
+- [x] selftests pass; commit.
+- **Status:** complete
+- **Evidence:** commit 33be080; selftest 98/98, sandbox selftest all-pass; smoke rollouts (progress.md 13:30-13:50)
 
 ### Phase 2: Serving + smoke
 
-- [ ] relaunch a227 with `--override-generation-config` incl. `max_new_tokens:1024`.
-- [ ] verify: chat and Responses both cap at 1024; thinking off both.
-- [ ] one 3-step prolong smoke and one 3-step vllm smoke through run_cell.sh.
-- **Status:** pending
-- **Evidence:** none
+- [x] relaunch a227 with `--override-generation-config` incl. `max_new_tokens:1024` (A: TP=4 GPUs 4-7 :8001, B: TP=2 GPUs 2,3 :8002).
+- [x] verify: chat and Responses both cap at 1024; thinking off both (both servers).
+- [x] one 3-step prolong smoke and one 3-step vllm smoke through run_cell.sh (outputs/smoke-c4h-*).
+- **Status:** complete
+- **Evidence:** progress.md 14:00-14:31; qwen35-serve/run/qwen-serve-qwen3-8-27b.sh, run/qwen38-b.sh
 
 ### Phase 3: Campaign
 
-- [ ] bench dir with the 7 scenes; launch 14 cells (≤5 concurrent) under nohup/tmux with logs.
-- [ ] monitor; rerun crashed cells with --resume.
-- [ ] export table + short interpretation; commit.
-- **Status:** pending
-- **Evidence:** none
+- [x] bench dir with the 7 scenes (bench_4hop7/); launched 14 cells (8 concurrent, two servers) via scripts/launch_4hop.sh 14:31.
+- [x] monitored to completion 17:11; no crashes, no client timeouts, no reruns needed.
+- [x] table + interpretation in experiments/RESULTS_helixon_4hop.md; committed.
+- **Status:** complete
+- **Evidence:** outputs/c4h-*/, outputs/log-c4h-*.txt, experiments/RESULTS_helixon_4hop.md
 
 ## Decisions And Blockers
 
@@ -101,4 +101,4 @@ task, not satisfiable out of order (0694 and 0435 excluded for that).
 
 ## Next Action
 
-Implement Phase 1 fixes.
+none - ready to archive (dz to read experiments/RESULTS_helixon_4hop.md; a multi-seed round is a new fixed-n decision)

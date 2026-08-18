@@ -312,8 +312,15 @@ def scan_rollout(path: Path) -> dict[str, int]:
     except OSError:
         return out
     for line in text.splitlines():
+        # Two shapes, depending on how codex ran the tool: nested inside a code-mode
+        # `exec` cell it is a `custom_tool_call` mentioning view_image (the sibling
+        # port's runs); called directly it is a `function_call` named view_image (every
+        # helixon run of 2026-08-18 -- the first version counted only the former and
+        # read 0 against rollouts that held the call).
         if '"custom_tool_call"' in line:
             out["view_image_calls"] += len(_ROLLOUT_VIEW_IMAGE.findall(line))
+        elif '"function_call"' in line and re.search(r'"name":\s*"view_image"', line):
+            out["view_image_calls"] += 1
         if _ROLLOUT_ATTACH_FAIL.search(line):
             out["image_attach_failures"] += 1
     return out
