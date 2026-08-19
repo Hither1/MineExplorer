@@ -376,11 +376,31 @@ dev server:
 The PIL/`view_image` loop that makes this arm expensive is a **Qwen3.8-with-thinking-off
 behaviour**, not a property of the scaffold: given the same prompt and the same tools, Qwen3.5
 answers in one message without touching a tool. Since the campaign's servers now serve Qwen3.5,
-restricting the tool surface would buy ~1 s per step — and it would cost the thing the arm is
-for (it is PRO-LONG's scaffold control: same tools, minus the memory mechanism). Recommendation:
-**do not restrict the tools; re-measure the arm on Qwen3.5 before assuming it is expensive.**
-(Five replayed steps on an idle server is not a campaign — the number to trust is the first real
-`default × codex` cell on Qwen3.5.)
+restricting the tool surface would buy ~1 s per step. (Five replayed steps on an idle server is
+not a campaign — the number to trust is the first real `default × codex` cell on Qwen3.5.)
+
+**And `view_image` must not be disabled anyway, because the two codex arms are not handed their
+frames the same way.** `SAFE_CODEX_FLAGS` is shared, so removing the tool would remove it from
+both arms — an identical tool *surface* — but not an identical *capability*:
+
+| | frames attached per call/turn | route to older frames | `view_image` calls actually made |
+|---|---|---|---|
+| `default × codex` | **20** (the whole buffer, as `-i` files) | already attached | 1.64 per call (Qwen3.8), 0 (Qwen3.5) |
+| `prolong × codex` | **1** (the current view; `ATTACHED_NOTE`) | the `[FRAME] frames/step_NNNN.png` paths in its log, opened with the image viewer (`prompts.py`: "use the image viewer on the older paths") | 1 call in 176 turns (Qwen3.8); 5 in 322 (Qwen3.5) |
+
+So the same flag would leave the baseline with all 20 frames in front of it and leave PRO-LONG
+with a one-frame window and no way back — a targeted handicap on the arm under test, not a
+neutral speed knob. The fact that PRO-LONG almost never uses the viewer (0.01–0.02 calls per
+turn) does not make it safe to remove: "the analyzer had the option to re-read pixels and chose
+the numeric log instead" is a claim about PRO-LONG's architecture, and it stops being sayable
+once the option is taken away. In the other direction, on Qwen3.8 the baseline uses the viewer
+1.64 times per call, so removing it would change the *baseline's* behaviour materially while
+barely touching PRO-LONG — asymmetric either way.
+
+`prolong_mc/sandbox_selftest.py` already asserts this in both directions (a tool that disappears
+fails the check exactly like one that appears), with the same reasoning in its comment.
+**Recommendation: do not restrict the tools. Re-measure the arm on Qwen3.5 before assuming it is
+expensive.**
 
 **`--output-schema` is the one codex setting worth adopting, and it is a reliability fix.** It
 takes a JSON Schema file and constrains the final message; against vLLM's Responses API it works
