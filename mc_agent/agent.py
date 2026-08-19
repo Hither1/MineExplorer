@@ -40,6 +40,10 @@ class DefaultAgent:
         if response_style not in RESPONSE_STYLES:
             raise ValueError(f"response_style must be one of {RESPONSE_STYLES}, got {response_style!r}")
         self.response_style = response_style
+        # For the compact style's memory line: the step whose reply last changed the memory.
+        # The runner owns the memory and hands it back each step; the agent only watches it.
+        self._memory_seen: str | None = None
+        self._memory_step: int | None = None
 
         logger.info(
             f"DefaultAgent  action_space={self.action_space.__class__.__name__}  "
@@ -49,6 +53,14 @@ class DefaultAgent:
 
     def load_system_prompt(self, task_desc: str) -> None:
         self.task_desc = task_desc
+
+    def _note_memory(self, long_term_memory: str, current_step: int | None) -> None:
+        """Record at which step the memory last changed (a memory handed in at step k that
+        differs from the one handed in at k-1 was written by the reply at k-1)."""
+        mem = (long_term_memory or "").strip()
+        if mem != self._memory_seen:
+            self._memory_seen = mem
+            self._memory_step = (current_step - 1) if current_step else None
 
     def get_action(
         self,
@@ -90,10 +102,12 @@ class DefaultAgent:
             return thought, action, long_term_memory
 
         layout = self.prompt_layout
+        self._note_memory(long_term_memory, current_step)
         content = [{"type": "text", "text": self.context_builder_class.system_prompt(
             self.task_desc, long_term_memory=long_term_memory, milestone_hint=milestone_hint,
             camera_hint=camera_hint, movement_hint=movement_hint, layout=layout,
-            style=self.response_style).build()}]
+            style=self.response_style, memory_step=self._memory_step,
+            current_step=current_step).build()}]
         save_content = copy.deepcopy(content)
 
         for i, base64_img in enumerate(base64_images):
@@ -138,7 +152,9 @@ class DefaultAgent:
             # the same request prefix as the previous step (see PROMPT_LAYOUTS).
             state_text = self.context_builder_class.state_block(
                 long_term_memory=long_term_memory, milestone_hint=milestone_hint,
-                camera_hint=camera_hint, movement_hint=movement_hint)
+                camera_hint=camera_hint, movement_hint=movement_hint,
+                style=self.response_style, memory_step=self._memory_step,
+                current_step=current_step)
             if state_text:
                 content.append({"type": "text", "text": state_text})
                 save_content.append({"type": "text", "text": state_text})

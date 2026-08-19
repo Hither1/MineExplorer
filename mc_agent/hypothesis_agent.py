@@ -68,13 +68,16 @@ class HypothesisContextBuilder(DefaultContextBuilder):
         plan_summary: str = "",
         layout: str = "legacy",
         style: str = "full",
+        memory_step: int | None = None,
+        current_step: int | None = None,
     ):
         TASK_SUFFIX = "end the episode by setting the 'ESC' action to 1."
         goal_desc = f"{task_desc}, {TASK_SUFFIX}"
 
         builder = cls()
         if layout == "legacy":
-            sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint)
+            sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint,
+                                           style, memory_step, current_step)
             sections.update(cls._hypothesis_sections(hypothesis_summary, plan_summary))
         else:
             # Same idea as DefaultContextBuilder: the state -- memory, hints, hypothesis graph,
@@ -97,8 +100,12 @@ class HypothesisContextBuilder(DefaultContextBuilder):
         movement_hint: str = "",
         hypothesis_summary: str = "",
         plan_summary: str = "",
+        style: str = "full",
+        memory_step: int | None = None,
+        current_step: int | None = None,
     ) -> str:
-        sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint)
+        sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint,
+                                       style, memory_step, current_step)
         sections.update(cls._hypothesis_sections(hypothesis_summary, plan_summary))
         # The hypothesis section is never empty (HYPOTHESIS_EMPTY_TEMPLATE), so this block always
         # exists for the hypothesis agent -- the graph is state the model must read every step.
@@ -214,7 +221,7 @@ _HYP_THOUGHT_PROCESS_COMPACT = """
 3.  Analyze the sequence of images AND the Environment-reported position line above. Do you see movement? Have you turned? What is new in your view? Cross-check your visual impression against the real position numbers - if that line says you haven't moved, or that your net displacement over the last several steps is small, trust that over what individual frames seem to suggest (near-identical terrain can still look "new" frame to frame). Does the evidence - visual and positional together - confirm, refute, or leave untouched any active hypothesis?
 4.  Formulate a new, concise thought: 1-3 sentences on what you conclude and what you will do next. Do not restate the memory, the hint lines, the hypothesis graph or the frame captions - they are already in front of you.
 5.  Decide the single next action to take.
-6.  Update your long-term memory only when there is something new worth keeping: a landmark or object found, a sub-goal completed, a direction or attempt that failed, a change of plan - or when the current memory is stale or contradicts what you now know. Then write the FULL updated memory as a concise summary (under 200 words). If nothing worth keeping changed this step, do not send a memory update at all.
+6.  Your long-term memory is what survives beyond the frames you can see, so keep it complete: write it on your first step, and rewrite it in FULL (a concise summary under 200 words) whenever it no longer records everything important - a landmark or object found, a sub-goal completed, a direction or attempt that failed, a change of plan - and whenever the memory line above says it is due. On the other steps do not send it.
 7.  Update your hypotheses: propose new hypotheses about the world when you notice something uncertain worth investigating (e.g. "there is likely a village nearby"), and update existing ones (by id) when you gather evidence — raise confidence toward 1.0 when confirmed, lower toward 0.0 when refuted, and mark status "confirmed"/"refuted" once you're sure. Send a hypothesis op only when something actually changes: a new hypothesis, or an existing id whose confidence moves by at least 0.1 or whose status changes. On an update send the id, the fields that changed and a short evidence phrase (at most 15 words) - never a re-statement of an unchanged hypothesis. If nothing changed, do not send hypotheses at all.
 
     `depends_on` covers TWO kinds of relationship, both worth recording — only list dependency ids
@@ -421,7 +428,7 @@ _HYP_RESPONSE_COMPACT = """
 Your response **MUST** be exactly one JSON object on a single line - no line breaks, no indentation, no text before or after it. Keys:
 - "thought": your concise reasoning and plan (string, 1-3 sentences) - always
 - "action": the action JSON object (only the keys you set; omitted keys are 0) - always
-- "memory_update": the FULL updated long-term memory (string, max 200 words) - only on steps where the memory changes; then send the whole memory, never just the delta. No key means "memory unchanged".
+- "memory_update": the FULL long-term memory (string, max 200 words) - on your first step and whenever the memory changes or the memory line says it is due; then send the whole memory, never just the delta. No key means "memory unchanged".
 - "hypotheses": the hypothesis objects you are proposing or updating THIS step - only when there is one. Each object:
   {{"id": "h1", "statement": "...", "confidence": 0.6, "status": "active", "depends_on": [], "evidence": "what you just observed"}}
   - "id" is required (reuse an existing id to update it; a new id creates a new hypothesis).
@@ -452,7 +459,7 @@ Example 5 - Decomposing a multi-step task description into a dependency chain on
 Example 6 - Deepening a stale goal-restatement placeholder into a specific hypothesis after real search (the required pivot once a first-step placeholder like h1 above has survived many steps of searching with no new evidence - use the Environment-reported position numbers, not a step count, to decide how much ground you've actually covered):
 {{"thought": "h1 has had no new evidence for 40 steps and I am still only ~35 blocks from spawn, so I have been circling, not searching. Granite pillars are placed structures, likelier near a clearing or biome edge; I will retire h1 and commit to a sustained push south.", "action": {{"camera": [0, 90]}}, "memory_update": "Spent ~40 steps near spawn without finding the granite pillar (spawn-distance only ~35 blocks despite the step count - was circling). Retired the goal-restatement hypothesis. New theory: pillars are placed structures, likelier near a clearing or biome edge than deep forest. Committing to a sustained push south (unexplored direction) for at least 100 blocks of real spawn-distance before reassessing.", "hypotheses": [{{"id": "h1", "status": "stale", "confidence": 0.15, "evidence": "40 steps but spawn-distance stayed ~35 blocks: circling, not a negative result"}}, {{"id": "h2", "statement": "The pillar is a placed decorative structure, more likely near a clearing or this biome's edge than deep in unbroken forest - committing to a sustained push south, unexplored so far.", "confidence": 0.35, "status": "active", "evidence": "pillars do not generate in dense forest; south not yet covered per position history"}}], "plan": ["Turn to face south (one step, camera only)", "Sprint south in a straight line for several steps, checking Environment-reported spawn-distance grows", "Watch for a clearing, biome transition, or structure", "Reassess only once spawn-distance actually exceeds ~100 blocks in this direction"]}}
 
-**Remember**: Send "memory_update", "hypotheses" and "plan" only on the steps where they change (no key = unchanged), and keep the whole reply on one line. When you do send memory_update, send the FULL current memory (not just new info). Only propose/update hypotheses that are meaningfully new or changed this step — don't repeat unchanged ones. Give each physically distinct candidate object/location its own id (Example 4) rather than folding it into an old id that was about something else. If the task names multiple sub-goals, open the whole chain up front with `depends_on` (Example 5) rather than only describing sub-goals reactively as you happen to see them. A goal-restating placeholder is only acceptable on the step it's first created — once it's survived real search time with no new evidence, retire it and open a more specific id naming a direction, landmark, or mechanism instead (Example 6), using Environment-reported position (not step count) to judge how much ground you've actually covered.
+**Remember**: Send "memory_update", "hypotheses" and "plan" only on the steps where they change (no key = unchanged), and keep the whole reply on one line. When you do send memory_update, send the FULL current memory (not just new info); write it on the first step, and a memory that does not mention what you have found or completed is stale. Only propose/update hypotheses that are meaningfully new or changed this step — don't repeat unchanged ones. Give each physically distinct candidate object/location its own id (Example 4) rather than folding it into an old id that was about something else. If the task names multiple sub-goals, open the whole chain up front with `depends_on` (Example 5) rather than only describing sub-goals reactively as you happen to see them. A goal-restating placeholder is only acceptable on the step it's first created — once it's survived real search time with no new evidence, retire it and open a more specific id naming a direction, landmark, or mechanism instead (Example 6), using Environment-reported position (not step count) to judge how much ground you've actually covered.
 """
 
 _HYP_ESC_RULE = """
@@ -499,6 +506,9 @@ class HypothesisAgent:
         if response_style not in RESPONSE_STYLES:
             raise ValueError(f"response_style must be one of {RESPONSE_STYLES}, got {response_style!r}")
         self.response_style = response_style
+        # For the compact style's memory line (see DefaultAgent._note_memory).
+        self._memory_seen: str | None = None
+        self._memory_step: int | None = None
 
         self.graph = HypothesisGraph()
         self.current_plan: list[str] = []
@@ -511,6 +521,12 @@ class HypothesisAgent:
 
     def load_system_prompt(self, task_desc: str) -> None:
         self.task_desc = task_desc
+
+    def _note_memory(self, long_term_memory: str, current_step: int | None) -> None:
+        mem = (long_term_memory or "").strip()
+        if mem != self._memory_seen:
+            self._memory_seen = mem
+            self._memory_step = (current_step - 1) if current_step else None
 
     def get_action(
         self,
@@ -541,6 +557,7 @@ class HypothesisAgent:
         hypothesis_summary = self.graph.to_prompt_summary(max_items=self.max_hypotheses_in_prompt)
         plan_summary = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(self.current_plan))
         layout = self.prompt_layout
+        self._note_memory(long_term_memory, current_step)
 
         content = [{"type": "text", "text": self.context_builder_class.system_prompt(
             self.task_desc,
@@ -552,6 +569,8 @@ class HypothesisAgent:
             plan_summary=plan_summary,
             layout=layout,
             style=self.response_style,
+            memory_step=self._memory_step,
+            current_step=current_step,
         ).build()}]
         save_content = copy.deepcopy(content)
 
@@ -597,6 +616,9 @@ class HypothesisAgent:
                 movement_hint=movement_hint,
                 hypothesis_summary=hypothesis_summary,
                 plan_summary=plan_summary,
+                style=self.response_style,
+                memory_step=self._memory_step,
+                current_step=current_step,
             )
             if state_text:
                 content.append({"type": "text", "text": state_text})

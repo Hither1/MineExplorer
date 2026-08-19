@@ -87,18 +87,48 @@ class DefaultContextBuilder:
         return builder
 
     @classmethod
+    def _memory_section(
+        cls,
+        long_term_memory: str = "",
+        style: str = "full",
+        memory_step: int | None = None,
+        current_step: int | None = None,
+    ) -> str:
+        """The memory as the model sees it. `full`: the memory if there is one, else nothing (the
+        model rewrites it every step anyway). `compact`: always a line -- an empty memory is asked
+        for outright, and a written one carries the step it was last rewritten at, so the model
+        can see it is stale (it is only sent when the model decides to change it), and after
+        MEMORY_REWRITE_DUE steps without a rewrite the line asks for one. Measured 2026-08-19: with
+        the section simply absent when empty, a compact default cell went 54 steps and three
+        milestones without ever writing a memory."""
+        mem = long_term_memory.strip() if long_term_memory else ""
+        if style != "compact":
+            return MEMORY_SECTION_TEMPLATE.format(long_term_memory=mem) if mem else ""
+        if not mem:
+            return COMPACT_MEMORY_EMPTY_TEMPLATE
+        if memory_step is not None and current_step is not None:
+            age = current_step - memory_step
+            when = f"at step {memory_step}"
+            due = (f"; it has not been rewritten for {age} steps - rewrite it this step"
+                   if age >= MEMORY_REWRITE_DUE else "")
+        else:
+            when, due = "earlier", ""
+        return COMPACT_MEMORY_SECTION_TEMPLATE.format(long_term_memory=mem, when=when, due=due)
+
+    @classmethod
     def _state_sections(
         cls,
         long_term_memory: str = "",
         milestone_hint: str = "",
         camera_hint: str = "",
         movement_hint: str = "",
+        style: str = "full",
+        memory_step: int | None = None,
+        current_step: int | None = None,
     ) -> dict[str, str]:
         """The per-step sections, rendered from the same templates whichever layout uses them."""
         return {
-            "memory_section": (
-                MEMORY_SECTION_TEMPLATE.format(long_term_memory=long_term_memory.strip())
-                if long_term_memory and long_term_memory.strip() else ""),
+            "memory_section": cls._memory_section(long_term_memory, style, memory_step, current_step),
             "milestone_section": (
                 MILESTONE_SECTION_TEMPLATE.format(milestone_hint=milestone_hint.strip())
                 if milestone_hint and milestone_hint.strip() else ""),
@@ -120,13 +150,16 @@ class DefaultContextBuilder:
         movement_hint: str = "",
         layout: str = "legacy",
         style: str = "full",
+        memory_step: int | None = None,
+        current_step: int | None = None,
     ) -> Self:
         TASK_SUFFIX = "end the episode by setting the 'ESC' action to 1."
         goal_desc = f"{task_desc}, {TASK_SUFFIX}"
 
         builder = cls()
         if layout == "legacy":
-            sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint)
+            sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint,
+                                           style, memory_step, current_step)
         else:
             # The state goes into state_block() after the frames; what is left here is the same
             # text every step, which is the point.
@@ -145,9 +178,13 @@ class DefaultContextBuilder:
         milestone_hint: str = "",
         camera_hint: str = "",
         movement_hint: str = "",
+        style: str = "full",
+        memory_step: int | None = None,
+        current_step: int | None = None,
     ) -> str:
         """The per-step state as one text part, for the non-legacy layouts (empty if nothing to say)."""
-        sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint)
+        sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint,
+                                       style, memory_step, current_step)
         body = "".join(sections.values())
         return STATE_BLOCK_HEADER + body if body else ""
 
@@ -162,6 +199,20 @@ APPEND_ONLY_WINDOW_PHRASE = (
 
 MEMORY_SECTION_TEMPLATE = """
 **Your Long-Term Memory (accumulated across all previous steps):**
+{long_term_memory}
+"""
+
+# The compact style's memory line (see _memory_section). A compact reply carries the memory only
+# when the model changes it, so the line must say when it was last written and ask for it when it
+# is missing or has gone MEMORY_REWRITE_DUE steps without a rewrite.
+MEMORY_REWRITE_DUE = 20
+
+COMPACT_MEMORY_EMPTY_TEMPLATE = """
+**Your Long-Term Memory:** empty - write it this step (send "memory_update").
+"""
+
+COMPACT_MEMORY_SECTION_TEMPLATE = """
+**Your Long-Term Memory (last rewritten {when}; rewrite it whenever it no longer records everything you have found, completed or ruled out{due}):**
 {long_term_memory}
 """
 
@@ -207,7 +258,7 @@ _DEFAULT_THOUGHT_PROCESS_COMPACT = """
 3.  Analyze the sequence of images. Do you see movement? Have you turned? What is new in your view?
 4.  Formulate a new, concise thought: 1-3 sentences on what you conclude and what you will do next. Do not restate the memory, the hint lines or the frame captions - they are already in front of you.
 5.  Based on your thought, decide the single next action to take.
-6.  Update your long-term memory only when there is something new worth keeping: a landmark or object found, a sub-goal completed, a direction or attempt that failed, a change of plan - or when the current memory is stale or contradicts what you now know. Then write the FULL updated memory as a concise summary (under 200 words: locations visited, objects found, failed attempts, current progress toward the goal). If nothing worth keeping changed this step, do not send a memory update at all.
+6.  Your long-term memory is what survives beyond the frames you can see, so keep it complete: write it on your first step, and rewrite it in FULL (a concise summary under 200 words: locations visited, objects found, failed attempts, current progress toward the goal) whenever it no longer records everything important - a landmark or object found, a sub-goal completed, a direction or attempt that failed, a change of plan - and whenever the memory line above says it is due. On the other steps do not send it.
 """
 
 _DEFAULT_ACTION_REFERENCE = """
@@ -306,23 +357,26 @@ Example 3 - Recording a failed attempt:
 
 _DEFAULT_RESPONSE_COMPACT = """
 **RESPONSE FORMAT:**
-Your response **MUST** be exactly one JSON object on a single line - no line breaks, no indentation, no text before or after it - with the keys "thought" and "action", plus "memory_update" only on the steps where the memory changes.
+Your response **MUST** be exactly one JSON object on a single line - no line breaks, no indentation, no text before or after it - with the keys "thought" and "action", plus "memory_update" on the steps where the memory is written or changes.
 - "thought": your concise reasoning and plan (string, 1-3 sentences)
 - "action": the action JSON object (only the keys you set; omitted keys are 0)
-- "memory_update": the FULL updated long-term memory (string, max 200 words). Send it only when the memory changes, and then send the whole memory, never just the delta. Leave the key out on every other step: no key means "memory unchanged".
+- "memory_update": the FULL long-term memory (string, max 200 words). Send it on your first step and whenever the memory changes (or the memory line says it is due), and then send the whole memory, never just the delta. Leave the key out on the other steps: no key means "memory unchanged".
 
 **Examples:**
 
-Example 1 - Fast exploration, nothing new to remember (USE THIS OFTEN!):
+Example 1 - First step: the memory is empty, so it is written:
+{{"thought": "Nothing found yet; I will scan the surroundings before choosing a direction.", "action": {{"camera": [0, 45]}}, "memory_update": "Step 1: spawned in a forest biome next to a stone path. Nothing found yet."}}
+
+Example 2 - Fast exploration, nothing new to remember:
 {{"thought": "Open ground ahead and nothing new in view. I will keep sprinting forward.", "action": {{"forward": 1, "sprint": 1}}}}
 
-Example 2 - A new finding, so the memory is rewritten in full:
+Example 3 - A new finding, so the memory is rewritten in full:
 {{"thought": "I found the jukebox inside the stone hut. Moving toward it.", "action": {{"forward": 1}}, "memory_update": "Spawned near a stone hut. Explored east side - found crafting table and chest. Found jukebox inside stone hut at north side. Currently approaching jukebox."}}
 
-Example 3 - Recording a failed attempt:
+Example 4 - Recording a failed attempt:
 {{"thought": "The path north is blocked by lava. I will try east instead.", "action": {{"right": 1, "sprint": 1}}, "memory_update": "Spawned in desert. North path blocked by lava pool - cannot pass. East direction looks open. West has sand dunes. Target object not yet found."}}
 
-**Remember**: Always use sprint when moving forward in open areas to explore efficiently! Send "memory_update" only when the memory changes, and then send the FULL memory. Keep the whole reply on one line.
+**Remember**: Always use sprint when moving forward in open areas to explore efficiently! Send "memory_update" on the first step and whenever the memory changes or is due, and then send the FULL memory; a memory that does not mention what you have found or completed is stale. Keep the whole reply on one line.
 """
 
 _ESC_RULE = """

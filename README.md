@@ -405,7 +405,12 @@ and with `memory_update` / `hypotheses` / `plan` sent only on the steps where
 they change (an absent key means "unchanged", which the runner and
 `HypothesisAgent` already treat as "keep"; `_HYP_THOUGHT_PROCESS_COMPACT` /
 `_DEFAULT_THOUGHT_PROCESS_COMPACT` in `mc_agent/` are the exact wording, the
-hypothesis-writing guidance is unchanged). What the model maintains does not
+hypothesis-writing guidance is unchanged). Because the memory is now sent only
+when the model decides to, the compact state block always carries a memory line
+— "empty - write it this step", or "last rewritten at step N" and, after 20
+steps without a rewrite, "rewrite it this step" (`MEMORY_REWRITE_DUE`); the
+first compact cell without that line ran 54 steps and three milestones without
+ever writing a memory. What the model maintains does not
 change; what it re-emits does — so it is a different arm, recorded in
 `result.json` as `response_style`, suffixed `-compact` by `launch_4hop.sh` and
 kept apart by `summarize_4hop.py`. `bench_agent_latency.py --style compact`
