@@ -801,10 +801,13 @@ def eval_benchmark(
                                                      help="PRO-LONG's log-window ablation "
                                                           "(--agent-mode prolong only): 0 keeps the "
                                                           "initial state plus the latest action "
-                                                          "section, N keeps the last N. Enforced -- "
-                                                          "the analyzer's directory holds the "
-                                                          "truncated log and the frames it names, "
-                                                          "and nothing else of the history."),
+                                                          "section, N keeps the last N, -1 is the "
+                                                          "paper's No-Log control (no logs.txt; the "
+                                                          "current state and frame travel in the "
+                                                          "prompt). Enforced -- the analyzer's "
+                                                          "directory holds the truncated log and "
+                                                          "the frames it names, and nothing else "
+                                                          "of the history."),
     prolong_stateless: bool = typer.Option(False, "--prolong-stateless",
                                            help="PRO-LONG's stateless ablation (--agent-mode prolong "
                                                 "only): everything the analyzer writes is deleted "

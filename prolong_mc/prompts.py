@@ -77,6 +77,8 @@ exactly the errors this design exists to avoid.{cross_turn_hint}
 files accumulate. Feel free to save notes, state, or helper functions.
 
 **Log markers**:
+    Action N | Step S | Plan Step i/T{verified_field} — one section per environment
+        tick; `Plan Step` says which tick of your last plan this was.
     [STATE] pos=(x, y, z) pitch=P yaw=Y moved=D — the player state after an action.
         `moved` is the horizontal distance covered by that action. `moved=0.00`
         repeatedly means you are blocked by terrain, not that you are standing still
@@ -85,7 +87,8 @@ files accumulate. Feel free to save notes, state, or helper functions.
         one is attached directly to every call, so you always see the current view
         without asking; use the image viewer on the older paths when you want to
         compare against where you have already been.
-    [PLAN] — your own plan from the previous call.
+    [PLAN] — your own analyses: the briefing you wrote at your last call appears
+        once, and the plan you wrote appears in every section it governed.
     [NOTE] — something the runner rejected or refused since the previous action.{milestone_marker}
 
 **What you can rely on**:
@@ -112,6 +115,105 @@ result before committing further; scale up for movement you are confident about.
 The runner executes the list in order, then calls you again with the updated log.
 """
 
+# The paper's control arm (upstream `--log-window -1`, `SYSTEM_PROMPT_INPROMPT`): the same
+# coding agent, the same workspace and plan contract, but no log -- the current state
+# travels in the prompt and nothing else is kept unless the agent writes it down. On
+# MineExplorer "the board" is the [STATE] line plus the attached frame.
+SYSTEM_PROMPT_NOLOG = """\
+You are a coding agent controlling a Minecraft player by writing action plans.
+
+Your objective is to complete the task below. Your secondary objective is to use as
+few environment steps as possible.
+
+**Task**: {task_text}
+
+The current player state is injected directly into your prompt each call, together
+with the current first-person view. Prior states, frames and analyses are not
+preserved across calls unless you save them yourself to the workspace; if you want to
+compare positions across calls, write them to a file first.
+
+**Tools**: Read, Write, Edit, Bash, Grep, Glob.
+
+**Workspace**: `./` persists across calls. `actions.json` is cleared each call; other
+files accumulate. Feel free to save notes, state, or helper functions.
+
+**Prompt markers** (on the user turn):
+    [STATE] pos=(x, y, z) pitch=P yaw=Y moved=D — the player state now. `moved` is
+        the horizontal distance covered by the last action; `moved=0.00` repeatedly
+        means you are blocked by terrain, not that you are standing still by choice.
+    Verified: yes/no — the environment's own verification of task completion, when
+        the protocol provides it. This is the signal the ESC rule below refers to;
+        nothing else counts as verification.
+
+**What you can rely on**:
+- Coordinates and facing in `[STATE]` are ground truth from the environment; your own
+  visual read of a frame is not proof an action worked.
+- {esc_policy}
+- You keep no separate memory: whatever you save in `./` is your memory.
+
+**Response format**: a strategic briefing, then
+[PLAN]
+<2-3 sentence action plan>
+
+**Write `./actions.json`** with a JSON object
+`{{"actions": [{{"action": {{"forward": 1}}, "repeat": 10}}, ...]}}` — a list of
+1-{action_cap} entries executed in order, totalling at most {step_cap} environment
+steps. Prefer short lists (1-2 entries) when testing a new hypothesis so you see the
+result before committing further; scale up for movement you are confident about.
+
+**Actions available**:
+{actions_section}
+
+The runner executes the list in order, then calls you again with the updated state.
+"""
+
+
+def _build_nolog_system_prompt(
+    task_text: str, action_cap: int, step_cap: int, repeat_cap: int,
+    stateless: bool, milestone_hint: bool,
+) -> str:
+    prompt = SYSTEM_PROMPT_NOLOG.format(
+        esc_policy=ESC_POLICY,
+        task_text=task_text,
+        action_cap=action_cap,
+        step_cap=step_cap,
+        actions_section=ACTION_REFERENCE.format(repeat_cap=repeat_cap),
+    )
+    if not milestone_hint:
+        prompt = prompt.replace(
+            "    Verified: yes/no — the environment's own verification of task "
+            "completion, when\n        the protocol provides it. This is the signal the "
+            "ESC rule below refers to;\n        nothing else counts as verification.\n",
+            "",
+        )
+    if stateless:
+        prompt = prompt.replace(
+            "**Workspace**: `./` persists across calls. `actions.json` is cleared each "
+            "call; other files accumulate. Feel free to save notes, state, or helper "
+            "functions.",
+            "**Workspace**: `./` does not persist across calls (notes, state and helper "
+            "functions are gone once actions are submitted).",
+        ).replace(
+            "- You keep no separate memory: whatever you save in `./` is your memory.\n",
+            "",
+        )
+    return prompt
+
+
+NOLOG_FIRST_PROMPT = """\
+{state}
+{attached}
+This is the first analysis. Look at the frame, work out where you are and what the
+task requires, then write ./actions.json with your first set of actions.
+"""
+
+NOLOG_RESUME_PROMPT = """\
+{state}
+{attached}
+The state above is where the last plan left you. Check ./ for anything you saved
+previously, compare, then write a new ./actions.json.
+"""
+
 FIRST_PROMPT = """\
 {log_desc}
 {attached}
@@ -132,6 +234,11 @@ ATTACHED_NOTE = """
 The image attached to this message is the player's CURRENT first-person view, taken
 at the latest state in the log. Earlier frames are on disk at the [FRAME] paths if
 you want to compare against them.
+"""
+
+ATTACHED_NOTE_NOLOG = """
+The image attached to this message is the player's CURRENT first-person view, taken
+at the state above. Earlier frames are not kept.
 """
 
 RESUME_BODY = """\
@@ -173,7 +280,12 @@ def build_system_prompt(
     milestone_hint: bool = False,
 ) -> str:
     """Render the system prompt. `log_window` follows PRO-LONG's convention:
-    None = full log, 0 = latest state only, >0 = that many action sections."""
+    None = full log, 0 = latest state only, >0 = that many action sections,
+    -1 = no log (the paper's No-Log control: current state in the prompt)."""
+    if log_window == -1:
+        return _build_nolog_system_prompt(
+            task_text, action_cap, step_cap, repeat_cap, stateless, milestone_hint
+        )
     if log_window is None:
         log_window_desc = "It contains the full episode history."
     elif log_window == 0:
@@ -200,9 +312,15 @@ def build_system_prompt(
         "ESC rule below refers\n        to; nothing else counts as verification."
     ) if milestone_hint else ""
 
+    # The header's `Verified:` field is upstream's `Score:` -- the same environment
+    # verification the [MILESTONE] line reports on change, written into every section
+    # so a `tail` sees it. Documented on the same condition as the marker.
+    verified_field = " | Verified: yes/no" if milestone_hint else ""
+
     prompt = SYSTEM_PROMPT.format(
         esc_policy=ESC_POLICY,
         milestone_marker=milestone_marker,
+        verified_field=verified_field,
         task_text=task_text,
         action_cap=action_cap,
         step_cap=step_cap,
@@ -226,8 +344,14 @@ def build_system_prompt(
 
 
 def build_turn_prompt(
-    log_name: str, is_first: bool, log_window: int | None, frame_attached: bool = False
+    log_name: str, is_first: bool, log_window: int | None, frame_attached: bool = False,
+    state_text: str = "",
 ) -> str:
+    if log_window == -1:
+        attached = ATTACHED_NOTE_NOLOG if frame_attached else ""
+        tmpl = NOLOG_FIRST_PROMPT if is_first else NOLOG_RESUME_PROMPT
+        return tmpl.format(state=state_text.strip() or "[STATE] unavailable", attached=attached)
+    attached = ATTACHED_NOTE if frame_attached else ""
     disp = f"./{log_name}"
     if log_window is None:
         log_desc = f"Read the full episode log at {disp}"
@@ -236,7 +360,6 @@ def build_turn_prompt(
     else:
         log_desc = f"Read {disp} (last {log_window} actions)."
 
-    attached = ATTACHED_NOTE if frame_attached else ""
     if is_first:
         return FIRST_PROMPT.format(log_desc=log_desc, attached=attached)
     body = RESUME_BODY_NO_HISTORY if log_window == 0 else RESUME_BODY

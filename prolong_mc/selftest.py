@@ -59,6 +59,25 @@ check("moved computed", "moved=0.90" in text)
 check("frames written", len(list((ws / 'frames').glob('*.png'))) == 13)
 check("plan recorded", "[PLAN]" in text)
 
+# Upstream's hint/plan pair: the briefing is written once, the plan into every section
+# it governed, and the header carries the plan step and the verification state.
+lg2 = EpisodeLog(pathlib.Path(tempfile.mkdtemp()))
+lg2.write_initial("t", {"x": 0.0, "y": 0.0, "z": 0.0}, None)
+lg2.set_plan("go north", briefing="I see a path; the tower is probably north.")
+for i in range(1, 4):
+    lg2.write_action(action_num=i, step=i, entry_desc="fwd", pos={"x": 0.0, "y": 0.0, "z": float(i)},
+                     prev_pos={"x": 0.0, "y": 0.0, "z": float(i - 1)}, frame_name=None,
+                     plan_step=(i, 3), verified="no")
+t2 = lg2.path.read_text()
+check("briefing written once", t2.count("the tower is probably north") == 1, t2)
+check("plan written into every section it governed", t2.count("[PLAN]\ngo north") == 3, t2)
+check("header carries the plan step", "Action 2 | Step 2 | Plan Step 2/3" in t2, t2)
+check("header carries the verification state", t2.count("| Verified: no") == 3, t2)
+lg2.write_action(action_num=4, step=4, entry_desc="fwd", pos={"x": 0.0, "y": 0.0, "z": 4.0},
+                 prev_pos={"x": 0.0, "y": 0.0, "z": 3.0}, frame_name=None, plan_step=None, verified=None)
+t2 = lg2.path.read_text()
+check("no-hint protocol prints no Verified field", "Action 4 | Step 4\n" in t2, t2[-200:])
+
 full = log.windowed_copy(ws / "full.txt", None)
 w3 = log.windowed_copy(ws / "w3.txt", 3)
 w0 = log.windowed_copy(ws / "w0.txt", 0)
@@ -139,6 +158,59 @@ check("every analyzer turn gets the current frame attached",
       turns["images"] == [["step_0001.png"], ["step_0005.png"]], f'got {turns["images"]}')
 check("the turn prompt says the view is attached",
       "CURRENT first-person view" in turns["last_prompt"])
+
+# R2: a change in the environment's verification state cuts the plan short and
+# re-fires the analyzer, as upstream's queue does on a score change.
+agent_f = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
+                       workspace=ws / "wspf", milestone_hint=True)
+f_turns = {"n": 0}
+def flush_run(prompt, images=()):
+    f_turns["n"] += 1
+    return {"ok": True, "error": None, "message": "brief\n[PLAN]\nlong walk",
+            "actions_json": json.dumps({"actions": [{"action": {"forward": 1}, "repeat": 10}]})}
+agent_f.codex.run = flush_run
+agent_f.load_system_prompt("Find the temple.")
+NOT_YET = "The environment has NOT verified the task as complete yet. Do not end the episode (ESC) until it is."
+DONE = "The environment HAS verified the task as complete. You may now end the episode by setting ESC=1."
+for step in range(1, 4):
+    agent_f.get_action([frame], [], [], step, milestone_hint=NOT_YET,
+                       info={"player_pos": dict(pos, z=float(step))})
+check("one plan covers the first steps", f_turns["n"] == 1 and len(agent_f.queue) == 7)
+agent_f.get_action([frame], [], [], 4, milestone_hint=DONE, info={"player_pos": dict(pos, z=4.0)})
+check("verification change flushes the queue and re-plans",
+      f_turns["n"] == 2 and agent_f._flushes == 1 and len(agent_f.queue) == 9,
+      f"turns={f_turns['n']} flushes={agent_f._flushes} queue={len(agent_f.queue)}")
+tf = (ws / "wspf" / "logs.txt").read_text()
+check("the header shows the state the tail will see", "| Verified: no" in tf and "| Verified: yes" in tf, tf[-600:])
+check("the briefing is in the log", "brief\n" in tf, tf[:600])
+check("the plan is in every section", tf.count("[PLAN]\nlong walk") == 3, f"got {tf.count('[PLAN]')}")
+check("the system prompt documents the header field",
+      "Verified: yes/no" in (ws / "wspf" / "AGENTS.md").read_text())
+
+# R5: the No-Log control -- no logs.txt where the agent works, state in the prompt.
+nl_prompts = []
+def nolog_run(prompt, images=()):
+    nl_prompts.append((prompt, [pathlib.Path(p).name for p in images]))
+    return {"ok": True, "error": None, "message": "[PLAN]\nstep",
+            "actions_json": json.dumps({"actions": [{"action": {"forward": 1}, "repeat": 2}]})}
+agent_n = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
+                       workspace=ws / "wsn", log_window=-1, milestone_hint=True)
+agent_n.codex.run = nolog_run
+agent_n.load_system_prompt("Find the temple.")
+for step in range(1, 4):
+    agent_n.get_action([frame], [], [], step, milestone_hint=NOT_YET,
+                       info={"player_pos": dict(pos, z=float(step))})
+check("no-log: the agent's directory has no logs.txt", not (ws / "wsn" / "logs.txt").exists())
+check("no-log: the record still has the full log",
+      (agent_n.record_dir / "logs.txt").read_text().count(SEPARATOR) >= 3)
+check("no-log: the prompt carries the current state",
+      "[STATE] pos=(0.00, 71.00, 3.00)" in nl_prompts[-1][0] and "Verified: no" in nl_prompts[-1][0],
+      nl_prompts[-1][0])
+check("no-log: only the current frame is visible",
+      sorted(p.name for p in (ws / "wsn" / "frames").glob("*.png")) == ["step_0003.png"],
+      sorted(p.name for p in (ws / "wsn" / "frames").glob("*.png")))
+check("no-log: the system prompt is the in-prompt variant",
+      "injected directly into your prompt" in (ws / "wsn" / "AGENTS.md").read_text())
 
 agent2 = ProlongAgent(action_space=MinerRLActionSpace(), provider=None, model="stub",
                       workspace=ws / "wsp2", analyzer_retries=2)
@@ -429,7 +501,9 @@ def _provider_argv(**kw):
         seen["cmd"] = cmd
         return _Proc()
 
-    with _mock.patch("subprocess.run", _capture):
+    # The provider runs codex through `run_codex` (a Popen with its own process
+    # group), not `subprocess.run`; patch the name it actually calls.
+    with _mock.patch("mc_agent.llm_provider.run_codex", _capture):
         try:
             _CP(codex_bin="/bin/true", **kw).chat([{"role": "user", "content": "hi"}])
         except RuntimeError:
@@ -479,7 +553,7 @@ def _run_events(events) -> int:
         stderr = ""
         returncode = 0
 
-    with _mock.patch("subprocess.run", return_value=_Proc()):
+    with _mock.patch("prolong_mc.codex_backend.run_codex", return_value=_Proc()):
         turn.run("hi")
     return turn.compactions
 
@@ -503,7 +577,7 @@ def _view_image_calls(events) -> int:
         stderr = ""
         returncode = 0
 
-    with _mock.patch("subprocess.run", return_value=_Proc()):
+    with _mock.patch("prolong_mc.codex_backend.run_codex", return_value=_Proc()):
         turn.run("hi")
     return turn.view_image_calls
 
@@ -548,7 +622,7 @@ check("an unablated prolong run keeps its plain label",
 
 # --- a timed-out call must leave its evidence behind ------------------------------
 # The stall is the call worth reading, and it was the only one with no transcript: the
-# events are written after subprocess.run returns, so a timeout discarded them. One
+# events are written after the codex process returns, so a timeout discarded them. One
 # 15-minute stall in the 40-step default probe left nothing but its duration.
 _timeout_dir = pathlib.Path(tempfile.mkdtemp())
 _turn = _cb.CodexTurn(pathlib.Path(tempfile.mkdtemp()), model="m", codex_bin="/bin/true",
@@ -562,7 +636,7 @@ def _raise_timeout(*a, **kw):
 
 
 import subprocess
-with _mock.patch("subprocess.run", _raise_timeout):
+with _mock.patch("prolong_mc.codex_backend.run_codex", _raise_timeout):
     _res = _turn.run("hi")
 check("a timed-out turn is still reported as a failure", not _res["ok"] and _res["error"] == "timeout")
 check("a timed-out turn keeps the events it had already received",
@@ -631,7 +705,7 @@ class _Proc:
     stderr = ""
     returncode = 1
 import unittest.mock as _mock
-with _mock.patch("subprocess.run", return_value=_Proc()):
+with _mock.patch("prolong_mc.codex_backend.run_codex", return_value=_Proc()):
     res = ct2.run("hi")
 check("overflow is reported to the caller", res["overflow"] is True)
 check("overflow drops the session so the next turn cold-starts", ct2.session_id is None)

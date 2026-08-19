@@ -58,7 +58,7 @@ class ProlongAgent:
         step_cap: int = 40,
         log_window: int | None = None,
         stateless: bool = False,
-        analyzer_retries: int = 3,
+        analyzer_retries: int = 5,
         milestone_hint: bool = False,
     ) -> None:
         self.action_space = action_space
@@ -196,6 +196,8 @@ class ProlongAgent:
                     "compactions": self.codex.compactions,
                     "actions_logged": self._action_num,
                     "esc_rejections": self._esc_rejections,
+                    # Plans cut short because the verification state changed (R2).
+                    "plan_flushes": self._flushes,
                     # Which arm this is, and -- for the ablations -- what the last
                     # turn's enforcement actually did. A C-arm score is only readable
                     # next to evidence that its ablation bound; `frames_visible` below
@@ -228,11 +230,30 @@ class ProlongAgent:
     ) -> tuple[Any, ...]:
         step = current_step or 0
         pos = (info or {}).get("player_pos")
+        self._last_pos = pos
 
         # The newest frame is the observation this decision is made from.
         frame_name = None
         if frame_buffer:
             frame_name = self.log.save_frame(step, _png(frame_buffer[-1]))
+
+        # Upstream's `Score:` and its queue flush (`action_queue.py:55-62`,
+        # `runner.py:113-114`): the environment's verification state goes into every
+        # header, and when it changes the rest of the plan is discarded and the
+        # analyzer is called again at once. Without the flush a 40-tick program kept
+        # running after the environment had verified the task (c4h-0306: verified at
+        # step 52, plan drain to step 300, 21 further turns). The state itself is the
+        # same task-level bit the arm already received on change as a [MILESTONE] line;
+        # nothing new is disclosed, it is disclosed where a `tail` sees it.
+        verified = _verified_state(milestone_hint)
+        if verified != self._verified and self._verified is not None and self.queue:
+            logger.info(
+                f"[prolong] verification state {self._verified!r} -> {verified!r}: "
+                f"flushing {len(self.queue)} queued step(s) and re-planning"
+            )
+            self.queue.clear()
+            self._flushes += 1
+        self._verified = verified
 
         if not self._initial_written:
             self.log.write_initial(self.task_desc, pos, frame_name)
@@ -260,7 +281,10 @@ class ProlongAgent:
                 # it annotates and hastening the context overflow. The transition --
                 # which is the whole signal -- is still recorded the step it happens.
                 milestone_note=self._milestone_note(milestone_hint),
+                plan_step=self._last_plan_step,
+                verified=verified,
             )
+            self._pos_before = self._prev_pos
             self._prev_pos = pos
             # Consume it. Without this, a failed refill leaves the entry set and every
             # later call re-appends the same section -- duplicate `Action N` headers
@@ -282,6 +306,7 @@ class ProlongAgent:
         # issued each step -- misleading to the agent that reads this log back.
         self._last_desc = f'{describe_entry(item["entry"])} [tick {item["tick"]}/{item["entry"]["repeat"]}]'
         self._last_step = step
+        self._last_plan_step = (item["index"], item["total"])
         self._action_num += 1
         # (thought, wire action dict, memory_update) -- the same triple DefaultAgent
         # returns. PRO-LONG has no memory_update: the log is the memory.
@@ -292,17 +317,36 @@ class ProlongAgent:
     _last_entry: dict | None = None
     _last_desc: str = ""
     _last_step: int = 0
+    _last_plan_step: tuple[int, int] | None = None
+    _last_pos: dict | None = None
+    _pos_before: dict | None = None
+    _verified: str | None = None
+    _flushes: int = 0
     _current_frame: str | None = None
     _esc_rejections: int = 0
     _last_milestone_hint: str = ""
     _published: dict | None = None
     _files_removed: int = 0
 
+    def _state_text(self) -> str:
+        """The current state as the No-Log turn prompt shows it (upstream's
+        `INPROMPT_RESUME_PROMPT`: score, action count, last actions, board)."""
+        from prolong_mc.log import state_line
+        lines = [state_line(self._last_pos, self._pos_before)]
+        if self._verified is not None:
+            lines.append(f"Verified: {self._verified}")
+        lines.append(f"Actions so far: {self._action_num}")
+        if self._last_desc:
+            lines.append(f"Last action: {self._last_desc}")
+        return "\n".join(lines)
+
     def _refill(self, step: int) -> bool:
         # What the agent may see this turn. The file is always ./logs.txt, as upstream's
         # sandbox copy is: naming the windowed one differently advertised that a fuller
         # log exists somewhere, and it used to be sitting right beside it.
-        published = self.log.publish(self.workspace, self.log_window, self.stateless)
+        published = self.log.publish(
+            self.workspace, self.log_window, self.stateless, current_frame=self._current_frame
+        )
         self._published = published
         self._files_removed += published["removed"]
         log_name = "logs.txt"
@@ -314,7 +358,10 @@ class ProlongAgent:
         frames = [self.workspace / self._current_frame] if self._current_frame else []
 
         base = prompts.build_turn_prompt(
-            log_name, self._action_num == 0, self.log_window, bool(frames)
+            log_name, self._action_num == 0, self.log_window, bool(frames),
+            # The No-Log control carries the current state in the prompt, as upstream's
+            # in-prompt mode carries the current board (`codex_agent.py:336-352`).
+            state_text=self._state_text() if self.log_window == -1 else "",
         )
         for attempt in range(self.analyzer_retries):
             prompt = base if attempt == 0 else f"{base}\n\n{RETRY_NUDGE}"
@@ -336,16 +383,17 @@ class ProlongAgent:
             if not plan:
                 logger.warning(f"[prolong] attempt {attempt + 1}: no usable entries")
                 continue
-            think = CodexTurn.extract_plan(result["message"])
-            self.log.set_plan(think)
+            briefing, think = CodexTurn.split_briefing(result["message"])
+            self.log.set_plan(think, briefing=briefing)
             offset = 0
+            total = len(plan.steps)
             for entry in plan.entries:
                 for tick in range(1, entry["repeat"] + 1):
-                    self.queue.append(
-                        {"entry": entry, "wire": plan.steps[offset],
-                         "think": think, "tick": tick}
-                    )
                     offset += 1
+                    self.queue.append(
+                        {"entry": entry, "wire": plan.steps[offset - 1],
+                         "think": think, "tick": tick, "index": offset, "total": total}
+                    )
             logger.info(
                 f"[prolong] step {step}: queued {len(plan.entries)} entries "
                 f"= {len(plan.steps)} steps (turn {self.codex.calls})"
@@ -353,6 +401,15 @@ class ProlongAgent:
             return True
         logger.error(f"[prolong] analyzer produced nothing after {self.analyzer_retries} tries")
         return False
+
+
+def _verified_state(milestone_hint: str) -> str | None:
+    """The environment's verification bit as the header prints it: "yes", "no", or
+    None under the no-hint protocol (no line rendered, nothing to print)."""
+    text = (milestone_hint or "").strip()
+    if not text:
+        return None
+    return "yes" if "HAS verified" in text else "no"
 
 
 def _png(frame: np.ndarray) -> bytes:

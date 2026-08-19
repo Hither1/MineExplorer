@@ -67,12 +67,24 @@ class EpisodeLog:
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.frames_dir.mkdir(parents=True, exist_ok=True)
         self.path.touch()
-        self._pending_plan: str | None = None
+        self._pending_briefing: str | None = None
+        self._plan: str | None = None
         self._pending_notes: list[str] = []
 
-    def set_plan(self, plan: str) -> None:
-        """Hold the agent's plan until the next action section is written."""
-        self._pending_plan = (plan or "").strip() or None
+    def set_plan(self, plan: str, briefing: str | None = None) -> None:
+        """Take one analysis: the briefing is written once, into the next section; the
+        plan is written into every section until the next analysis replaces it.
+
+        That is upstream's `set_external_hint` / `set_persistent_hint` pair
+        (`game_state.py:26-62`, `runner.py:497-508`): the log's definition includes
+        "your own prior analyses", and the section a `tail` lands on always says what
+        the agent was doing when it issued that action. The first version of this port
+        wrote the plan once and the briefing never, so the analysis survived only in
+        the resumed codex conversation -- gone on an overflow reset, and invisible to a
+        `grep PLAN`.
+        """
+        self._plan = (plan or "").strip() or None
+        self._pending_briefing = (briefing or "").strip() or None
 
     def add_note(self, note: str) -> None:
         """Hold a runner-side note (an ESC refusal, say) until the next section.
@@ -109,12 +121,34 @@ class EpisodeLog:
         prev_pos: dict | None,
         frame_name: str | None,
         milestone_note: str = "",
+        plan_step: tuple[int, int] | None = None,
+        verified: str | None = None,
     ) -> None:
+        """One section per environment tick.
+
+        The header carries what upstream's carries (`runner.py:495`): the plan step
+        this tick belongs to and, under the hint protocol, the environment's
+        verification state -- upstream's `Score:`. That field is the same bit the arm
+        already receives on change as a `[MILESTONE]` line, written where every
+        `tail` sees it instead of once per transition; under the no-hint protocol
+        `verified` is None and the field is absent, as the baseline's status section
+        is.
+        """
         with self.path.open("a", encoding="utf-8") as f:
             f.write(f"\n{SEPARATOR}\n")
-            f.write(f"Action {action_num} | Step {step}\n\n")
-            if self._pending_plan:
-                block = f"[PLAN]\n{self._pending_plan}\n"
+            header = f"Action {action_num} | Step {step}"
+            if plan_step:
+                header += f" | Plan Step {plan_step[0]}/{plan_step[1]}"
+            if verified is not None:
+                header += f" | Verified: {verified}"
+            f.write(f"{header}\n\n")
+            blocks = []
+            if self._pending_briefing:
+                blocks.append(f"[PLAN]\n{self._pending_briefing}\n")
+                self._pending_briefing = None
+            if self._plan:
+                blocks.append(f"[PLAN]\n{self._plan}\n")
+            for block in blocks:
                 if self.stateless:
                     # The stateless ablation keeps the plan for our records but does
                     # not carry it forward: next turn sees only the objective trace.
@@ -122,7 +156,6 @@ class EpisodeLog:
                         pf.write(f"\n{SEPARATOR}\nAction {action_num}\n{block}")
                 else:
                     f.write(f"{block}\n")
-                self._pending_plan = None
             for note in self._pending_notes:
                 f.write(f"[NOTE] {note}\n")
             self._pending_notes.clear()
@@ -137,11 +170,18 @@ class EpisodeLog:
         """Write the copy the agent actually reads.
 
         `window` follows PRO-LONG: None keeps everything, 0 keeps the header plus the
-        latest section, N keeps the header plus the last N sections.
+        latest section, N keeps the header plus the last N sections, -1 writes no log
+        at all (the No-Log control).
         """
         text = self.path.read_text(encoding="utf-8")
         if window is None:
             dest.write_text(text, encoding="utf-8")
+            return dest
+        if window == -1:
+            # The No-Log control (upstream `--log-window -1`): there is no log file. The
+            # current state travels in the turn prompt instead, and whatever the agent
+            # wants to remember it must write itself.
+            dest.unlink(missing_ok=True)
             return dest
         parts = re.split(rf"(?={re.escape(SEPARATOR)}\n)", text)
         head = parts[0] if parts and not parts[0].startswith(SEPARATOR) else ""
@@ -153,7 +193,8 @@ class EpisodeLog:
         dest.write_text(head + "".join(kept), encoding="utf-8")
         return dest
 
-    def publish(self, visible: Path, window: int | None, stateless: bool) -> dict:
+    def publish(self, visible: Path, window: int | None, stateless: bool,
+                current_frame: str | None = None) -> dict:
         """Build the directory the agent is given, and remove what the ablation denies it.
 
         Upstream keeps the canonical record in the run directory and hands Codex a
@@ -183,7 +224,11 @@ class EpisodeLog:
 
         visible.mkdir(parents=True, exist_ok=True)
         view = self.windowed_copy(visible / "logs.txt", window)
-        allowed = set(_FRAME_RE.findall(view.read_text(encoding="utf-8")))
+        allowed = (set(_FRAME_RE.findall(view.read_text(encoding="utf-8")))
+                   if view.exists() else set())
+        if window == -1:
+            # No history by any route: only the frame the turn attaches.
+            allowed = {current_frame} if current_frame else set()
 
         for name in sorted(allowed):
             src, dst = self.workspace / name, visible / name

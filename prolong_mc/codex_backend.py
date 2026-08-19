@@ -683,7 +683,16 @@ class CodexTurn:
     @staticmethod
     def extract_plan(message: str) -> str:
         """Pull the [PLAN] block the prompt asks for; fall back to the last lines."""
-        match = re.search(r"\[PLAN\]\s*(.+)", message, re.DOTALL)
+        return CodexTurn.split_briefing(message)[1]
+
+    @staticmethod
+    def split_briefing(message: str) -> tuple[str, str]:
+        """(briefing, plan): the text before the [PLAN] marker and the block after it,
+        as upstream splits its `hint`/`plan` pair (`codex_agent.py:677-681`). Without a
+        marker the whole message is the plan's stand-in (last 400 chars) and there is
+        no briefing."""
+        text = (message or "").strip()
+        match = re.search(r"\[PLAN\]\s*(.+)", text, re.DOTALL)
         if match:
-            return match.group(1).strip()
-        return message.strip()[-400:]
+            return text[: match.start()].strip(), match.group(1).strip()
+        return "", text[-400:]
