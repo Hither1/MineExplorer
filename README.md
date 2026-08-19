@@ -416,6 +416,14 @@ change; what it re-emits does — so it is a different arm, recorded in
 kept apart by `summarize_4hop.py`. `bench_agent_latency.py --style compact`
 times it and reports how often the memory / graph / plan actually changed.
 
+Both knobs apply to the default and hypothesis agents on **either** channel — the same
+code builds the request, and `CodexProvider` flattens it into one text prompt plus image
+files, so the ordering survives (`prompt_layout_check.py --codex` measures the shared
+prefix there: 1–3 % legacy → 94–96 % append-only). What they buy on the codex channel is
+small, though: that arm is priced by its 120 s ceiling and 3–5 round trips per answered
+call, not by our prefill. PRO-LONG writes its own prompt, so `--agent-mode prolong`
+rejects both flags rather than ignoring them.
+
 ### The codex arms' sandbox
 
 Upstream PRO-LONG runs its agent in a Docker container on an `--internal` network

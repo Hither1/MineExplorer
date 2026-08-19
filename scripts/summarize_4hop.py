@@ -1,13 +1,15 @@
 """One table for the strict 4-hop campaign: scene x arm, from the cells' own files.
 
-Reads outputs/<prefix>-<agent>-<channel>-<scene>/Qwen3.8-27B/4-hop/<scene>/result.json,
+Reads outputs/<prefix>-<agent>-<channel>-<scene>/<model>/4-hop/<scene>/result.json (any model;
+--model narrows to one, and the arm label carries the model as soon as a prefix holds more
+than one, since two checkpoints are never one arm),
 the cell log (wall clock, which server, model calls, calls that hit the ceiling) and, for
 the codex arms, the rollouts (requests, tokens and view_image calls, codex's own
 accounting): PRO-LONG's one resumed thread is the file the vision audit points at; the
 default/hypothesis agents through CodexProvider make one thread per step, all under the
 cell's codex_home (run_cell.sh sets CODEX_EPISODE_HOME there).
 
-    python scripts/summarize_4hop.py [--prefix c4h] [--md]
+    python scripts/summarize_4hop.py [--prefix c4h] [--model Qwen3.5-27B] [--md]
 """
 from __future__ import annotations
 
@@ -86,13 +88,19 @@ def codex_rollouts(res: Path, tag: str) -> list[Path]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prefix", default="c4h")
+    ap.add_argument("--model", default="", help="only cells run with this model (default: every model found)")
     ap.add_argument("--md", action="store_true", help="markdown table")
     args = ap.parse_args()
 
     rows = []
-    for res in sorted(ROOT.glob(f"outputs/{args.prefix}-*/Qwen3.8-27B/4-hop/*/result.json")):
+    for res in sorted(ROOT.glob(f"outputs/{args.prefix}-*/*/4-hop/*/result.json")):
         j = json.loads(res.read_text())
         tag = res.parts[-5]
+        # eval_benchmark.py writes <output-dir>/<model with "/" -> "_">/4-hop/<scene>/;
+        # result.json records the model itself, so the directory name is only a fallback.
+        model = j.get("model") or res.parts[-4]
+        if args.model and model != args.model:
+            continue
         agent, channel = j["agent_mode"], j["provider"]
         # A non-legacy request layout or a non-full response style is a different arm
         # (mc_agent/context.py PROMPT_LAYOUTS / RESPONSE_STYLES); it must not be pooled with
@@ -108,11 +116,15 @@ def main() -> int:
         if channel == "codex":
             reqs, tin, tout, views = rollout_cost(codex_rollouts(res, tag))
         rows.append(dict(
-            scene=scene, arm=arm, ms=f"{j['milestones_completed']}/{j['milestones_trackable']}",
+            scene=scene, arm=arm, model=model, ms=f"{j['milestones_completed']}/{j['milestones_trackable']}",
             steps=j["total_steps"], end=j["termination_reason"], frames=",".join(str(f) for f in frames),
             wall=wall, server=server, calls=calls, ceil=timeouts, reqs=reqs, views=views,
             tok_in=tin, tok_out=tout, sandboxed=j.get("codex_sandboxed", "-"),
         ))
+    # Two checkpoints are two arms. Say so in the label rather than pooling them silently.
+    if len({r["model"] for r in rows}) > 1:
+        for r in rows:
+            r["arm"] = f"{r['model']}/{r['arm']}"
     rows.sort(key=lambda r: (r["scene"], r["arm"]))
     cols = ["scene", "arm", "ms", "steps", "end", "frames", "wall", "server", "calls", "ceil", "reqs", "views", "tok_in", "tok_out", "sandboxed"]
     if args.md:

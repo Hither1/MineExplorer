@@ -3,13 +3,15 @@
 
   .venv/bin/python scripts/prompt_layout_check.py --write-golden golden.json   # before a change
   .venv/bin/python scripts/prompt_layout_check.py --golden golden.json         # after: legacy unchanged?
-  .venv/bin/python scripts/prompt_layout_check.py --tokenize-url http://192.168.2.20:8004
+  .venv/bin/python scripts/prompt_layout_check.py --tokenize-url http://192.168.2.20:8004 [--codex]
 
 For a fixed synthetic episode it builds the default and hypothesis agents' messages at two
 consecutive steps under every layout and reports (a) the sha256 of the legacy messages against a
 golden file -- neither option may change the campaign arm's (legacy/full) prompt by a byte -- and
 (b) with --tokenize-url, how many leading tokens the two steps' text share, i.e. what the
-server's prefix cache can reuse (approximate: text parts only, images dropped; the server's own
+server's prefix cache can reuse (--codex measures the same on the codex channel, whose provider
+flattens the message list into one text prompt plus image files, so the layout survives but the
+images leave the token stream) (approximate: text parts only, images dropped; the server's own
 "Prefix cache hit rate" on a live smoke is the real number). Frame windows follow
 eval_benchmark.py's policy for the layout (sliding 20 vs append-only 20-29).
 """
@@ -37,6 +39,7 @@ from eval_benchmark import FRAME_BUFFER_SIZE, FRAME_WINDOW_REBASE  # noqa: E402
 from mc_agent import DefaultAgent, DefaultContextBuilder, MinerRLActionSpace  # noqa: E402
 from mc_agent.context import PROMPT_LAYOUTS, RESPONSE_STYLES  # noqa: E402
 from mc_agent.hypothesis_agent import HypothesisAgent, HypothesisContextBuilder  # noqa: E402
+from mc_agent.llm_provider import CodexProvider  # noqa: E402
 
 
 class _Capture:
@@ -67,14 +70,17 @@ def _window(step: int, layout: str) -> list[np.ndarray]:
     return list(buf)
 
 
+MODEL = "Qwen3.8-27B"  # a label on the agent object; nothing here calls a server with it
+
+
 def _messages(kind: str, layout: str, step: int, memory: str, movement: str, style: str = "full"):
     provider = _Capture()
     if kind == "default":
-        agent = DefaultAgent(MinerRLActionSpace(), provider, DefaultContextBuilder, "Qwen3.8-27B",
+        agent = DefaultAgent(MinerRLActionSpace(), provider, DefaultContextBuilder, MODEL,
                              prompt_layout=layout, response_style=style)
     else:
         agent = HypothesisAgent(action_space=MinerRLActionSpace(), provider=provider,
-                                context_builder_class=HypothesisContextBuilder, model="Qwen3.8-27B",
+                                context_builder_class=HypothesisContextBuilder, model=MODEL,
                                 prompt_layout=layout, response_style=style)
         agent._apply_hypothesis_ops(json.dumps({
             "thought": "t", "action": {}, "memory_update": "m",
@@ -98,12 +104,35 @@ def _sha(messages) -> str:
     return hashlib.sha256(json.dumps(messages, sort_keys=True).encode()).hexdigest()
 
 
+def _server_model(url: str) -> str:
+    """Whichever checkpoint this server serves. /tokenize 404s on any other name, and the dev
+    slot has served both Qwen3.8-27B and Qwen3.5-27B on the same port."""
+    import requests
+    cache = getattr(_server_model, "_cache", None)
+    if cache is None:
+        cache = _server_model._cache = {}
+    key = url.rstrip("/")
+    if key not in cache:
+        r = requests.get(key + "/v1/models", timeout=10)
+        r.raise_for_status()
+        cache[key] = r.json()["data"][0]["id"]
+    return cache[key]
+
+
 def _text_tokens(url: str, messages) -> list[int]:
     import requests
     text_only = [{"role": "user", "content": [c for c in messages[0]["content"] if c["type"] == "text"]}]
     r = requests.post(url.rstrip("/") + "/tokenize",
-                      json={"model": "Qwen3.8-27B", "messages": text_only, "add_generation_prompt": True},
+                      json={"model": _server_model(url), "messages": text_only, "add_generation_prompt": True},
                       timeout=60)
+    r.raise_for_status()
+    return r.json()["tokens"]
+
+
+def _prompt_tokens(url: str, prompt: str) -> list[int]:
+    """Tokens of a raw text prompt (the codex channel sends text, not a message list)."""
+    import requests
+    r = requests.post(url.rstrip("/") + "/tokenize", json={"model": _server_model(url), "prompt": prompt}, timeout=60)
     r.raise_for_status()
     return r.json()["tokens"]
 
@@ -132,6 +161,10 @@ def main() -> int:
     ap.add_argument("--golden", help="compare legacy sha256s against this file")
     ap.add_argument("--tokenize-url", help="server root, e.g. http://192.168.2.20:8004; measures shared prefix")
     ap.add_argument("--dump-dir", help="write each style's instruction block (default and hypothesis) here, to read")
+    ap.add_argument("--codex", action="store_true",
+                    help="with --tokenize-url: the same shared-prefix measurement on the codex channel's "
+                         "flattened prompt (CodexProvider._flatten), which is what a default/hypothesis "
+                         "x codex cell actually sends")
     args = ap.parse_args()
 
     legacy = {}
@@ -179,6 +212,22 @@ def main() -> int:
                 m = _messages(kind, "append-only", 25, MEM[0], MOVE[0], style)
                 head = [{"role": "user", "content": [m[0]["content"][0]]}]
                 print(f"style {style:8s} {kind:10s}: instruction block {len(_text_tokens(args.tokenize_url, head))} tokens")
+    if args.codex and args.tokenize_url:
+        import tempfile
+        for style in RESPONSE_STYLES:
+            for layout in PROMPT_LAYOUTS:
+                for kind, step in (("default", 25), ("hypothesis", 25)):
+                    m1 = _messages(kind, layout, step, MEM[0], MOVE[0], style)
+                    m2 = _messages(kind, layout, step + 1, MEM[1] % (step + 1), MOVE[1], style)
+                    with tempfile.TemporaryDirectory() as d1, tempfile.TemporaryDirectory() as d2:
+                        p1, imgs = CodexProvider._flatten(m1, Path(d1))
+                        p2, _ = CodexProvider._flatten(m2, Path(d2))
+                    t1 = _prompt_tokens(args.tokenize_url, p1)
+                    t2 = _prompt_tokens(args.tokenize_url, p2)
+                    shared = _lcp(t1, t2)
+                    print(f"codex {style:8s} {layout:12s} {kind:10s}: flattened {len(t1)} -> {len(t2)} tok "
+                          f"({len(imgs)} images as files), shared prefix {shared} "
+                          f"({100 * shared / len(t2):.0f}%, ~{shared // 800} blocks of 800)")
     return rc
 
 

@@ -12,3 +12,4 @@
 - 08:58-09:08 Dev server switched to Qwen3.5-27B TP=1 k=3 (`qwen35-serve/run/qwen35-dev.k3.sh`); `run/qwen38-dev.sh` restored to the k3 Qwen3.8 file on disk after a --dry-run overwrote it. Commit 6ca68e7 pushed.
 - 09:08-09:29 Qwen3.5 style bench + two 60-step fast cells (staggered 90 s; no reset hang). `run_cell.sh` takes MODEL= now.
 - 09:30 Report section 6 complete (bench, real cells, Qwen3.5); memory files updated; dev server left on Qwen3.5 k=3.
+- 09:45 dz's follow-ups answered: (1) layout alone is -37/-45%, compact adds the rest -> both documented as independent choices in the report's contract; (2) codex/prolong reach measured and written up; (3) the model name is out of launch_4hop.sh (MODEL/MODEL_DIR), summarize_4hop.py (reads it from result.json, --model filter, labels arms by model when a prefix holds more than one) and prompt_layout_check.py (asks the server via /v1/models -- the hardcoded name 404'd once the dev slot moved to Qwen3.5).

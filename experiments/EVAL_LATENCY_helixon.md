@@ -136,10 +136,14 @@ result.json records `prompt_layout: append-only`, milestone 1/4 at frame 10, 4.0
   against the TP=1 k=3 dev server (`:8004`, GPU 1) to choose between 3 × TP=2 and 7 × TP=1 for
   a 7-cell arm.
 - Arms: `PROMPT_LAYOUT` / `RESPONSE_STYLE` unset (legacy / full) keeps every arm comparable
-  with the c4h campaign; `PROMPT_LAYOUT=append-only RESPONSE_STYLE=compact` for **all** arms of
-  a new comparison cuts the direct arms' step time by 62–69 % at 3 cells/server (§6;
-  `launch_4hop.sh` tags them `-append-only-compact`). Both are dz's choice; nothing here
-  changes by default.
+  with the c4h campaign. The two knobs are independent and either can be taken alone:
+  `PROMPT_LAYOUT=append-only` alone is −37/−45 % (default 7.3 → 4.6 s, hypothesis 13.7 → 7.6 s
+  at 3 cells/server) and changes only what the model *reads* — state after the frames, window
+  20–29 — leaving every reply's format and length exactly as the campaign's; adding
+  `RESPONSE_STYLE=compact` takes it to −62/−69 % (2.8 s / 4.3 s) but also changes what the
+  model *writes*. Smallest protocol delta for most of the speed: layout only. Fastest:
+  both, for **all** arms of the comparison (`launch_4hop.sh` tags them
+  `-append-only-compact`). dz's choice; nothing here changes by default.
 - Do not add layout/style cells to a legacy campaign, and do not pool them: `summarize_4hop.py`
   labels them `agentxchannel[layout,style]`.
 
@@ -254,3 +258,27 @@ bare `<think>` once — a Qwen3.5 quirk with thinking off, the retry parsed); hy
 takes `MODEL=Qwen3.5-27B` (default unchanged); `launch_4hop.sh` / `summarize_4hop.py` still
 look for `outputs/<tag>/Qwen3.8-27B/...` and need the model name lifted before a Qwen3.5
 campaign is launched through them.
+
+**Which arms these two knobs reach.** Every number above is the direct (vLLM) channel, which is
+where the arms' step time actually lives. For the other two:
+
+- `default × codex` and `hypothesis × codex`: the same agent code builds the request, so both
+  flags apply and are recorded in `result.json`. `CodexProvider._flatten` renders the message
+  list as one text prompt plus image *files* on disk, so the ordering survives while the images
+  leave the token stream; measured on the flattened prompt (`prompt_layout_check.py --codex`),
+  the step-to-step shared prefix goes 1–3 % (legacy) → 52–75 % (static-first) → 94–96 %
+  (append-only), i.e. the cache mechanism works there too. It just does not buy much: a codex
+  step is priced by the 120 s ceiling (28–37 % of calls) and, on an answered call, 3–5 round
+  trips of `view_image`/PIL work over 29–45 s, of which the first request's ~9k uncached tokens
+  are ~2 s. `compact` only shortens codex's final answer, not its loop. Untested end to end —
+  do not expect the direct arms' −60 % there.
+- `prolong × codex`: unaffected by construction. PRO-LONG writes its own prompt (`prolong_mc`,
+  its own AGENTS.md workflow and one resumed conversation), so `_run_benchmark` **rejects**
+  `--prompt-layout` / `--response-style` for `--agent-mode prolong` rather than accepting a flag
+  it would silently ignore.
+
+One cost worth naming: the compact instruction block is *bigger* than the full one (default
+1789 vs 1588 tokens, hypothesis 4653 vs 4622) — the rules are more explicit and it carries the
+memory line. Under `append-only` that block is static and cached, so it is paid once per cell;
+under `legacy` it is re-prefilled every step, which is part of why legacy/compact is only
+7.3 → 5.5 s.

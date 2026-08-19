@@ -50,10 +50,15 @@ PROVIDER_CODEX_TIMEOUT=${PROVIDER_CODEX_TIMEOUT:-120}
 PROMPT_LAYOUT=${PROMPT_LAYOUT:-legacy}
 # Same for the response style (run_cell.sh -> --response-style): full is today's protocol.
 RESPONSE_STYLE=${RESPONSE_STYLE:-full}
+# The checkpoint the cells talk to. It is also a path segment: eval_benchmark.py writes
+# <output-dir>/<model with "/" -> "_">/4-hop/<scene>/result.json, which is what the resume
+# check and the closing table below read. Set MODEL to whatever $SERVERS actually serve.
+MODEL=${MODEL:-Qwen3.8-27B}
+MODEL_DIR=${MODEL//\//_}
 LAYOUT_SUFFIX=""
 [[ "$PROMPT_LAYOUT" != "legacy" ]] && LAYOUT_SUFFIX="-$PROMPT_LAYOUT"
 [[ "$RESPONSE_STYLE" != "full" ]] && LAYOUT_SUFFIX="$LAYOUT_SUFFIX-$RESPONSE_STYLE"
-export PROMPT_LAYOUT RESPONSE_STYLE
+export PROMPT_LAYOUT RESPONSE_STYLE MODEL
 read -r -a servers <<< "$SERVERS"
 
 # Pending cells first, then deal servers: a finished cell must not consume a server slot.
@@ -62,14 +67,14 @@ for arm in $ARMS; do
   agent=${arm%%:*}; channel=${arm##*:}
   for s in $SCENES; do
     tag="$PREFIX-$agent-$channel$LAYOUT_SUFFIX-$s"
-    if [[ -f "outputs/$tag/Qwen3.8-27B/4-hop/$s/result.json" ]]; then
+    if [[ -f "outputs/$tag/$MODEL_DIR/4-hop/$s/result.json" ]]; then
       echo "[launcher] $(date '+%H:%M:%S') skip $tag (result.json exists)"
       continue
     fi
     cells+=("$agent $channel $s")
   done
 done
-echo "[launcher] $(date '+%H:%M:%S') ${#cells[@]} cells pending, conc=$CONC, servers=${#servers[@]}, layout=$PROMPT_LAYOUT style=$RESPONSE_STYLE"
+echo "[launcher] $(date '+%H:%M:%S') ${#cells[@]} cells pending, conc=$CONC, servers=${#servers[@]}, model=$MODEL, layout=$PROMPT_LAYOUT style=$RESPONSE_STYLE"
 
 running=0
 i=0
@@ -100,7 +105,7 @@ for arm in $ARMS; do
   agent=${arm%%:*}; channel=${arm##*:}
   for s in $SCENES; do
     tag="$PREFIX-$agent-$channel$LAYOUT_SUFFIX-$s"
-    r="outputs/$tag/Qwen3.8-27B/4-hop/$s/result.json"
+    r="outputs/$tag/$MODEL_DIR/4-hop/$s/result.json"
     if [[ -f "$r" ]]; then
       python3 -c "import json,sys; j=json.load(open(sys.argv[1])); print(f\"{sys.argv[2]:30s} steps={j['total_steps']:3d} {j['termination_reason']:10s} milestones={j['milestones_completed']}/{j['milestones_trackable']} sandboxed={j.get('codex_sandboxed','-')}\")" "$r" "$tag"
     else
