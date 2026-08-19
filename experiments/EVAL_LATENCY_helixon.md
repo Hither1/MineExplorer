@@ -267,11 +267,8 @@ where the arms' step time actually lives. For the other two:
   list as one text prompt plus image *files* on disk, so the ordering survives while the images
   leave the token stream; measured on the flattened prompt (`prompt_layout_check.py --codex`),
   the step-to-step shared prefix goes 1–3 % (legacy) → 52–75 % (static-first) → 94–96 %
-  (append-only), i.e. the cache mechanism works there too. It just does not buy much: a codex
-  step is priced by the 120 s ceiling (28–37 % of calls) and, on an answered call, 3–5 round
-  trips of `view_image`/PIL work over 29–45 s, of which the first request's ~9k uncached tokens
-  are ~2 s. `compact` only shortens codex's final answer, not its loop. Untested end to end —
-  do not expect the direct arms' −60 % there.
+  (append-only), i.e. the cache mechanism works there too. It just does not buy much there —
+  see §7, where the codex arms' cost is measured.
 - `prolong × codex`: unaffected by construction. PRO-LONG writes its own prompt (`prolong_mc`,
   its own AGENTS.md workflow and one resumed conversation), so `_run_benchmark` **rejects**
   `--prompt-layout` / `--response-style` for `--agent-mode prolong` rather than accepting a flag
@@ -282,3 +279,65 @@ One cost worth naming: the compact instruction block is *bigger* than the full o
 memory line. Under `append-only` that block is static and cached, so it is paid once per cell;
 under `legacy` it is re-prefilled every step, which is part of why legacy/compact is only
 7.3 → 5.5 s.
+
+## 7. What the codex-driven arms actually cost, and where their room is (2026-08-19 10:00)
+
+Read off the finished c4h cells and the running q35 cells — their logs and the rollouts codex
+itself wrote — with no new runs (`scripts/codex_cost.py --prefix <c4h|q35> --arm <default|prolong>`;
+the numbers below are per arm, all seven cells pooled).
+
+| | `default × codex` (c4h, Qwen3.8, ceiling 120 s) | `prolong × codex` (q35, Qwen3.5, prefix-cached) |
+|---|---|---|
+| model calls | 1.07 per **step** (one fresh `codex exec` each) | one turn per **6–11 steps** (one resumed conversation) |
+| step / turn time | step med 63 s (p90 121 s) | turn med 16–20 s (p90 41 s) → **4.1–6.5 s of model time per step** |
+| requests per call/turn | med 7 (p90 33) | med 3 (p90 4) |
+| input tokens per call/turn | 117k, **88 % cached** | 106k, **96 % cached** |
+| **output tokens per call/turn** | **1172–1450 (answered)**, p90 3.5–4k | **220** (p90 466) |
+| tools per call/turn | 4.0 PIL analyses, 3.6 `view_image`, 3.8 `echo`, 1.3 other | 2.1 `exec_command`, ~0 `view_image` |
+| tool execution time | 3.7 s (5 % of the call) | 0.5 s (3 % of the turn) |
+| ceiling | 33 % of calls, **57 % of the arm's call time**; 99 % of the arm's wall is inside these calls | not reached |
+
+**Both codex arms are decode-bound at the server's per-request rate, exactly like the direct
+arms.** Matching each rollout to its log call (`answered` calls only): 1172–1450 output tokens in
+38–48 s = **29–30 tokens/s effective**, which is precisely the per-request decode rate measured
+for 2–3 concurrent requests at MTP k=1. Nothing else is material: tool execution is 5 %, the
+first request (startup + prefill + first decode) is 3.7 s, the sandbox start is ~1.6 s. And a
+call that hits the ceiling is **not hung**: it has generated 3.0–3.5k tokens at 25–29 tok/s when
+the ceiling cuts it — it is an unbounded generation loop running at full speed.
+
+What follows, ranked:
+
+1. **MTP `--spec-tokens 3` is the biggest lever for the codex arms too, and it is free.** Their
+   time is ~95 % decode, so ×1.7 decode ⇒ answered calls 38–48 s → **22–28 s**, PRO-LONG's turn
+   16–20 s → ~10–13 s. It should also *raise the score*: within the same 120 s ceiling a stalled
+   call would produce ~5–6k tokens instead of 3.0–3.5k, so the calls that needed a little more
+   room answer instead of becoming no-ops. Exact in distribution, no protocol change. (This is
+   the same recommendation as §5; the point is that it is worth *more* in absolute seconds on the
+   codex arms than on the direct ones.)
+2. **Decode headroom per cell.** 29–30 tok/s is the *shared-server* rate; single-stream is
+   43–70 tok/s. A step that is 1200–3500 generated tokens pays that rate linearly, so how many
+   cells share a server matters more for the codex arms than for anything else. Scheduling, not
+   code.
+3. **The prompt-side knobs are weak here.** `append-only` moves the codex prompt's reusable
+   prefix from 1–3 % to 94–96 % (§6), but prefill is only ~4 s of a 40–85 s call and codex's own
+   conversation is already 90–96 % cached from the second request on: ~1–2 s. `compact` shortens
+   only our final JSON (~200–400 of 1200–3500 tokens): ~10–20 % on answered calls, nothing on
+   stalled ones. Take them if the direct arms take them; do not adopt them *for* codex.
+4. **The cost driver on `default × codex` is the model's own tool loop** — ~1400 of its ~1800
+   output tokens are `exec_command` arguments (PIL pixel analyses, `echo`), not the answer. That
+   loop is *what this arm measures*: it is PRO-LONG's scaffold control, same tool surface, so
+   removing the tools would make it a different arm and break the comparison. If a cheaper
+   control is wanted it is a protocol decision (e.g. "answer from the attached frames, do not
+   analyse them with code" in both codex arms' prompts — a blanket no-tools is impossible since
+   PRO-LONG's workflow writes files), not an optimisation.
+5. **The ceiling is a shallow trade, and k=3 improves it for free.** Measured what-if over the
+   arm's 2248 calls: ceiling 90 s → 85 % of today's call time, 5 % of answered calls lost;
+   75 s → 77 %, 11 % lost; 60 s → 67 %, 22 % lost. The arm is expensive because an answered call
+   is 40 s, not only because a third of them stall.
+6. **PRO-LONG has little headroom and needs none.** It is already the cheapest arm per step
+   (4.1–6.5 s of model time, one turn per 6–11 steps, 220 output tokens per turn, 96 % cached
+   input, 3 % tool time). Its queue depth is part of the method, not a knob to tune.
+7. **Already fine, do not "fix":** a ceiling kills the whole process group (`run_codex`,
+   `start_new_session` + `killpg`), so a stalled call stops costing the server immediately;
+   JSON retries are 1.07 calls/step; prefix caching is working on the codex conversation.
+
