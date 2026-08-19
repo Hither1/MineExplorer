@@ -22,6 +22,11 @@ This is one seed per cell. It is a run, not a claim; the earlier five-seed 0306 
 (`outputs/s0306-*`) spread 2/4–4/4 for PRO-LONG and 3/4–4/4 for the default arm on one
 scene, which is the scale of the noise here.
 
+Three of these four arms were repeated on the **Qwen3.5-27B** checkpoint on 2026-08-19,
+same scenes and same contract — see
+[RESULTS_helixon_4hop_qwen35.md](RESULTS_helixon_4hop_qwen35.md). The ordering below
+survives the checkpoint change.
+
 ## What ran, exactly
 
 | | default × vllm | hypothesis × vllm | prolong × codex | default × codex |
