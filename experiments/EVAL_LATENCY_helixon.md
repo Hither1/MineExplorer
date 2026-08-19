@@ -343,7 +343,10 @@ What follows, ranked:
 
 ## 8. Can codex's tools be restricted, and what else is tunable there (2026-08-19 11:00)
 
-Verified against the codex the arms actually run (`codex-cli 0.147.0`, through
+Verified against the codex the arms actually run (`codex-cli 0.147.0`, upgraded to 0.148.0
+by another user at 11:23 mid-session — the tool list is unchanged under 0.148, but a codex
+upgrade changes the harness the arms run inside, so runs taken across it are not bit-comparable;
+through
 `prolong_mc/codex_sandbox.sh`, model on the dev server). Nothing below is committed to an arm —
 these are the knobs and what each is worth.
 
@@ -402,16 +405,35 @@ fails the check exactly like one that appears), with the same reasoning in its c
 **Recommendation: do not restrict the tools. Re-measure the arm on Qwen3.5 before assuming it is
 expensive.**
 
-**`--output-schema` is the one codex setting worth adopting, and it is a reliability fix.** It
-takes a JSON Schema file and constrains the final message; against vLLM's Responses API it works
-(the reply came back as exactly `{thought, action, memory_update}`, no fence, no tools). What it
-buys: the codex arms cannot answer with unparsable text. On the c4h campaign the
-`default × codex` arm logged 148 parse failures / retry-exhaustions over 2266 calls (~7 % of
-calls are retries the arm pays for at 8–40 s each) while the direct arms logged none. One
-implementation detail decides whether it works: **the schema file must be inside the call's
-sandbox workspace** — with the file in `/tmp` outside the workspace codex fails the whole call
-with `schema file …: No such file or directory` (measured both ways), so it has to be written
-into `CodexProvider`'s per-call workdir, not passed as a static flag.
+**`--output-schema` is the one codex setting worth adopting, and it is a reliability fix —
+now implemented** as `--codex-output-schema` / `CODEX_OUTPUT_SCHEMA=1` (opt-in, default off).
+It constrains codex's final message to the agent's reply schema. What it buys: the codex arms
+cannot answer with unparsable text. On the c4h campaign the `default × codex` arm logged 148
+parse failures / retry-exhaustions over 2266 calls (~7 % of calls are retries the arm pays for
+at 8–40 s each) while the direct arms logged none.
+
+The one implementation detail that decides whether it works: **the schema file must be inside
+the call's sandbox workspace** — with the file in `/tmp` outside the workspace codex fails the
+whole call with `schema file …: No such file or directory` (measured both ways), so
+`CodexProvider` writes it into the per-call workdir rather than taking a static flag. The schema
+comes from `default_reply_schema` / `hypothesis_reply_schema`, which track the prompt: under
+`compact` the keys the model only sends when they change (`memory_update`, `hypotheses`, `plan`)
+stay optional.
+
+Verified on codex 0.148, both agents × both styles, three real replayed steps each:
+
+| | schema off | schema on |
+|---|---|---|
+| reply keys | the right ones, but the object arrives markdown-fenced under `full` | exactly the schema's key set, never fenced |
+| `compact` optional keys | model's choice | still the model's choice (one reply came back `thought`+`action` only) |
+| step time (n=3, dev server) | 24 / 19 / 15 / 12 s | 18 / 14 / 13 / 10 s |
+
+and end to end through `run_cell.sh`: a 10-step `default × codex` cell on Qwen3.5, 8 s/step,
+**0 parse failures**, `result.json` carrying `codex_output_schema: true`. The step times say it
+is not slower — three steps per cell is too few to claim it is faster. `_run_benchmark` rejects
+the flag for `--agent-mode prolong` and for non-codex runs, and (fixed while here) all such
+argument checks now run *before* the sandbox session is created, so a rejected combination no
+longer leaks an environment.
 
 **Everything else on the codex side, measured or checked:** the ceiling is a policy knob (§7);
 `--ephemeral` would drop the rollouts, which are the only record of what a call did — do not use

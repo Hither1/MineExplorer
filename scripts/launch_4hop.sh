@@ -50,6 +50,9 @@ PROVIDER_CODEX_TIMEOUT=${PROVIDER_CODEX_TIMEOUT:-120}
 PROMPT_LAYOUT=${PROMPT_LAYOUT:-legacy}
 # Same for the response style (run_cell.sh -> --response-style): full is today's protocol.
 RESPONSE_STYLE=${RESPONSE_STYLE:-full}
+# Codex channel only (run_cell.sh -> --codex-output-schema): constrain the final message
+# to the agent's reply schema. Own tag suffix, same rule as the two above.
+CODEX_OUTPUT_SCHEMA=${CODEX_OUTPUT_SCHEMA:-0}
 # The checkpoint the cells talk to. It is also a path segment: eval_benchmark.py writes
 # <output-dir>/<model with "/" -> "_">/4-hop/<scene>/result.json, which is what the resume
 # check and the closing table below read. Set MODEL to whatever $SERVERS actually serve.
@@ -58,7 +61,8 @@ MODEL_DIR=${MODEL//\//_}
 LAYOUT_SUFFIX=""
 [[ "$PROMPT_LAYOUT" != "legacy" ]] && LAYOUT_SUFFIX="-$PROMPT_LAYOUT"
 [[ "$RESPONSE_STYLE" != "full" ]] && LAYOUT_SUFFIX="$LAYOUT_SUFFIX-$RESPONSE_STYLE"
-export PROMPT_LAYOUT RESPONSE_STYLE MODEL
+[[ "$CODEX_OUTPUT_SCHEMA" == "1" ]] && LAYOUT_SUFFIX="$LAYOUT_SUFFIX-schema"
+export PROMPT_LAYOUT RESPONSE_STYLE CODEX_OUTPUT_SCHEMA MODEL
 read -r -a servers <<< "$SERVERS"
 
 # Pending cells first, then deal servers: a finished cell must not consume a server slot.
@@ -74,7 +78,7 @@ for arm in $ARMS; do
     cells+=("$agent $channel $s")
   done
 done
-echo "[launcher] $(date '+%H:%M:%S') ${#cells[@]} cells pending, conc=$CONC, servers=${#servers[@]}, model=$MODEL, layout=$PROMPT_LAYOUT style=$RESPONSE_STYLE"
+echo "[launcher] $(date '+%H:%M:%S') ${#cells[@]} cells pending, conc=$CONC, servers=${#servers[@]}, model=$MODEL, layout=$PROMPT_LAYOUT style=$RESPONSE_STYLE schema=$CODEX_OUTPUT_SCHEMA"
 
 running=0
 i=0

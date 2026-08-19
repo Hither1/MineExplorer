@@ -37,6 +37,43 @@ from mc_agent.llm_provider import BaseLLMProvider
 from mc_agent.utils import convert_buffer_to_base64_images
 
 
+def hypothesis_reply_schema(style: str = "full") -> dict:
+    """The JSON Schema for the hypothesis agent's reply; see default_reply_schema for why.
+
+    `hypotheses` and `plan` are required under `full` (the prompt asks for them every step,
+    possibly empty) and optional under `compact` (sent only when they change). A hypothesis op
+    needs only its `id`: an update carries the id plus whatever changed.
+    """
+    required = ["thought", "action"] + (["memory_update", "hypotheses", "plan"] if style == "full" else [])
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "thought": {"type": "string"},
+            "action": {"type": "object", "additionalProperties": True},
+            "memory_update": {"type": "string"},
+            "hypotheses": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "id": {"type": "string"},
+                        "statement": {"type": "string"},
+                        "confidence": {"type": "number"},
+                        "status": {"type": "string", "enum": ["active", "confirmed", "refuted", "stale"]},
+                        "depends_on": {"type": "array", "items": {"type": "string"}},
+                        "evidence": {"type": "string"},
+                    },
+                    "required": ["id"],
+                },
+            },
+            "plan": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": required,
+    }
+
+
 class HypothesisContextBuilder(DefaultContextBuilder):
     """Same per-frame captions as DefaultContextBuilder; a different system
     prompt that adds hypothesis-DAG + planning instructions and sections."""

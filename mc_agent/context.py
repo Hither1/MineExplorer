@@ -41,6 +41,31 @@ RESPONSE_STYLES = ("full", "compact")
 STATE_BLOCK_HEADER = "\n**Current state for this step:**"
 
 
+def default_reply_schema(style: str = "full") -> dict:
+    """The JSON Schema for the default agent's reply, mirroring its RESPONSE FORMAT block.
+
+    Only the codex channel uses it (`CodexProvider(output_schema=...)` -> `codex exec
+    --output-schema`, which constrains the final message). It exists because that channel is
+    the only one that can answer with something unparsable: on the c4h campaign the
+    default x codex arm logged 148 parse failures / retry-exhaustions over 2266 calls while
+    the direct arms logged none. The shape must track the prompt: `full` sends the memory
+    every step, `compact` only when it changes, so `memory_update` is required only for `full`.
+    """
+    required = ["thought", "action"] + (["memory_update"] if style == "full" else [])
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "thought": {"type": "string"},
+            # The action space reads whatever keys are present and ignores the rest
+            # (mc_agent/action_space.py), so this stays open.
+            "action": {"type": "object", "additionalProperties": True},
+            "memory_update": {"type": "string"},
+        },
+        "required": required,
+    }
+
+
 class DefaultContextBuilder:
     def __init__(self) -> None:
         self.buffer = StringIO()

@@ -25,7 +25,7 @@ from mc_agent import (
     DefaultAgent, MinerRLActionSpace, OpenAIProvider, VLLMProvider, CodexProvider, DefaultContextBuilder,
     HypothesisAgent, HypothesisContextBuilder,
 )
-from mc_agent.context import PROMPT_LAYOUTS, RESPONSE_STYLES
+from mc_agent.context import PROMPT_LAYOUTS, RESPONSE_STYLES, default_reply_schema
 
 AGENT_MODES = ("default", "hypothesis", "prolong")
 
@@ -250,9 +250,33 @@ def _run_benchmark(
     prolong_stateless: bool = False,
     prompt_layout: str = "legacy",
     response_style: str = "full",
+    codex_output_schema: bool = False,
 ) -> Dict[str, Any]:
     """Run one benchmark scenario and save results."""
     global _shutdown_requested
+
+    # Argument checks first: past this point a sandbox session exists, and a combination
+    # rejected after that leaks it on the sandbox server.
+    if agent_mode not in AGENT_MODES:
+        raise ValueError(f"agent_mode must be one of {AGENT_MODES}, got {agent_mode!r}")
+    if prompt_layout not in PROMPT_LAYOUTS:
+        raise ValueError(f"prompt_layout must be one of {PROMPT_LAYOUTS}, got {prompt_layout!r}")
+    if agent_mode == "prolong" and prompt_layout != "legacy":
+        # PRO-LONG builds its own prompt (prolong_mc); the layouts describe the default and
+        # hypothesis agents' request only.
+        raise ValueError("--prompt-layout applies to --agent-mode default/hypothesis, not prolong")
+    if response_style not in RESPONSE_STYLES:
+        raise ValueError(f"response_style must be one of {RESPONSE_STYLES}, got {response_style!r}")
+    if agent_mode == "prolong" and response_style != "full":
+        raise ValueError("--response-style applies to --agent-mode default/hypothesis, not prolong")
+    if codex_output_schema and not use_codex:
+        # It is a codex CLI flag; the direct channel already gets valid JSON every time.
+        raise ValueError("--codex-output-schema applies to --use-codex runs only")
+    if codex_output_schema and agent_mode == "prolong":
+        # PRO-LONG's reply is its own contract (prolong_mc writes the analyzer's format and
+        # parses it), and it logged zero parse failures on the c4h campaign. Constraining it
+        # would change the method's output surface for no measured gain.
+        raise ValueError("--codex-output-schema applies to --agent-mode default/hypothesis, not prolong")
 
     meta_path = Path(metadata_path)
     with open(meta_path, "r", encoding="utf-8") as f:
@@ -276,28 +300,25 @@ def _run_benchmark(
     if use_codex:
         # Every call's prompt and event stream lands under the scene's own output
         # directory, so a Codex run is inspectable the same way episode.mp4 is.
+        if codex_output_schema:
+            # The reply contract of the agent that is about to run, so the constrained
+            # final message is exactly what its prompt asks for.
+            from mc_agent.hypothesis_agent import hypothesis_reply_schema
+            _schema = (hypothesis_reply_schema(response_style) if agent_mode == "hypothesis"
+                       else default_reply_schema(response_style))
+        else:
+            _schema = None
         _provider = CodexProvider(
             model_name=model,
             reasoning_effort=codex_effort,
             transcript_dir=str(output_dir / "codex_calls"),
             base_url=codex_base_url or None,
+            output_schema=_schema,
         )
     elif use_vllm:
         _provider = VLLMProvider(model_name=model, base_url=vllm_url, temperature=temperature)
     else:
         _provider = OpenAIProvider(AGENT_API_KEY, AGENT_API_BASE, model, temperature=temperature)
-    if agent_mode not in AGENT_MODES:
-        raise ValueError(f"agent_mode must be one of {AGENT_MODES}, got {agent_mode!r}")
-    if prompt_layout not in PROMPT_LAYOUTS:
-        raise ValueError(f"prompt_layout must be one of {PROMPT_LAYOUTS}, got {prompt_layout!r}")
-    if agent_mode == "prolong" and prompt_layout != "legacy":
-        # PRO-LONG builds its own prompt (prolong_mc); the layouts describe the default and
-        # hypothesis agents' request only.
-        raise ValueError("--prompt-layout applies to --agent-mode default/hypothesis, not prolong")
-    if response_style not in RESPONSE_STYLES:
-        raise ValueError(f"response_style must be one of {RESPONSE_STYLES}, got {response_style!r}")
-    if agent_mode == "prolong" and response_style != "full":
-        raise ValueError("--response-style applies to --agent-mode default/hypothesis, not prolong")
     if agent_mode == "prolong":
         # Same env, same loop, same scorer as the baseline; only the memory
         # mechanism differs. Codex is the model channel, so the provider above is
@@ -657,6 +678,10 @@ def _run_benchmark(
         # What the model was asked to write back (see RESPONSE_STYLES). "compact" changes
         # the instructions and what is re-emitted per step, so it too is a different arm.
         "response_style": response_style,
+        # Whether the codex channel's final message was constrained to the agent's reply
+        # schema (`codex exec --output-schema`). Changes what the model emits, so it is
+        # part of the arm.
+        **({"codex_output_schema": codex_output_schema} if use_codex else {}),
         "max_steps": max_steps,
         # Which PRO-LONG arm this is. Recorded only where it means something, and
         # recorded at all because an ablated run pooled with the headline prolong runs
@@ -717,6 +742,7 @@ def _worker_eval(worker_args: dict) -> dict:
         prolong_stateless=worker_args.get("prolong_stateless", False),
         prompt_layout=worker_args.get("prompt_layout", "legacy"),
         response_style=worker_args.get("response_style", "full"),
+        codex_output_schema=worker_args.get("codex_output_schema", False),
     )
 
 
@@ -801,6 +827,14 @@ def eval_benchmark(
                                             "and plan only on steps where they change). Not 'full' = a "
                                             "different arm; recorded in result.json. See RESPONSE_STYLES "
                                             "in mc_agent/context.py."),
+    codex_output_schema: bool = typer.Option(False, "--codex-output-schema",
+                                             help="Codex channel only (default/hypothesis agents): "
+                                                  "constrain codex's final message to the agent's reply "
+                                                  "schema via `codex exec --output-schema`. Removes the "
+                                                  "channel's unparsable-answer failure mode (148 of 2266 "
+                                                  "calls on the c4h default x codex arm) but changes what "
+                                                  "the model emits, so it is a different arm and is "
+                                                  "recorded in result.json."),
 ):
     """Evaluate all benchmark scenarios in benchmark_dir."""
     logger.info(f"--- Starting evaluation (model={model}) ---")
@@ -811,6 +845,8 @@ def eval_benchmark(
         raise ValueError(f"--prompt-layout must be one of {PROMPT_LAYOUTS}, got {prompt_layout!r}")
     if response_style not in RESPONSE_STYLES:
         raise ValueError(f"--response-style must be one of {RESPONSE_STYLES}, got {response_style!r}")
+    if codex_output_schema and not use_codex:
+        raise ValueError("--codex-output-schema applies to --use-codex runs only")
     if shard_count < 1:
         raise ValueError(f"--shard-count must be >= 1, got {shard_count}")
     if not (0 <= shard_index < shard_count):
@@ -901,6 +937,7 @@ def eval_benchmark(
                     prolong_stateless=prolong_stateless,
                     prompt_layout=prompt_layout,
                     response_style=response_style,
+                    codex_output_schema=codex_output_schema,
                 )
             except Exception as e:
                 logger.error(f"[ERROR] {scene_num}: {e}")
@@ -953,6 +990,7 @@ def eval_benchmark(
                     "prolong_stateless": prolong_stateless,
                     "prompt_layout": prompt_layout,
                     "response_style": response_style,
+                    "codex_output_schema": codex_output_schema,
                     "_scene_num": scene_num,
                 })
 

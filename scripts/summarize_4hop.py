@@ -107,7 +107,8 @@ def main() -> int:
         # the legacy cells of the same agent x channel.
         layout = j.get("prompt_layout", "legacy")
         style = j.get("response_style", "full")
-        variant = [v for v in (layout if layout != "legacy" else "", style if style != "full" else "") if v]
+        variant = [v for v in (layout if layout != "legacy" else "", style if style != "full" else "",
+                               "schema" if j.get("codex_output_schema") else "") if v]
         arm = f"{agent}x{channel}" + (f"[{','.join(variant)}]" if variant else "")
         scene = j["scene_id"]
         wall, server, calls, timeouts = wall_and_server(ROOT / "outputs" / f"log-{tag}.txt")

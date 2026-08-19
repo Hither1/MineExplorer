@@ -284,6 +284,7 @@ class CodexProvider(BaseLLMProvider):
         transcript_dir: str | None = None,
         base_url: str | None = None,
         context_window: int | None = None,
+        output_schema: dict | None = None,
     ) -> None:
         super().__init__(api_key=None, api_base=base_url)
         self.default_model = model_name
@@ -301,6 +302,13 @@ class CodexProvider(BaseLLMProvider):
         self.transcript_dir = Path(transcript_dir) if transcript_dir else None
         if self.transcript_dir:
             self.transcript_dir.mkdir(parents=True, exist_ok=True)
+        # When set, `codex exec --output-schema` constrains the final message to this JSON
+        # Schema (see default_reply_schema / hypothesis_reply_schema). This channel is the
+        # only one that can answer with unparsable text -- 148 parse failures over 2266 calls
+        # on the c4h default x codex arm, none on the direct arms -- and the schema removes
+        # that failure mode. It also changes what the model emits, so it is opt-in and the
+        # run records it. The file has to be written per call, not once: see chat().
+        self.output_schema = output_schema
         self._calls = 0
 
         if shutil.which(self.codex_bin) is None and not Path(self.codex_bin).exists():
@@ -309,7 +317,8 @@ class CodexProvider(BaseLLMProvider):
         logger.info(
             f"[CodexProvider] model={model_name} effort={reasoning_effort} "
             f"max_images={max_images} bin={self.codex_bin} "
-            f"endpoint={base_url or 'hosted'}"
+            f"endpoint={base_url or 'hosted'} "
+            f"output_schema={'yes' if output_schema else 'no'}"
         )
 
     @staticmethod
@@ -367,6 +376,14 @@ class CodexProvider(BaseLLMProvider):
         try:
             prompt, images = self._flatten(messages, workdir)
             out_file = workdir / "last_message.txt"
+            # Inside the workdir on purpose: the sandbox (prolong_mc/codex_sandbox.sh) gives
+            # codex a read scope of the workspace only, and a schema anywhere else fails the
+            # whole call with `schema file <path>: No such file or directory` (measured both
+            # ways, 2026-08-19). The workdir is this call's workspace.
+            schema_file = None
+            if self.output_schema:
+                schema_file = workdir / "output_schema.json"
+                schema_file.write_text(json.dumps(self.output_schema), encoding="utf-8")
             cmd = [
                 self.codex_bin, "exec",
                 "--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
@@ -386,6 +403,7 @@ class CodexProvider(BaseLLMProvider):
                 "-c", f'model_reasoning_effort="{effort_for(self.base_url, self.reasoning_effort)}"',
                 "-s", "workspace-write",
                 "-o", str(out_file),
+                *(("--output-schema", str(schema_file)) if schema_file else ()),
                 # The same tool surface the PRO-LONG turns get. This provider is the
                 # scaffold control: an arm whose baseline could web-search while the
                 # arm under test could not would measure the tool surface, not memory.

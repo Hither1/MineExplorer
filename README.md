@@ -424,6 +424,23 @@ small, though: that arm is priced by its 120 s ceiling and 3–5 round trips per
 call, not by our prefill. PRO-LONG writes its own prompt, so `--agent-mode prolong`
 rejects both flags rather than ignoring them.
 
+**The codex channel's reply shape (`--codex-output-schema`, `CODEX_OUTPUT_SCHEMA=1`).**
+The direct channel always returns parseable JSON; the codex channel does not — the c4h
+`default × codex` arm logged 148 parse failures / retry-exhaustions over 2266 calls, each
+paid for at 8–40 s, while the direct arms logged none. With this flag `CodexProvider`
+writes the agent's reply schema (`default_reply_schema` / `hypothesis_reply_schema`,
+which track the RESPONSE FORMAT block and the response style: under `compact`,
+`memory_update` / `hypotheses` / `plan` stay optional) into the call's workspace and
+passes `codex exec --output-schema`. The file must be *inside* that workspace — the
+sandbox gives codex a read scope of the workspace only, and a schema elsewhere fails the
+whole call with `schema file …: No such file or directory`. Verified on codex 0.148 over
+both agents × both styles: with the flag the reply is always exactly the schema's key set
+and never markdown-fenced (without it, `full` replies come back fenced), and a 10-step
+`default × codex` cell ran with 0 parse failures. It changes what the model emits, so it
+is opt-in, recorded in `result.json` as `codex_output_schema`, tagged `-schema` by
+`launch_4hop.sh`, and rejected for `--agent-mode prolong` (PRO-LONG's reply is
+`prolong_mc`'s own contract and it logged zero parse failures).
+
 ### The codex arms' sandbox
 
 Upstream PRO-LONG runs its agent in a Docker container on an `--internal` network
