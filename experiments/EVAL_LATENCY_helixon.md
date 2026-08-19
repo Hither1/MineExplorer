@@ -341,3 +341,61 @@ What follows, ranked:
    `start_new_session` + `killpg`), so a stalled call stops costing the server immediately;
    JSON retries are 1.07 calls/step; prefix caching is working on the codex conversation.
 
+## 8. Can codex's tools be restricted, and what else is tunable there (2026-08-19 11:00)
+
+Verified against the codex the arms actually run (`codex-cli 0.147.0`, through
+`prolong_mc/codex_sandbox.sh`, model on the dev server). Nothing below is committed to an arm —
+these are the knobs and what each is worth.
+
+**The tool surface can be restricted, and codex validates the names.** Today's
+`SAFE_CODEX_FLAGS` leave the model with `exec_command, write_stdin, update_plan,
+request_user_input, view_image` (asked the model to print its own tool list):
+
+| flag | tools left | note |
+|---|---|---|
+| today's `SAFE_CODEX_FLAGS` | exec_command, write_stdin, update_plan, request_user_input, view_image | |
+| `--disable view_image` | the same minus `view_image` | accepted |
+| `--disable shell_tool` | update_plan, request_user_input, view_image | removes `exec_command` **and** `write_stdin` |
+| `--disable plan_tool` / `update_plan` / `request_user_input` | — | `Error: Unknown feature flag` |
+| `-c include_plan_tool=false` | unchanged | accepted and silently ignored by 0.147 |
+
+So `view_image` and the shell can be taken away; `update_plan` and `request_user_input` cannot
+(0.5 and ~0 calls per step, so it does not matter).
+
+**But on Qwen3.5 there is nothing to restrict.** Replaying five real `default × codex` steps
+(the agent's own message list, 20 frames, through `CodexProvider` and the sandbox) against the
+dev server:
+
+| | Qwen3.8 (c4h campaign, 2093 steps) | Qwen3.5 (this probe, 5 steps) | Qwen3.5, `--disable view_image` |
+|---|---|---|---|
+| model requests per step | 7 (p90 33) | **1** | 1 |
+| tool calls per step | 4.0 PIL + 3.6 `view_image` + 3.8 `echo` | **0** | 0 |
+| output tokens per step | 1634 | **207** | 161 |
+| call time | 40 s answered, 33 % hit the 120 s ceiling | **9 s**, 5/5 answered | 8 s, 5/5 answered |
+
+The PIL/`view_image` loop that makes this arm expensive is a **Qwen3.8-with-thinking-off
+behaviour**, not a property of the scaffold: given the same prompt and the same tools, Qwen3.5
+answers in one message without touching a tool. Since the campaign's servers now serve Qwen3.5,
+restricting the tool surface would buy ~1 s per step — and it would cost the thing the arm is
+for (it is PRO-LONG's scaffold control: same tools, minus the memory mechanism). Recommendation:
+**do not restrict the tools; re-measure the arm on Qwen3.5 before assuming it is expensive.**
+(Five replayed steps on an idle server is not a campaign — the number to trust is the first real
+`default × codex` cell on Qwen3.5.)
+
+**`--output-schema` is the one codex setting worth adopting, and it is a reliability fix.** It
+takes a JSON Schema file and constrains the final message; against vLLM's Responses API it works
+(the reply came back as exactly `{thought, action, memory_update}`, no fence, no tools). What it
+buys: the codex arms cannot answer with unparsable text. On the c4h campaign the
+`default × codex` arm logged 148 parse failures / retry-exhaustions over 2266 calls (~7 % of
+calls are retries the arm pays for at 8–40 s each) while the direct arms logged none. One
+implementation detail decides whether it works: **the schema file must be inside the call's
+sandbox workspace** — with the file in `/tmp` outside the workspace codex fails the whole call
+with `schema file …: No such file or directory` (measured both ways), so it has to be written
+into `CodexProvider`'s per-call workdir, not passed as a static flag.
+
+**Everything else on the codex side, measured or checked:** the ceiling is a policy knob (§7);
+`--ephemeral` would drop the rollouts, which are the only record of what a call did — do not use
+it; `web_search`, apps, sub-agents, plugins, image generation and goals are already off and
+`prolong_mc.selftest` asserts the resulting tool list, so a codex upgrade that adds a tool fails
+there rather than silently changing an arm.
+
