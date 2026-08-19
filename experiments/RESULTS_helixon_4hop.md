@@ -164,11 +164,13 @@ default×codex); `ceil` = calls that ended at the per-call ceiling; `reqs`/`view
   `!!!!!!`), 2.1% other prose, 0.7% empty** — so roughly a third of this arm's steps did
   nothing, and its 9/28 is a lower bound under that policy. A higher ceiling would raise
   it at ~1 h per 100 s of ceiling per scene; it would not fix the loop.
-- **The two codex arms could not read the answers.** Across 20,706 `exec_command` calls in
-  `default × codex`, 43 named paths outside the workspace; every one returned only the
-  bind-mount skeleton (`MineExplorer/` shows `outputs` and `prolong_mc` and nothing else),
-  and no tool output anywhere contains a milestone rule, `metadata.json`, or the checker.
-  No `SandboxViolation` (web_search / MCP / subagents) in any cell.
+- **The two codex arms could not read the answers.** Across 23,326 shell calls in this
+  campaign's codex rollouts, 47 named a repository path outside the episode workspace;
+  every one returned only the bind-mount skeleton (`MineExplorer/` shows `outputs` and
+  `prolong_mc` and nothing else). Scanning every rollout line of both campaigns (132,468
+  lines, 2,280 sessions), none names a `bench_*` path, the scene metadata or the checker —
+  the one apparent hit is a `find`-style listing of GNOME extensions' own `metadata.json`
+  under `/usr/share`. No `SandboxViolation` (web_search / MCP / subagents) in any cell.
 - **PRO-LONG rarely ends its own episode.** 0306 reached 4/4 at frame 52 and ran to
   300; only 0726 pressed ESC (at 159). Under the hint protocol the [MILESTONE] line does
   say the task is verified; the analyzer just keeps planning. Cost, not score. The two
