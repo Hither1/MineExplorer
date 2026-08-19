@@ -338,6 +338,7 @@ the same file; that is the one value which makes the runner link the account
 credential instead of resolving a local server. Use `SEED_TAG` to distinguish
 repeat seeds of an otherwise identical cell.
 
+<a id="the-server-comes-first"></a>
 **The server comes first.** Both channels talk to one shared vLLM server, and a
 cell refuses to start against a server that cannot outlive it
 (`MODEL_SERVER_MIN_REMAINING`, minutes) rather than losing it mid-episode; it
@@ -452,6 +453,125 @@ set `PROMPT_LAYOUT` / `RESPONSE_STYLE` / `CODEX_OUTPUT_SCHEMA` for the direct ar
 are pooled with — the prolong cells of a `legacy` run of the same `PREFIX`, since under
 any setting of the three they are the same arm. `result.json` records `legacy` / `full`
 for them, which is what they ran.
+
+### Helixon: the strict 4-hop campaign (the formal runs)
+
+Everything in `experiments/` whose name says `helixon` came from the configuration below,
+on the **helixon cluster**. `experiments/README.md` is the record of what ran — settings
+in full, per-wave serving layout, and the 49 episodes as one CSV row each; this section is
+how to run it again. The two are meant to be read together: if they disagree, the record
+is right about what happened and this is right about what to type.
+
+**Three hosts, three things to start, in this order.** A cell holds its sandbox session and
+its server for the whole episode and there is no readiness gate on this path — the
+`MODEL_SERVER_*` waits belong to the Slurm runner (`scripts/launch_matrix.sh`), not to
+`launch_4hop.sh` — so both must be up and verified before the first cell starts, and must
+stay up for the hours the campaign runs.
+
+| host | what runs there | reached as |
+|---|---|---|
+| `a230` | the Minecraft sandbox, one rootless podman container | `192.168.2.22:8000` (`MC_SANDBOX_URL`) |
+| `a227` | the vLLM servers, three of them, TP=2 on GPUs 2–7 of eight A100 80GB | `192.168.2.20:8001-8003` (`SERVERS`) |
+| `a219` | the runner — `launch_4hop.sh` and every cell process | — |
+
+Nothing is scheduled: these are long-lived tmux sessions on shared nodes, so re-probe the
+GPUs before launching and stop only PIDs you have verified are yours.
+
+**1. The sandbox (a230).** One container serves the whole campaign; `scripts/run_cell.sh`
+reads its URL from `.env`. See [Reproducible Docker sandbox startup](#reproducible-docker-sandbox-startup)
+— on helixon it is podman, since no user on these nodes has a Docker socket.
+
+```bash
+# .env, on the runner
+MC_SANDBOX_URL=http://192.168.2.22:8000
+```
+
+**2. The servers (a227).** The campaign's servers come from the sibling `qwen35-serve`
+repository, not from `scripts/serve_vllm.sh` — that one is the generic single-server path
+described under [the server comes first](#the-server-comes-first). Three identical TP=2
+servers, one per GPU pair, so `launch_4hop.sh` can deal cells round-robin over them:
+
+| session / run file | GPUs | port |
+|---|---|---|
+| `qwen35-s1-k3` | 2,3 | 8001 |
+| `qwen35-s2-k3` | 4,5 | 8002 |
+| `qwen35-s3-k3` | 6,7 | 8003 |
+
+The run files are already generated and are launched one per server (about 10 minutes to
+load); `scripts/serve.sh` regenerates them and starts each inside its own named tmux
+session on the target host:
+
+```bash
+# in the qwen35-serve repository, from the login node
+scripts/serve.sh --model qwen3.5-27b --session qwen35-s1-k3 \
+  --host a227 --ip 192.168.2.20 --gpus 2,3 --port 8001 \
+  --tp 2 --max-model-len 131072 --spec-tokens 3 --prefix-cache
+```
+
+What the evaluation actually depends on is the flag set, whoever generates it. These are
+the ones a result is only comparable across if they match — `--override-generation-config`
+because it is the only output cap that reaches both channels (codex sends none), and
+`enable_thinking` because it is half of [the thinking invariant](#the-thinking-invariant):
+
+```
+--served-model-name Qwen3.5-27B …        # = the results subdirectory, and MODEL below
+--tensor-parallel-size 2  --max-model-len 131072
+--max-num-seqs 64  --max-num-batched-tokens 8192  --gpu-memory-utilization 0.90
+--limit-mm-per-prompt '{"image":128,"video":1}'
+--speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3}'
+--enable-prefix-caching
+--override-generation-config '{"temperature":0.7,"top_p":0.8,"top_k":20,"max_new_tokens":1024}'
+--default-chat-template-kwargs '{"enable_thinking":false}'
+--enable-auto-tool-choice  --tool-call-parser qwen3_xml
+```
+
+Wire-check all three before spending a campaign on them: the served name answers at
+131072, a chat completion stops at 1024 with `length` and no `<think>`, and a tool call
+arrives as a parsed `tool_calls` entry rather than `<tool_call>` text in the content.
+
+**3. The campaign (a219).** The scene set is the strict 4-hop seven — everything that
+survives `scripts/screen_scenes.py --hops 4 --reachable --min-depth 4 --max-free 0
+--no-backwards`, split one directory per scene under `bench_4hop7/_split/<scene>/`. It is
+not in the repository; regenerate it before the first run.
+
+```bash
+PREFIX=q35 MODEL=Qwen3.5-27B \
+SERVERS="http://192.168.2.20:8001/v1 http://192.168.2.20:8002/v1 http://192.168.2.20:8003/v1" \
+ARMS="default:vllm prolong:codex hypothesis:vllm" \
+SCENES="0306 0726 0182 0311 0482 0603 0763" \
+MAX_STEPS=300 CONC=14 \
+  bash scripts/launch_4hop.sh 2>&1 | tee outputs/log-q35-launcher.txt
+```
+
+`PREFIX` and `MODEL` are the whole of what moves a campaign between checkpoints —
+`MODEL` must be the served name, because it is also the results subdirectory. Add
+`default:codex` to `ARMS` for the four-arm version — budget for it, it is 44.6 h of
+cell-time against 10.8 h for `default × vllm` over the same seven scenes
+(`experiments/RESULTS_helixon_4hop.md`). The launcher skips any cell
+whose `result.json` exists, so a re-launch resumes; per-cell logs land in
+`outputs/log-<tag>.txt`.
+
+**The formal protocol is `legacy` / `full`.** The three knobs above default to it, which is
+today's prompt and reply byte for byte. `append-only` / `compact` are faster and are a
+different arm — do not mix them into a campaign whose other cells ran `legacy`, and note
+that they do not reach `prolong:codex` at all.
+
+**4. Reading it back.**
+
+```bash
+python scripts/summarize_4hop.py --prefix q35 --md    # scene × arm, from the cells' own files
+python scripts/export_4hop.py --campaign q35:Qwen3.5-27B   # 4hop_cells.csv + trajectories/
+```
+
+**What the recorded 49 episodes used, and the one thing to change.** They ran at MTP
+**k=1** (`qwen35-s{1,2,3}.sh`, no `-k3`); the `-k3` files above came later. Depth 3 is
+exact in distribution — it changes speed, not the output distribution — and on this
+layout it is worth roughly `default` 9.5 → 5.2 s/step and `hypothesis` 12.7 → 9.2 s/step
+at three cells a server, so a new campaign should use it and is still comparable to the
+recorded ones. Two further caveats live in `experiments/README.md` rather than here: wave 1
+of the Qwen3.8 campaign ran without prefix caching on a different server layout, and
+`prolong × codex` carries a 900 s per-call ceiling it never reaches while `default × codex`
+carries a 120 s one that bounds its score.
 
 ### The codex arms' sandbox
 
