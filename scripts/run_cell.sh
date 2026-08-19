@@ -74,13 +74,29 @@ export CODEX_LOCAL_EFFORT=none          # thinking off on the codex channel
 export CODEX_TIMEOUT=${CODEX_TIMEOUT:-900}
 export MC_RESET_TIMEOUT=${MC_RESET_TIMEOUT:-600}
 
+# PROMPT_LAYOUT (legacy | static-first | append-only) is how the default/hypothesis agents lay
+# out each request for the server's prefix cache -- see PROMPT_LAYOUTS in mc_agent/context.py.
+# legacy is today's prompt byte for byte; anything else is a different arm, so give it its
+# own tag. result.json records the value either way.
+PROMPT_LAYOUT=${PROMPT_LAYOUT:-legacy}
+# RESPONSE_STYLE (full | compact) is what those agents ask the model to write back -- see
+# RESPONSE_STYLES there. full is today's protocol; compact is one line, memory / hypotheses /
+# plan only when they change. Same rule: not full = a different arm, own tag, recorded.
+RESPONSE_STYLE=${RESPONSE_STYLE:-full}
+# CODEX_OUTPUT_SCHEMA=1 constrains the codex channel's final message to the agent's reply
+# schema (`codex exec --output-schema`); it is the only channel that can answer with
+# unparsable text. Codex channel + default/hypothesis only, and a different arm.
+CODEX_OUTPUT_SCHEMA=${CODEX_OUTPUT_SCHEMA:-0}
+
 ARGS=(--model "$MODEL" --benchmark-dir "$BENCH_DIR" --output-dir "$OUT"
-      --max-steps "$MAX_STEPS" --temperature 0.7 --agent-mode "$AGENT_MODE" --resume)
+      --max-steps "$MAX_STEPS" --temperature 0.7 --agent-mode "$AGENT_MODE" --resume
+      --prompt-layout "$PROMPT_LAYOUT" --response-style "$RESPONSE_STYLE")
 
 case "$CHANNEL" in
   vllm)  ARGS+=(--use-vllm --vllm-url "$VLLM_URL") ;;
   codex)
     ARGS+=(--use-codex --codex-base-url "$VLLM_URL" --codex-effort low)
+    [[ "$CODEX_OUTPUT_SCHEMA" == "1" ]] && ARGS+=(--codex-output-schema)
     # The sandbox's own assertions, through the wrapper this cell will use, before a
     # single step is spent. Set SKIP_SANDBOX_SELFTEST=1 only for a deliberate probe.
     # (without the per-cell episode home: the selftest asserts the wrapper's own
@@ -93,5 +109,5 @@ case "$CHANNEL" in
   *) echo "channel must be vllm or codex, got '$CHANNEL'" >&2; exit 2 ;;
 esac
 
-echo "[cell] $TAG  agent=$AGENT_MODE channel=$CHANNEL steps=$MAX_STEPS bench=$BENCH_DIR"
+echo "[cell] $TAG  agent=$AGENT_MODE channel=$CHANNEL layout=$PROMPT_LAYOUT style=$RESPONSE_STYLE schema=$CODEX_OUTPUT_SCHEMA steps=$MAX_STEPS bench=$BENCH_DIR"
 exec .venv/bin/python eval_benchmark.py "${ARGS[@]}"

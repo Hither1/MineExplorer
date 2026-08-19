@@ -284,6 +284,7 @@ class CodexProvider(BaseLLMProvider):
         transcript_dir: str | None = None,
         base_url: str | None = None,
         context_window: int | None = None,
+        output_schema: dict | None = None,
     ) -> None:
         super().__init__(api_key=None, api_base=base_url)
         self.default_model = model_name
@@ -301,6 +302,22 @@ class CodexProvider(BaseLLMProvider):
         self.transcript_dir = Path(transcript_dir) if transcript_dir else None
         if self.transcript_dir:
             self.transcript_dir.mkdir(parents=True, exist_ok=True)
+        # When set, `codex exec --output-schema` constrains codex's output to this JSON
+        # Schema (see default_reply_schema / hypothesis_reply_schema).
+        #
+        # WARNING, measured 2026-08-19 on codex 0.148: the constraint applies to EVERY
+        # assistant turn, not only the last one, so the model cannot emit a tool call at all.
+        # Told explicitly to run a shell command first, it ran none 3/3 with the schema on
+        # and 4 tool calls with it off. That makes this flag a change of arm, not a
+        # reliability switch: the default/hypothesis codex arms are PRO-LONG's scaffold
+        # control (same tool surface), and this silently makes them single-shot.
+        # What it does buy: of 2266 calls on the c4h default x codex arm, 148 were retried on
+        # a parse failure -- 46 prose answers with no JSON (the schema fixes these) and 102
+        # repetition collapses (`!!!!...`, which today are caught and retried successfully;
+        # under a schema they can come back as a well-formed object with a degenerate string,
+        # i.e. accepted instead of retried). The 748 ceiling timeouts are untouched.
+        # Opt-in, recorded in result.json. The file has to be written per call: see chat().
+        self.output_schema = output_schema
         self._calls = 0
 
         if shutil.which(self.codex_bin) is None and not Path(self.codex_bin).exists():
@@ -309,7 +326,8 @@ class CodexProvider(BaseLLMProvider):
         logger.info(
             f"[CodexProvider] model={model_name} effort={reasoning_effort} "
             f"max_images={max_images} bin={self.codex_bin} "
-            f"endpoint={base_url or 'hosted'}"
+            f"endpoint={base_url or 'hosted'} "
+            f"output_schema={'yes' if output_schema else 'no'}"
         )
 
     @staticmethod
@@ -367,6 +385,14 @@ class CodexProvider(BaseLLMProvider):
         try:
             prompt, images = self._flatten(messages, workdir)
             out_file = workdir / "last_message.txt"
+            # Inside the workdir on purpose: the sandbox (prolong_mc/codex_sandbox.sh) gives
+            # codex a read scope of the workspace only, and a schema anywhere else fails the
+            # whole call with `schema file <path>: No such file or directory` (measured both
+            # ways, 2026-08-19). The workdir is this call's workspace.
+            schema_file = None
+            if self.output_schema:
+                schema_file = workdir / "output_schema.json"
+                schema_file.write_text(json.dumps(self.output_schema), encoding="utf-8")
             cmd = [
                 self.codex_bin, "exec",
                 "--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
@@ -386,6 +412,7 @@ class CodexProvider(BaseLLMProvider):
                 "-c", f'model_reasoning_effort="{effort_for(self.base_url, self.reasoning_effort)}"',
                 "-s", "workspace-write",
                 "-o", str(out_file),
+                *(("--output-schema", str(schema_file)) if schema_file else ()),
                 # The same tool surface the PRO-LONG turns get. This provider is the
                 # scaffold control: an arm whose baseline could web-search while the
                 # arm under test could not would measure the tool surface, not memory.

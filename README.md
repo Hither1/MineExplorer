@@ -371,6 +371,77 @@ CODEX_LOCAL_EFFORT=none                                  # cells
 `python -m prolong_mc.selftest` asserts the two defaults agree, so a
 half-applied change fails there rather than in a matrix.
 
+**The request layout (`--prompt-layout`, `PROMPT_LAYOUT` for `run_cell.sh` /
+`launch_4hop.sh`).** The default and hypothesis agents resend ~5–8k tokens per
+step (instructions, memory, 20 captions, 20 images). In the `legacy` layout —
+the default, today's prompt byte for byte — the memory and hints sit between
+the goal and the instructions and the 20-frame window slides, so consecutive
+steps share under 150 tokens and vLLM's prefix cache (800-token blocks on the
+hybrid Qwen3.x servers) reuses nothing; every step re-prefills the whole prompt,
+and on a shared server those prefills halve the neighbours' decode speed.
+`static-first` moves the per-step state after the frames so the instruction
+block caches; `append-only` also keeps the frame buffer append-only (rebased
+every 10 steps, so the window is 20–29 frames) with captions that do not name a
+frame's position, so the frames cache too. Measured on three cells sharing one
+TP=1 server: 7.3 s/step legacy, 6.8 s static-first, 4.4 s append-only
+(`experiments/EVAL_LATENCY_helixon.md`). Anything but `legacy` changes what
+the model reads — order, and for `append-only` the window — so it is a
+different arm: `result.json` records `prompt_layout`, `launch_4hop.sh` gives
+such cells a `-<layout>` tag suffix, and `summarize_4hop.py` keeps them out of
+the legacy arms. `scripts/prompt_layout_check.py` shows the structure and,
+against a server, the shared prefix; `scripts/bench_agent_latency.py` replays a
+recorded cell to time the layouts on a given server.
+
+**The response style (`--response-style`, `RESPONSE_STYLE` for `run_cell.sh` /
+`launch_4hop.sh`).** The layout is about the prefill; the style is about the
+decode, which is what a step waits for once the prefill is cached. Under `full`
+— the default, today's protocol byte for byte — the model answers with
+pretty-printed JSON, rewrites the whole memory every step and, for the
+hypothesis agent, re-emits hypothesis ops and the plan every step: 237 tokens
+per default step of which 118 are a memory that is identical to the previous
+step's in a third of the steps, 508 per hypothesis step. `compact` asks for the
+same fields with the same meaning but on one line, with a 1–3 sentence thought,
+and with `memory_update` / `hypotheses` / `plan` sent only on the steps where
+they change (an absent key means "unchanged", which the runner and
+`HypothesisAgent` already treat as "keep"; `_HYP_THOUGHT_PROCESS_COMPACT` /
+`_DEFAULT_THOUGHT_PROCESS_COMPACT` in `mc_agent/` are the exact wording, the
+hypothesis-writing guidance is unchanged). Because the memory is now sent only
+when the model decides to, the compact state block always carries a memory line
+— "empty - write it this step", or "last rewritten at step N" and, after 20
+steps without a rewrite, "rewrite it this step" (`MEMORY_REWRITE_DUE`); the
+first compact cell without that line ran 54 steps and three milestones without
+ever writing a memory. What the model maintains does not
+change; what it re-emits does — so it is a different arm, recorded in
+`result.json` as `response_style`, suffixed `-compact` by `launch_4hop.sh` and
+kept apart by `summarize_4hop.py`. `bench_agent_latency.py --style compact`
+times it and reports how often the memory / graph / plan actually changed.
+
+Both knobs apply to the default and hypothesis agents on **either** channel — the same
+code builds the request, and `CodexProvider` flattens it into one text prompt plus image
+files, so the ordering survives (`prompt_layout_check.py --codex` measures the shared
+prefix there: 1–3 % legacy → 94–96 % append-only). What they buy on the codex channel is
+small, though: that arm is priced by its 120 s ceiling and 3–5 round trips per answered
+call, not by our prefill. PRO-LONG writes its own prompt, so `--agent-mode prolong`
+rejects both flags rather than ignoring them.
+
+**The codex channel's reply shape (`--codex-output-schema`, `CODEX_OUTPUT_SCHEMA=1`).**
+Implemented and off by default, and it should stay off unless a single-shot codex arm
+is what is wanted. With it, `CodexProvider` writes the agent's reply schema
+(`default_reply_schema` / `hypothesis_reply_schema`, which track the RESPONSE FORMAT
+block and the response style) into the call's workspace — it must be *inside* it, the
+sandbox gives codex a read scope of the workspace only — and passes `codex exec
+--output-schema`. **codex applies that constraint to every assistant turn, not only the
+final one, so the model cannot emit a tool call at all**: told explicitly to run a shell
+command first, it ran none 3/3 with the schema on and made 4 tool calls with it off. That
+makes the flag a change of arm — the default/hypothesis codex arms are PRO-LONG's
+scaffold control, same tool surface — rather than a reliability switch. What it buys is
+narrow: of 2266 calls on the c4h `default × codex` arm, 148 were retried on a parse
+failure (46 prose answers with no JSON, which a schema fixes; 102 repetition collapses,
+which today are caught and retried successfully and under a schema can come back as a
+well-formed object with a degenerate string), and the 748 ceiling timeouts are untouched.
+Recorded in `result.json` as `codex_output_schema`, tagged `-schema` by `launch_4hop.sh`,
+and rejected for `--agent-mode prolong`.
+
 ### The codex arms' sandbox
 
 Upstream PRO-LONG runs its agent in a Docker container on an `--internal` network

@@ -237,7 +237,9 @@ class DefaultActionSpace(BaseActionSpace):
             response_content = self._extract_json_from_response(response_content)
             action_content = response_content["action"]
             action.think = response_content["thought"]
-            action.memory_update = response_content.get("memory_update", "")
+            # Absent or null means "memory unchanged" (the compact response style sends the
+            # memory only when it changes); the caller keeps its memory on an empty string.
+            action.memory_update = response_content.get("memory_update") or ""
 
         for action_type, value in action_content.items():
             if "ESC" in action_type:

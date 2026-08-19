@@ -8,7 +8,7 @@ import numpy as np
 from loguru import logger
 
 from mc_agent.action_space import ActionState, BaseActionSpace
-from mc_agent.context import DefaultContextBuilder
+from mc_agent.context import DefaultContextBuilder, PROMPT_LAYOUTS, RESPONSE_STYLES
 from mc_agent.llm_provider import BaseLLMProvider
 from mc_agent.utils import convert_buffer_to_base64_images
 
@@ -20,20 +20,47 @@ class DefaultAgent:
         provider: BaseLLMProvider,
         context_builder_class: type[DefaultContextBuilder] = DefaultContextBuilder,
         model: str = None,
+        prompt_layout: str = "legacy",
+        response_style: str = "full",
     ) -> None:
-        """An agent that uses a multimodal LLM to play Minecraft."""
+        """An agent that uses a multimodal LLM to play Minecraft.
+
+        prompt_layout: how the request is laid out for the server's prefix cache; see
+        PROMPT_LAYOUTS in mc_agent/context.py. "legacy" is today's prompt byte for byte.
+        response_style: what the model is asked to write back; see RESPONSE_STYLES there.
+        "full" is today's protocol; "compact" sends memory only when it changes, in one line.
+        """
         self.action_space = action_space
         self.provider = provider
         self.context_builder_class = context_builder_class
         self.model = model
+        if prompt_layout not in PROMPT_LAYOUTS:
+            raise ValueError(f"prompt_layout must be one of {PROMPT_LAYOUTS}, got {prompt_layout!r}")
+        self.prompt_layout = prompt_layout
+        if response_style not in RESPONSE_STYLES:
+            raise ValueError(f"response_style must be one of {RESPONSE_STYLES}, got {response_style!r}")
+        self.response_style = response_style
+        # For the compact style's memory line: the step whose reply last changed the memory.
+        # The runner owns the memory and hands it back each step; the agent only watches it.
+        self._memory_seen: str | None = None
+        self._memory_step: int | None = None
 
         logger.info(
             f"DefaultAgent  action_space={self.action_space.__class__.__name__}  "
-            f"provider={self.provider.__class__.__name__}  model={self.model}"
+            f"provider={self.provider.__class__.__name__}  model={self.model}  "
+            f"prompt_layout={self.prompt_layout}  response_style={self.response_style}"
         )
 
     def load_system_prompt(self, task_desc: str) -> None:
         self.task_desc = task_desc
+
+    def _note_memory(self, long_term_memory: str, current_step: int | None) -> None:
+        """Record at which step the memory last changed (a memory handed in at step k that
+        differs from the one handed in at k-1 was written by the reply at k-1)."""
+        mem = (long_term_memory or "").strip()
+        if mem != self._memory_seen:
+            self._memory_seen = mem
+            self._memory_step = (current_step - 1) if current_step else None
 
     def get_action(
         self,
@@ -74,9 +101,13 @@ class DefaultAgent:
             thought, action = self.get_default_action()
             return thought, action, long_term_memory
 
+        layout = self.prompt_layout
+        self._note_memory(long_term_memory, current_step)
         content = [{"type": "text", "text": self.context_builder_class.system_prompt(
             self.task_desc, long_term_memory=long_term_memory, milestone_hint=milestone_hint,
-            camera_hint=camera_hint, movement_hint=movement_hint).build()}]
+            camera_hint=camera_hint, movement_hint=movement_hint, layout=layout,
+            style=self.response_style, memory_step=self._memory_step,
+            current_step=current_step).build()}]
         save_content = copy.deepcopy(content)
 
         for i, base64_img in enumerate(base64_images):
@@ -94,13 +125,15 @@ class DefaultAgent:
                     total_images_length=len(base64_images),
                     frame_step=frame_step,
                     hist_action=hist_action,
-                    hist_thought=hist_thought
+                    hist_thought=hist_thought,
+                    layout=layout,
                 ).build()
             else:
                 frame_text = self.context_builder_class.next_step(
                     images_idx=i,
                     total_images_length=len(base64_images),
-                    frame_step=frame_step
+                    frame_step=frame_step,
+                    layout=layout,
                 ).build()
 
             content.append({"type": "text", "text": frame_text})
@@ -113,6 +146,18 @@ class DefaultAgent:
                 "type": "image_url",
                 "image_url": {"url": "data:image/png;base64,..."}  # placeholder; no raw bytes in saved log
             })
+
+        if layout != "legacy":
+            # The per-step state comes last, after the frames, so that everything before it is
+            # the same request prefix as the previous step (see PROMPT_LAYOUTS).
+            state_text = self.context_builder_class.state_block(
+                long_term_memory=long_term_memory, milestone_hint=milestone_hint,
+                camera_hint=camera_hint, movement_hint=movement_hint,
+                style=self.response_style, memory_step=self._memory_step,
+                current_step=current_step)
+            if state_text:
+                content.append({"type": "text", "text": state_text})
+                save_content.append({"type": "text", "text": state_text})
 
         messages = [{"role": "user", "content": content}]
         save_messages = [{"role": "user", "content": save_content}]

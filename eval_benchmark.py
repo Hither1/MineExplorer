@@ -25,10 +25,16 @@ from mc_agent import (
     DefaultAgent, MinerRLActionSpace, OpenAIProvider, VLLMProvider, CodexProvider, DefaultContextBuilder,
     HypothesisAgent, HypothesisContextBuilder,
 )
+from mc_agent.context import PROMPT_LAYOUTS, RESPONSE_STYLES, default_reply_schema
 
 AGENT_MODES = ("default", "hypothesis", "prolong")
 
 FRAME_BUFFER_SIZE = 20
+# --prompt-layout append-only: the frame buffer grows by one frame per step and is rebased
+# (oldest FRAME_WINDOW_REBASE frames dropped) only when it reaches FRAME_BUFFER_SIZE +
+# FRAME_WINDOW_REBASE, so the window is 20-29 frames and the request prefix is unchanged on
+# 9 steps out of 10. The other layouts keep the sliding 20-frame window.
+FRAME_WINDOW_REBASE = 10
 MAX_STEPS = 300
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 AGENT_API_BASE = os.getenv("AGENT_API_BASE", "")
@@ -242,9 +248,35 @@ def _run_benchmark(
     agent_mode: str = "default",
     prolong_log_window: Optional[int] = None,
     prolong_stateless: bool = False,
+    prompt_layout: str = "legacy",
+    response_style: str = "full",
+    codex_output_schema: bool = False,
 ) -> Dict[str, Any]:
     """Run one benchmark scenario and save results."""
     global _shutdown_requested
+
+    # Argument checks first: past this point a sandbox session exists, and a combination
+    # rejected after that leaks it on the sandbox server.
+    if agent_mode not in AGENT_MODES:
+        raise ValueError(f"agent_mode must be one of {AGENT_MODES}, got {agent_mode!r}")
+    if prompt_layout not in PROMPT_LAYOUTS:
+        raise ValueError(f"prompt_layout must be one of {PROMPT_LAYOUTS}, got {prompt_layout!r}")
+    if agent_mode == "prolong" and prompt_layout != "legacy":
+        # PRO-LONG builds its own prompt (prolong_mc); the layouts describe the default and
+        # hypothesis agents' request only.
+        raise ValueError("--prompt-layout applies to --agent-mode default/hypothesis, not prolong")
+    if response_style not in RESPONSE_STYLES:
+        raise ValueError(f"response_style must be one of {RESPONSE_STYLES}, got {response_style!r}")
+    if agent_mode == "prolong" and response_style != "full":
+        raise ValueError("--response-style applies to --agent-mode default/hypothesis, not prolong")
+    if codex_output_schema and not use_codex:
+        # It is a codex CLI flag; the direct channel already gets valid JSON every time.
+        raise ValueError("--codex-output-schema applies to --use-codex runs only")
+    if codex_output_schema and agent_mode == "prolong":
+        # PRO-LONG's reply is its own contract (prolong_mc writes the analyzer's format and
+        # parses it), and it logged zero parse failures on the c4h campaign. Constraining it
+        # would change the method's output surface for no measured gain.
+        raise ValueError("--codex-output-schema applies to --agent-mode default/hypothesis, not prolong")
 
     meta_path = Path(metadata_path)
     with open(meta_path, "r", encoding="utf-8") as f:
@@ -268,18 +300,25 @@ def _run_benchmark(
     if use_codex:
         # Every call's prompt and event stream lands under the scene's own output
         # directory, so a Codex run is inspectable the same way episode.mp4 is.
+        if codex_output_schema:
+            # The reply contract of the agent that is about to run, so the constrained
+            # final message is exactly what its prompt asks for.
+            from mc_agent.hypothesis_agent import hypothesis_reply_schema
+            _schema = (hypothesis_reply_schema(response_style) if agent_mode == "hypothesis"
+                       else default_reply_schema(response_style))
+        else:
+            _schema = None
         _provider = CodexProvider(
             model_name=model,
             reasoning_effort=codex_effort,
             transcript_dir=str(output_dir / "codex_calls"),
             base_url=codex_base_url or None,
+            output_schema=_schema,
         )
     elif use_vllm:
         _provider = VLLMProvider(model_name=model, base_url=vllm_url, temperature=temperature)
     else:
         _provider = OpenAIProvider(AGENT_API_KEY, AGENT_API_BASE, model, temperature=temperature)
-    if agent_mode not in AGENT_MODES:
-        raise ValueError(f"agent_mode must be one of {AGENT_MODES}, got {agent_mode!r}")
     if agent_mode == "prolong":
         # Same env, same loop, same scorer as the baseline; only the memory
         # mechanism differs. Codex is the model channel, so the provider above is
@@ -310,6 +349,8 @@ def _run_benchmark(
             provider=_provider,
             context_builder_class=HypothesisContextBuilder,
             model=model,
+            prompt_layout=prompt_layout,
+            response_style=response_style,
         )
     else:
         agent = DefaultAgent(
@@ -317,6 +358,8 @@ def _run_benchmark(
             provider=_provider,
             context_builder_class=DefaultContextBuilder,
             model=model,
+            prompt_layout=prompt_layout,
+            response_style=response_style,
         )
 
     run_id = f"{safe_model}_{scene_id}"
@@ -326,7 +369,18 @@ def _run_benchmark(
 
     env = RenderWrapper(_base_env, save_messages=True, save_path=str(output_dir))
 
-    frame_buffer = deque(maxlen=frame_size)
+    if prompt_layout == "append-only":
+        frame_buffer: deque = deque()  # rebased by _push_frame, not sliding
+    else:
+        frame_buffer = deque(maxlen=frame_size)
+
+    def _push_frame(pov) -> None:
+        frame_buffer.append(pov)
+        if prompt_layout == "append-only":
+            while len(frame_buffer) >= frame_size + FRAME_WINDOW_REBASE:
+                for _ in range(FRAME_WINDOW_REBASE):
+                    frame_buffer.popleft()
+
     thought_history: List[str] = []
     action_history: List[Dict] = []
     _frame_completed: Dict[str, Optional[int]] = {}
@@ -346,7 +400,7 @@ def _run_benchmark(
     try:
         has_loading = loading_command_steps > 0
         obs, info = env.reset(save_frame=not has_loading)
-        frame_buffer.append(obs["pov"])
+        _push_frame(obs["pov"])
 
         for step in range(loading_command_steps):
             if _shutdown_requested:
@@ -363,7 +417,7 @@ def _run_benchmark(
         if not info.get("player_pos"):
             _, noop_action = agent.get_default_action(is_call_failed=False)
             obs, reward, terminated, truncated, info = env.step(noop_action, save_frame=True)
-            frame_buffer.append(obs["pov"])
+            _push_frame(obs["pov"])
 
         logger.debug(
             f"[{run_id}] Pre-reset info keys={list(info.keys())} "
@@ -461,7 +515,7 @@ def _run_benchmark(
                 time.sleep(10)
                 continue
 
-            frame_buffer.append(obs["pov"])
+            _push_frame(obs["pov"])
 
             milestone_status = checker.check(info)
             logger.debug(
@@ -617,6 +671,17 @@ def _run_benchmark(
                 os.environ.get("CODEX_BIN", "codex")) == "codex_sandbox.sh"}
            if use_codex else {}),
         "milestone_hint": use_milestone_hint,
+        # How the request was laid out for the server (see PROMPT_LAYOUTS). Anything but
+        # "legacy" changes what the model reads -- and, for append-only, the frame window --
+        # so it is a different arm and must not be pooled with a legacy run.
+        "prompt_layout": prompt_layout,
+        # What the model was asked to write back (see RESPONSE_STYLES). "compact" changes
+        # the instructions and what is re-emitted per step, so it too is a different arm.
+        "response_style": response_style,
+        # Whether the codex channel's final message was constrained to the agent's reply
+        # schema (`codex exec --output-schema`). Changes what the model emits, so it is
+        # part of the arm.
+        **({"codex_output_schema": codex_output_schema} if use_codex else {}),
         "max_steps": max_steps,
         # Which PRO-LONG arm this is. Recorded only where it means something, and
         # recorded at all because an ablated run pooled with the headline prolong runs
@@ -675,6 +740,9 @@ def _worker_eval(worker_args: dict) -> dict:
         agent_mode=worker_args.get("agent_mode", "default"),
         prolong_log_window=worker_args.get("prolong_log_window"),
         prolong_stateless=worker_args.get("prolong_stateless", False),
+        prompt_layout=worker_args.get("prompt_layout", "legacy"),
+        response_style=worker_args.get("response_style", "full"),
+        codex_output_schema=worker_args.get("codex_output_schema", False),
     )
 
 
@@ -743,12 +811,44 @@ def eval_benchmark(
                                                 "each turn, leaving logs.txt and AGENTS.md. The "
                                                 "Codex conversation itself stays alive, which is "
                                                 "upstream's behaviour."),
+    prompt_layout: str = typer.Option("legacy", "--prompt-layout",
+                                      help="How the default/hypothesis agents lay out each request "
+                                           "for the server's prefix cache: 'legacy' (today's prompt, "
+                                           "byte for byte), 'static-first' (state after the frames, "
+                                           "instruction block caches), 'append-only' (also an "
+                                           "append-only frame window of 20-29 frames, so the frames "
+                                           "cache too). Not 'legacy' = a different arm; recorded in "
+                                           "result.json. See PROMPT_LAYOUTS in mc_agent/context.py."),
+    response_style: str = typer.Option("full", "--response-style",
+                                       help="What the default/hypothesis agents ask the model to write "
+                                            "back: 'full' (today's protocol: pretty-printed JSON, the "
+                                            "whole memory / hypotheses / plan every step) or 'compact' "
+                                            "(one line; 1-3 sentence thought; memory_update, hypotheses "
+                                            "and plan only on steps where they change). Not 'full' = a "
+                                            "different arm; recorded in result.json. See RESPONSE_STYLES "
+                                            "in mc_agent/context.py."),
+    codex_output_schema: bool = typer.Option(False, "--codex-output-schema",
+                                             help="Codex channel only (default/hypothesis agents): "
+                                                  "constrain codex's output to the agent's reply schema via "
+                                                  "`codex exec --output-schema`. NOTE: codex applies the "
+                                                  "constraint to every assistant turn, so the model can no "
+                                                  "longer call tools (measured) -- this makes the arm "
+                                                  "single-shot, which is a change of arm, not a reliability "
+                                                  "switch. It fixes the 46-of-2266 prose answers the c4h "
+                                                  "default x codex arm had to retry; it does nothing for the "
+                                                  "748 ceiling timeouts. Recorded in result.json."),
 ):
     """Evaluate all benchmark scenarios in benchmark_dir."""
     logger.info(f"--- Starting evaluation (model={model}) ---")
 
     if agent_mode not in AGENT_MODES:
         raise ValueError(f"--agent-mode must be one of {AGENT_MODES}, got {agent_mode!r}")
+    if prompt_layout not in PROMPT_LAYOUTS:
+        raise ValueError(f"--prompt-layout must be one of {PROMPT_LAYOUTS}, got {prompt_layout!r}")
+    if response_style not in RESPONSE_STYLES:
+        raise ValueError(f"--response-style must be one of {RESPONSE_STYLES}, got {response_style!r}")
+    if codex_output_schema and not use_codex:
+        raise ValueError("--codex-output-schema applies to --use-codex runs only")
     if shard_count < 1:
         raise ValueError(f"--shard-count must be >= 1, got {shard_count}")
     if not (0 <= shard_index < shard_count):
@@ -837,6 +937,9 @@ def eval_benchmark(
                     agent_mode=agent_mode,
                     prolong_log_window=prolong_log_window,
                     prolong_stateless=prolong_stateless,
+                    prompt_layout=prompt_layout,
+                    response_style=response_style,
+                    codex_output_schema=codex_output_schema,
                 )
             except Exception as e:
                 logger.error(f"[ERROR] {scene_num}: {e}")
@@ -887,6 +990,9 @@ def eval_benchmark(
                     "agent_mode": agent_mode,
                     "prolong_log_window": prolong_log_window,
                     "prolong_stateless": prolong_stateless,
+                    "prompt_layout": prompt_layout,
+                    "response_style": response_style,
+                    "codex_output_schema": codex_output_schema,
                     "_scene_num": scene_num,
                 })
 
