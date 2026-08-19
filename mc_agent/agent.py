@@ -8,7 +8,7 @@ import numpy as np
 from loguru import logger
 
 from mc_agent.action_space import ActionState, BaseActionSpace
-from mc_agent.context import DefaultContextBuilder, PROMPT_LAYOUTS
+from mc_agent.context import DefaultContextBuilder, PROMPT_LAYOUTS, RESPONSE_STYLES
 from mc_agent.llm_provider import BaseLLMProvider
 from mc_agent.utils import convert_buffer_to_base64_images
 
@@ -21,11 +21,14 @@ class DefaultAgent:
         context_builder_class: type[DefaultContextBuilder] = DefaultContextBuilder,
         model: str = None,
         prompt_layout: str = "legacy",
+        response_style: str = "full",
     ) -> None:
         """An agent that uses a multimodal LLM to play Minecraft.
 
         prompt_layout: how the request is laid out for the server's prefix cache; see
         PROMPT_LAYOUTS in mc_agent/context.py. "legacy" is today's prompt byte for byte.
+        response_style: what the model is asked to write back; see RESPONSE_STYLES there.
+        "full" is today's protocol; "compact" sends memory only when it changes, in one line.
         """
         self.action_space = action_space
         self.provider = provider
@@ -34,11 +37,14 @@ class DefaultAgent:
         if prompt_layout not in PROMPT_LAYOUTS:
             raise ValueError(f"prompt_layout must be one of {PROMPT_LAYOUTS}, got {prompt_layout!r}")
         self.prompt_layout = prompt_layout
+        if response_style not in RESPONSE_STYLES:
+            raise ValueError(f"response_style must be one of {RESPONSE_STYLES}, got {response_style!r}")
+        self.response_style = response_style
 
         logger.info(
             f"DefaultAgent  action_space={self.action_space.__class__.__name__}  "
             f"provider={self.provider.__class__.__name__}  model={self.model}  "
-            f"prompt_layout={self.prompt_layout}"
+            f"prompt_layout={self.prompt_layout}  response_style={self.response_style}"
         )
 
     def load_system_prompt(self, task_desc: str) -> None:
@@ -86,7 +92,8 @@ class DefaultAgent:
         layout = self.prompt_layout
         content = [{"type": "text", "text": self.context_builder_class.system_prompt(
             self.task_desc, long_term_memory=long_term_memory, milestone_hint=milestone_hint,
-            camera_hint=camera_hint, movement_hint=movement_hint, layout=layout).build()}]
+            camera_hint=camera_hint, movement_hint=movement_hint, layout=layout,
+            style=self.response_style).build()}]
         save_content = copy.deepcopy(content)
 
         for i, base64_img in enumerate(base64_images):

@@ -4,7 +4,7 @@
   .venv/bin/python scripts/bench_agent_latency.py --base-url http://192.168.2.20:8004/v1 \
       --video outputs/c4h-hypothesis-vllm-0182/Qwen3.8-27B/4-hop/0182/episode.mp4 \
       --log outputs/log-c4h-default-vllm-0182.txt \
-      --agent default --layout legacy --concurrency 3 --steps 12
+      --agent default --layout legacy --style full --concurrency 3 --steps 12
 
 Each concurrent "cell" runs the real DefaultAgent/HypothesisAgent + VLLMProvider code path:
 frames come from a recorded episode video (sliding or append-only window, per --layout, exactly
@@ -42,7 +42,7 @@ from loguru import logger  # noqa: E402
 
 from eval_benchmark import FRAME_BUFFER_SIZE, FRAME_WINDOW_REBASE  # noqa: E402
 from mc_agent import DefaultAgent, DefaultContextBuilder, MinerRLActionSpace, VLLMProvider  # noqa: E402
-from mc_agent.context import PROMPT_LAYOUTS  # noqa: E402
+from mc_agent.context import PROMPT_LAYOUTS, RESPONSE_STYLES  # noqa: E402
 from mc_agent.hypothesis_agent import HypothesisAgent, HypothesisContextBuilder  # noqa: E402
 
 TASK = ("Find the green banner landmark, then locate and find the dark oak button on the stone "
@@ -104,11 +104,11 @@ def run_cell(cell_id: int, args, frames_all, thoughts_all, actions_all, results:
     provider = VLLMProvider(model_name=args.model, base_url=args.base_url, temperature=0.7)
     if args.agent == "default":
         agent = DefaultAgent(MinerRLActionSpace(), provider, DefaultContextBuilder, args.model,
-                             prompt_layout=args.layout)
+                             prompt_layout=args.layout, response_style=args.style)
     else:
         agent = HypothesisAgent(action_space=MinerRLActionSpace(), provider=provider,
                                 context_builder_class=HypothesisContextBuilder, model=args.model,
-                                prompt_layout=args.layout)
+                                prompt_layout=args.layout, response_style=args.style)
     agent.load_system_prompt(TASK)
     # Each cell starts at a different point of the recording so the requests are not identical
     # across cells (identical requests would share cache blocks and flatter the numbers).
@@ -122,6 +122,9 @@ def run_cell(cell_id: int, args, frames_all, thoughts_all, actions_all, results:
                     buf.popleft()
     memory = "" if args.agent == "hypothesis" else "Spawned on a stone path in a forest. Nothing found yet."
     lat, out_chars = [], []
+    # What the model chose to re-emit (the compact style sends memory / hypotheses / plan only
+    # when they change): per step, did the memory change, did the graph, did the plan.
+    mem_changed, graph_changed, plan_changed = [], [], []
     for t in range(args.steps):
         step = start + t  # 1-indexed step number the agent believes it is at
         buf.append(frames_all[step - 1])
@@ -131,6 +134,8 @@ def run_cell(cell_id: int, args, frames_all, thoughts_all, actions_all, results:
                     buf.popleft()
         move = (f"You are {3.0 + 0.37 * step:.1f} blocks from spawn; your last action moved you "
                 f"{0.2 + 0.1 * (step % 4):.1f} blocks.")
+        graph_before = json.dumps(agent.graph.to_dict(), sort_keys=True) if hasattr(agent, "graph") else ""
+        plan_before = list(getattr(agent, "current_plan", []))
         t0 = time.perf_counter()
         thought, action, memory_update = agent.get_action(
             list(buf), thoughts_all[:step - 1], actions_all[:step - 1], step,
@@ -140,9 +145,15 @@ def run_cell(cell_id: int, args, frames_all, thoughts_all, actions_all, results:
         dt = time.perf_counter() - t0
         lat.append(dt)
         out_chars.append(len(memory_update or "") + len(thought or ""))
-        if memory_update and memory_update.strip():
-            memory = memory_update.strip()
-    results[cell_id] = {"latency": lat, "out_chars": out_chars}
+        new_mem = memory_update.strip() if memory_update and memory_update.strip() else None
+        mem_changed.append(new_mem is not None and new_mem != memory)
+        if new_mem is not None:
+            memory = new_mem
+        if hasattr(agent, "graph"):
+            graph_changed.append(json.dumps(agent.graph.to_dict(), sort_keys=True) != graph_before)
+            plan_changed.append(list(agent.current_plan) != plan_before)
+    results[cell_id] = {"latency": lat, "out_chars": out_chars, "mem_changed": mem_changed,
+                        "graph_changed": graph_changed, "plan_changed": plan_changed}
 
 
 def main() -> int:
@@ -153,6 +164,7 @@ def main() -> int:
     ap.add_argument("--log", required=True, help="log-*.txt of a recorded cell (thoughts/actions)")
     ap.add_argument("--agent", choices=("default", "hypothesis"), default="default")
     ap.add_argument("--layout", choices=PROMPT_LAYOUTS, default="legacy")
+    ap.add_argument("--style", choices=RESPONSE_STYLES, default="full")
     ap.add_argument("--concurrency", type=int, default=1)
     ap.add_argument("--steps", type=int, default=10)
     ap.add_argument("--start-step", type=int, default=40, help="cell 0 replays from this step")
@@ -188,9 +200,13 @@ def main() -> int:
     lat_s = sorted(lat)
     p90 = lat_s[min(len(lat_s) - 1, int(0.9 * len(lat_s)))]
     n_req = d["vllm:request_success_total"] or float("nan")
-    line = (f"{args.agent:10s} {args.layout:12s} conc={args.concurrency} steps={args.steps}: "
+    def _rate(key):
+        xs = [x for r in results.values() for x in r[key][args.warmup:]]
+        return f"{100 * sum(xs) / len(xs):.0f}%" if xs else "-"
+    line = (f"{args.agent:10s} {args.layout:12s} {args.style:8s} conc={args.concurrency} steps={args.steps}: "
             f"step latency med={st.median(lat):.1f}s mean={st.mean(lat):.1f}s p90={p90:.1f}s "
-            f"(n={len(lat)}, wall {wall:.0f}s)")
+            f"(n={len(lat)}, wall {wall:.0f}s); steps with memory/graph/plan change: "
+            f"{_rate('mem_changed')}/{_rate('graph_changed')}/{_rate('plan_changed')}")
     if n_req == n_req:  # metrics available
         prompt = d["vllm:prompt_tokens_total"] / n_req
         gen = d["vllm:generation_tokens_total"] / n_req

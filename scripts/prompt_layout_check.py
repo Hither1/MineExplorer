@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check what --prompt-layout does to the request, without a Minecraft sandbox.
+"""Check what --prompt-layout / --response-style do to the request, without a Minecraft sandbox.
 
   .venv/bin/python scripts/prompt_layout_check.py --write-golden golden.json   # before a change
   .venv/bin/python scripts/prompt_layout_check.py --golden golden.json         # after: legacy unchanged?
@@ -7,7 +7,7 @@
 
 For a fixed synthetic episode it builds the default and hypothesis agents' messages at two
 consecutive steps under every layout and reports (a) the sha256 of the legacy messages against a
-golden file -- the layout option must not change the campaign arm's prompt by a byte -- and
+golden file -- neither option may change the campaign arm's (legacy/full) prompt by a byte -- and
 (b) with --tokenize-url, how many leading tokens the two steps' text share, i.e. what the
 server's prefix cache can reuse (approximate: text parts only, images dropped; the server's own
 "Prefix cache hit rate" on a live smoke is the real number). Frame windows follow
@@ -35,7 +35,7 @@ logger.remove()  # the agents log the captured provider error at every call; not
 
 from eval_benchmark import FRAME_BUFFER_SIZE, FRAME_WINDOW_REBASE  # noqa: E402
 from mc_agent import DefaultAgent, DefaultContextBuilder, MinerRLActionSpace  # noqa: E402
-from mc_agent.context import PROMPT_LAYOUTS  # noqa: E402
+from mc_agent.context import PROMPT_LAYOUTS, RESPONSE_STYLES  # noqa: E402
 from mc_agent.hypothesis_agent import HypothesisAgent, HypothesisContextBuilder  # noqa: E402
 
 
@@ -67,15 +67,15 @@ def _window(step: int, layout: str) -> list[np.ndarray]:
     return list(buf)
 
 
-def _messages(kind: str, layout: str, step: int, memory: str, movement: str):
+def _messages(kind: str, layout: str, step: int, memory: str, movement: str, style: str = "full"):
     provider = _Capture()
     if kind == "default":
         agent = DefaultAgent(MinerRLActionSpace(), provider, DefaultContextBuilder, "Qwen3.8-27B",
-                             prompt_layout=layout)
+                             prompt_layout=layout, response_style=style)
     else:
         agent = HypothesisAgent(action_space=MinerRLActionSpace(), provider=provider,
                                 context_builder_class=HypothesisContextBuilder, model="Qwen3.8-27B",
-                                prompt_layout=layout)
+                                prompt_layout=layout, response_style=style)
         agent._apply_hypothesis_ops(json.dumps({
             "thought": "t", "action": {}, "memory_update": "m",
             "hypotheses": [{"id": "h1", "statement": "the banner is north of spawn", "confidence": 0.4,
@@ -131,6 +131,7 @@ def main() -> int:
     ap.add_argument("--write-golden", help="write legacy sha256s + messages here")
     ap.add_argument("--golden", help="compare legacy sha256s against this file")
     ap.add_argument("--tokenize-url", help="server root, e.g. http://192.168.2.20:8004; measures shared prefix")
+    ap.add_argument("--dump-dir", help="write each style's instruction block (default and hypothesis) here, to read")
     args = ap.parse_args()
 
     legacy = {}
@@ -149,6 +150,15 @@ def main() -> int:
             print(f"golden {k}: {'IDENTICAL' if same else 'DIFFERENT'}")
             rc |= 0 if same else 1
 
+    if args.dump_dir:
+        Path(args.dump_dir).mkdir(parents=True, exist_ok=True)
+        for style in RESPONSE_STYLES:
+            for kind in ("default", "hypothesis"):
+                m = _messages(kind, "append-only", 25, MEM[0], MOVE[0], style)
+                out = Path(args.dump_dir) / f"{kind}-{style}.txt"
+                out.write_text("\n".join(c["text"] for c in m[0]["content"] if c["type"] == "text"))
+                print(f"dumped {out}")
+
     for layout in PROMPT_LAYOUTS:
         for kind, step in CASES:
             m1 = _messages(kind, layout, step, MEM[0], MOVE[0])
@@ -163,6 +173,12 @@ def main() -> int:
                 line += (f" | text tokens {len(t1)}->{len(t2)}, shared prefix {shared} "
                          f"({100 * shared / len(t2):.0f}%, ~{shared // 800} cache blocks of 800)")
             print(line)
+    if args.tokenize_url:
+        for style in RESPONSE_STYLES:
+            for kind in ("default", "hypothesis"):
+                m = _messages(kind, "append-only", 25, MEM[0], MOVE[0], style)
+                head = [{"role": "user", "content": [m[0]["content"][0]]}]
+                print(f"style {style:8s} {kind:10s}: instruction block {len(_text_tokens(args.tokenize_url, head))} tokens")
     return rc
 
 

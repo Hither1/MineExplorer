@@ -48,9 +48,12 @@ PROVIDER_CODEX_TIMEOUT=${PROVIDER_CODEX_TIMEOUT:-120}
 # but legacy is a different arm, so it gets its own tag suffix and never resumes into, or is
 # summarised with, a legacy cell.
 PROMPT_LAYOUT=${PROMPT_LAYOUT:-legacy}
+# Same for the response style (run_cell.sh -> --response-style): full is today's protocol.
+RESPONSE_STYLE=${RESPONSE_STYLE:-full}
 LAYOUT_SUFFIX=""
 [[ "$PROMPT_LAYOUT" != "legacy" ]] && LAYOUT_SUFFIX="-$PROMPT_LAYOUT"
-export PROMPT_LAYOUT
+[[ "$RESPONSE_STYLE" != "full" ]] && LAYOUT_SUFFIX="$LAYOUT_SUFFIX-$RESPONSE_STYLE"
+export PROMPT_LAYOUT RESPONSE_STYLE
 read -r -a servers <<< "$SERVERS"
 
 # Pending cells first, then deal servers: a finished cell must not consume a server slot.
@@ -66,7 +69,7 @@ for arm in $ARMS; do
     cells+=("$agent $channel $s")
   done
 done
-echo "[launcher] $(date '+%H:%M:%S') ${#cells[@]} cells pending, conc=$CONC, servers=${#servers[@]}, layout=$PROMPT_LAYOUT"
+echo "[launcher] $(date '+%H:%M:%S') ${#cells[@]} cells pending, conc=$CONC, servers=${#servers[@]}, layout=$PROMPT_LAYOUT style=$RESPONSE_STYLE"
 
 running=0
 i=0

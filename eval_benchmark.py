@@ -25,7 +25,7 @@ from mc_agent import (
     DefaultAgent, MinerRLActionSpace, OpenAIProvider, VLLMProvider, CodexProvider, DefaultContextBuilder,
     HypothesisAgent, HypothesisContextBuilder,
 )
-from mc_agent.context import PROMPT_LAYOUTS
+from mc_agent.context import PROMPT_LAYOUTS, RESPONSE_STYLES
 
 AGENT_MODES = ("default", "hypothesis", "prolong")
 
@@ -249,6 +249,7 @@ def _run_benchmark(
     prolong_log_window: Optional[int] = None,
     prolong_stateless: bool = False,
     prompt_layout: str = "legacy",
+    response_style: str = "full",
 ) -> Dict[str, Any]:
     """Run one benchmark scenario and save results."""
     global _shutdown_requested
@@ -293,6 +294,10 @@ def _run_benchmark(
         # PRO-LONG builds its own prompt (prolong_mc); the layouts describe the default and
         # hypothesis agents' request only.
         raise ValueError("--prompt-layout applies to --agent-mode default/hypothesis, not prolong")
+    if response_style not in RESPONSE_STYLES:
+        raise ValueError(f"response_style must be one of {RESPONSE_STYLES}, got {response_style!r}")
+    if agent_mode == "prolong" and response_style != "full":
+        raise ValueError("--response-style applies to --agent-mode default/hypothesis, not prolong")
     if agent_mode == "prolong":
         # Same env, same loop, same scorer as the baseline; only the memory
         # mechanism differs. Codex is the model channel, so the provider above is
@@ -324,6 +329,7 @@ def _run_benchmark(
             context_builder_class=HypothesisContextBuilder,
             model=model,
             prompt_layout=prompt_layout,
+            response_style=response_style,
         )
     else:
         agent = DefaultAgent(
@@ -332,6 +338,7 @@ def _run_benchmark(
             context_builder_class=DefaultContextBuilder,
             model=model,
             prompt_layout=prompt_layout,
+            response_style=response_style,
         )
 
     run_id = f"{safe_model}_{scene_id}"
@@ -647,6 +654,9 @@ def _run_benchmark(
         # "legacy" changes what the model reads -- and, for append-only, the frame window --
         # so it is a different arm and must not be pooled with a legacy run.
         "prompt_layout": prompt_layout,
+        # What the model was asked to write back (see RESPONSE_STYLES). "compact" changes
+        # the instructions and what is re-emitted per step, so it too is a different arm.
+        "response_style": response_style,
         "max_steps": max_steps,
         # Which PRO-LONG arm this is. Recorded only where it means something, and
         # recorded at all because an ablated run pooled with the headline prolong runs
@@ -706,6 +716,7 @@ def _worker_eval(worker_args: dict) -> dict:
         prolong_log_window=worker_args.get("prolong_log_window"),
         prolong_stateless=worker_args.get("prolong_stateless", False),
         prompt_layout=worker_args.get("prompt_layout", "legacy"),
+        response_style=worker_args.get("response_style", "full"),
     )
 
 
@@ -782,6 +793,14 @@ def eval_benchmark(
                                            "append-only frame window of 20-29 frames, so the frames "
                                            "cache too). Not 'legacy' = a different arm; recorded in "
                                            "result.json. See PROMPT_LAYOUTS in mc_agent/context.py."),
+    response_style: str = typer.Option("full", "--response-style",
+                                       help="What the default/hypothesis agents ask the model to write "
+                                            "back: 'full' (today's protocol: pretty-printed JSON, the "
+                                            "whole memory / hypotheses / plan every step) or 'compact' "
+                                            "(one line; 1-3 sentence thought; memory_update, hypotheses "
+                                            "and plan only on steps where they change). Not 'full' = a "
+                                            "different arm; recorded in result.json. See RESPONSE_STYLES "
+                                            "in mc_agent/context.py."),
 ):
     """Evaluate all benchmark scenarios in benchmark_dir."""
     logger.info(f"--- Starting evaluation (model={model}) ---")
@@ -790,6 +809,8 @@ def eval_benchmark(
         raise ValueError(f"--agent-mode must be one of {AGENT_MODES}, got {agent_mode!r}")
     if prompt_layout not in PROMPT_LAYOUTS:
         raise ValueError(f"--prompt-layout must be one of {PROMPT_LAYOUTS}, got {prompt_layout!r}")
+    if response_style not in RESPONSE_STYLES:
+        raise ValueError(f"--response-style must be one of {RESPONSE_STYLES}, got {response_style!r}")
     if shard_count < 1:
         raise ValueError(f"--shard-count must be >= 1, got {shard_count}")
     if not (0 <= shard_index < shard_count):
@@ -879,6 +900,7 @@ def eval_benchmark(
                     prolong_log_window=prolong_log_window,
                     prolong_stateless=prolong_stateless,
                     prompt_layout=prompt_layout,
+                    response_style=response_style,
                 )
             except Exception as e:
                 logger.error(f"[ERROR] {scene_num}: {e}")
@@ -930,6 +952,7 @@ def eval_benchmark(
                     "prolong_log_window": prolong_log_window,
                     "prolong_stateless": prolong_stateless,
                     "prompt_layout": prompt_layout,
+                    "response_style": response_style,
                     "_scene_num": scene_num,
                 })
 

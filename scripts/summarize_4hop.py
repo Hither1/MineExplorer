@@ -94,10 +94,13 @@ def main() -> int:
         j = json.loads(res.read_text())
         tag = res.parts[-5]
         agent, channel = j["agent_mode"], j["provider"]
-        # A non-legacy request layout is a different arm (mc_agent/context.py PROMPT_LAYOUTS);
-        # it must not be pooled with the legacy cells of the same agent x channel.
+        # A non-legacy request layout or a non-full response style is a different arm
+        # (mc_agent/context.py PROMPT_LAYOUTS / RESPONSE_STYLES); it must not be pooled with
+        # the legacy cells of the same agent x channel.
         layout = j.get("prompt_layout", "legacy")
-        arm = f"{agent}x{channel}" + (f"[{layout}]" if layout != "legacy" else "")
+        style = j.get("response_style", "full")
+        variant = [v for v in (layout if layout != "legacy" else "", style if style != "full" else "") if v]
+        arm = f"{agent}x{channel}" + (f"[{','.join(variant)}]" if variant else "")
         scene = j["scene_id"]
         wall, server, calls, timeouts = wall_and_server(ROOT / "outputs" / f"log-{tag}.txt")
         frames = [m["frame_completed"] for m in j["milestone_status"]]

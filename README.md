@@ -392,6 +392,25 @@ the legacy arms. `scripts/prompt_layout_check.py` shows the structure and,
 against a server, the shared prefix; `scripts/bench_agent_latency.py` replays a
 recorded cell to time the layouts on a given server.
 
+**The response style (`--response-style`, `RESPONSE_STYLE` for `run_cell.sh` /
+`launch_4hop.sh`).** The layout is about the prefill; the style is about the
+decode, which is what a step waits for once the prefill is cached. Under `full`
+— the default, today's protocol byte for byte — the model answers with
+pretty-printed JSON, rewrites the whole memory every step and, for the
+hypothesis agent, re-emits hypothesis ops and the plan every step: 237 tokens
+per default step of which 118 are a memory that is identical to the previous
+step's in a third of the steps, 508 per hypothesis step. `compact` asks for the
+same fields with the same meaning but on one line, with a 1–3 sentence thought,
+and with `memory_update` / `hypotheses` / `plan` sent only on the steps where
+they change (an absent key means "unchanged", which the runner and
+`HypothesisAgent` already treat as "keep"; `_HYP_THOUGHT_PROCESS_COMPACT` /
+`_DEFAULT_THOUGHT_PROCESS_COMPACT` in `mc_agent/` are the exact wording, the
+hypothesis-writing guidance is unchanged). What the model maintains does not
+change; what it re-emits does — so it is a different arm, recorded in
+`result.json` as `response_style`, suffixed `-compact` by `launch_4hop.sh` and
+kept apart by `summarize_4hop.py`. `bench_agent_latency.py --style compact`
+times it and reports how often the memory / graph / plan actually changed.
+
 ### The codex arms' sandbox
 
 Upstream PRO-LONG runs its agent in a Docker container on an `--internal` network
