@@ -128,24 +128,43 @@ result.json records `prompt_layout: append-only`, milestone 1/4 at frame 10, 4.0
 
 ## 5. Recommended contract for the next relaunch / campaign
 
-- Servers: as today (prefix cache, cap 1024, thinking off, temp 0.7/0.8/20, images 128,
-  model-len 131072, chunk 8192) **plus `--spec-tokens 3`** — for Qwen3.5 as much as for Qwen3.8
-  (§6). Run files `qwen35-serve/run/qwen38-s{1,2,3}-k3.sh` are written for the 3 × TP=2 layout
-  (Qwen3.8); the slots have served Qwen3.5 k=1 since 08:17. At a relaunch, spend 12 minutes on
-  `bench_agent_latency.py` (default legacy, 1 and 3 cells) against one TP=2 k=3 server and
-  against the TP=1 k=3 dev server (`:8004`, GPU 1) to choose between 3 × TP=2 and 7 × TP=1 for
-  a 7-cell arm.
-- Arms: `PROMPT_LAYOUT` / `RESPONSE_STYLE` unset (legacy / full) keeps every arm comparable
-  with the c4h campaign. The two knobs are independent and either can be taken alone:
-  `PROMPT_LAYOUT=append-only` alone is −37/−45 % (default 7.3 → 4.6 s, hypothesis 13.7 → 7.6 s
-  at 3 cells/server) and changes only what the model *reads* — state after the frames, window
-  20–29 — leaving every reply's format and length exactly as the campaign's; adding
-  `RESPONSE_STYLE=compact` takes it to −62/−69 % (2.8 s / 4.3 s) but also changes what the
-  model *writes*. Smallest protocol delta for most of the speed: layout only. Fastest:
-  both, for **all** arms of the comparison (`launch_4hop.sh` tags them
-  `-append-only-compact`). dz's choice; nothing here changes by default.
-- Do not add layout/style cells to a legacy campaign, and do not pool them: `summarize_4hop.py`
-  labels them `agentxchannel[layout,style]`.
+Written after §6–§8, so this section is the one to follow where earlier ones differ. Two rules
+decide everything below: **a knob that only changes serving is free** (exact in distribution, no
+arm changes); **a knob that changes what the model reads or writes is a new arm** — legitimate,
+but then every arm of that comparison takes it, and it never joins a legacy pool.
+
+**Serving (free, take all of it).**
+
+- `--spec-tokens 3` on every server. Measured 2.4–2.5 accepted tokens per draft on both
+  checkpoints (3.4–3.5 per iteration against 1.92 at k=1) → decode ×~1.7 for **every** arm.
+  Worth the most, in absolute seconds, on the codex arms, whose steps are ~95 % decode (§7).
+  Run files for the 3 × TP=2 layout: `qwen35-serve/run/qwen38-s{1,2,3}-k3.sh` (Qwen3.8); for
+  Qwen3.5 it is one `serve.sh --spec-tokens 3` away.
+- Keep everything else as it is: prefix caching on, cap 1024, thinking off, temp 0.7/top-p 0.8/
+  top-k 20, images 128, model-len 131072, `--max-num-batched-tokens 8192` (2048 measured, no
+  gain).
+- Cells per server is a real knob, especially for the codex arms: 29–30 tok/s per request with
+  2–3 cells sharing a server against 43–70 tok/s single-stream. At the relaunch spend 12 minutes
+  on `bench_agent_latency.py` against one TP=2 k=3 server and the TP=1 k=3 dev server to choose
+  3 × TP=2 vs 7 × TP=1 for a 7-cell arm.
+
+**Arm settings (defaults are the campaign's behaviour, byte for byte).**
+
+| setting | default | what taking it changes | measured |
+|---|---|---|---|
+| `PROMPT_LAYOUT=append-only` | `legacy` | what the model **reads**: state after the frames, window 20–29 frames. Reply format untouched. | −37/−45 % per step (default 7.3→4.6 s, hypothesis 13.7→7.6 s at 3 cells) |
+| `RESPONSE_STYLE=compact` | `full` | what the model **writes**: one line, 1–3-sentence thought, memory/hypotheses/plan only when they change | with append-only: −62/−69 % (2.8 s / 4.3 s). Real cells: 118 steps 4/4 at 3.0 s/step (default), 170 steps 4/4 at 4.0 s/step (hypothesis) |
+| `CODEX_OUTPUT_SCHEMA=1` | `0` | **removes tool use** from the codex arms (§8) — breaks the scaffold control | leave off |
+| `--disable view_image` / `shell_tool` | not used | asymmetric capability cut (§8): PRO-LONG reaches older frames only through the viewer | never |
+| codex ceiling | 120 s | scoring policy | 90 s → 85 % of call time, 5 % of answered calls lost |
+
+So: for a campaign that must stay comparable with c4h, change **nothing** on the client and take
+`--spec-tokens 3` on the servers. For a new comparison, `PROMPT_LAYOUT=append-only` alone is the
+cheap two-fifths (only the reading order changes); adding `RESPONSE_STYLE=compact` roughly halves
+what is left, at the price of also changing what the model writes. Both are recorded in
+`result.json`, tagged by `launch_4hop.sh` and kept out of the legacy pool by `summarize_4hop.py`.
+
+Do not add layout/style cells to a legacy campaign, and do not pool them.
 
 ## 6. The response style: say only what changed, in one line (2026-08-19 08:00–)
 
