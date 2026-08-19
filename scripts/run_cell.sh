@@ -25,7 +25,10 @@ BENCH_DIR=${3:?benchmark-dir}
 TAG=${4:?tag}
 MAX_STEPS=${5:-300}
 
-MODEL=Qwen3.8-27B
+# The served model name, which is also the results subdirectory
+# (eval_benchmark.py: out_root = <output-dir>/<model>). The a227 servers alias both
+# checkpoints, so this is the whole of what switches a campaign between them.
+MODEL=${MODEL:-Qwen3.8-27B}
 VLLM_URL=${VLLM_URL:-http://192.168.2.20:8001/v1}
 OUT="outputs/$TAG"
 

@@ -1,13 +1,13 @@
 """One table for the strict 4-hop campaign: scene x arm, from the cells' own files.
 
-Reads outputs/<prefix>-<agent>-<channel>-<scene>/Qwen3.8-27B/4-hop/<scene>/result.json,
+Reads outputs/<prefix>-<agent>-<channel>-<scene>/<model>/4-hop/<scene>/result.json,
 the cell log (wall clock, which server, model calls, calls that hit the ceiling) and, for
 the codex arms, the rollouts (requests, tokens and view_image calls, codex's own
 accounting): PRO-LONG's one resumed thread is the file the vision audit points at; the
 default/hypothesis agents through CodexProvider make one thread per step, all under the
 cell's codex_home (run_cell.sh sets CODEX_EPISODE_HOME there).
 
-    python scripts/summarize_4hop.py [--prefix c4h] [--md]
+    python scripts/summarize_4hop.py [--prefix c4h] [--model Qwen3.8-27B] [--md]
 """
 from __future__ import annotations
 
@@ -87,11 +87,12 @@ def codex_rollouts(res: Path, tag: str) -> list[Path]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prefix", default="c4h")
+    ap.add_argument("--model", default="Qwen3.8-27B", help="results subdirectory = served model name")
     ap.add_argument("--md", action="store_true", help="markdown table")
     args = ap.parse_args()
 
     rows = []
-    for res in sorted(ROOT.glob(f"outputs/{args.prefix}-*/Qwen3.8-27B/4-hop/*/result.json")):
+    for res in sorted(ROOT.glob(f"outputs/{args.prefix}-*/{args.model}/4-hop/*/result.json")):
         j = json.loads(res.read_text())
         tag = res.parts[-5]
         agent, channel = j["agent_mode"], j["provider"]

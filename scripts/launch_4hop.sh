@@ -32,6 +32,9 @@ ARMS=${ARMS:-"default:vllm prolong:codex hypothesis:vllm default:codex"}
 CONC=${CONC:-14}
 MAX_STEPS=${MAX_STEPS:-300}
 PREFIX=${PREFIX:-c4h}
+# Served model name = results subdirectory. The a227 servers alias both checkpoints,
+# so a whole campaign moves between them with MODEL + PREFIX and nothing else.
+MODEL=${MODEL:-Qwen3.8-27B}
 SERVERS=${SERVERS:-"http://192.168.2.20:8001/v1 http://192.168.2.20:8002/v1 http://192.168.2.20:8003/v1"}
 # Per-call ceiling on the codex channel. PRO-LONG turns take 40-120 s and never hit the
 # 900 s default. The default/hypothesis agents through CodexProvider are different: with
@@ -52,7 +55,7 @@ for arm in $ARMS; do
   agent=${arm%%:*}; channel=${arm##*:}
   for s in $SCENES; do
     tag="$PREFIX-$agent-$channel-$s"
-    if [[ -f "outputs/$tag/Qwen3.8-27B/4-hop/$s/result.json" ]]; then
+    if [[ -f "outputs/$tag/$MODEL/4-hop/$s/result.json" ]]; then
       echo "[launcher] $(date '+%H:%M:%S') skip $tag (result.json exists)"
       continue
     fi
@@ -75,8 +78,8 @@ for cell in "${cells[@]}"; do
   done
   timeout=$PROLONG_CODEX_TIMEOUT
   [[ "$channel" == "codex" && "$agent" != "prolong" ]] && timeout=$PROVIDER_CODEX_TIMEOUT
-  echo "[launcher] $(date '+%H:%M:%S') start $tag -> $url (codex ceiling ${timeout}s)"
-  VLLM_URL="$url" CODEX_TIMEOUT="$timeout" \
+  echo "[launcher] $(date '+%H:%M:%S') start $tag -> $url (model $MODEL, codex ceiling ${timeout}s)"
+  MODEL="$MODEL" VLLM_URL="$url" CODEX_TIMEOUT="$timeout" \
     bash scripts/run_cell.sh "$agent" "$channel" "bench_4hop7/_split/$scene" "$tag" "$MAX_STEPS" \
     > "outputs/log-$tag.txt" 2>&1 &
   running=$((running + 1))
@@ -90,7 +93,7 @@ for arm in $ARMS; do
   agent=${arm%%:*}; channel=${arm##*:}
   for s in $SCENES; do
     tag="$PREFIX-$agent-$channel-$s"
-    r="outputs/$tag/Qwen3.8-27B/4-hop/$s/result.json"
+    r="outputs/$tag/$MODEL/4-hop/$s/result.json"
     if [[ -f "$r" ]]; then
       python3 -c "import json,sys; j=json.load(open(sys.argv[1])); print(f\"{sys.argv[2]:30s} steps={j['total_steps']:3d} {j['termination_reason']:10s} milestones={j['milestones_completed']}/{j['milestones_trackable']} sandboxed={j.get('codex_sandboxed','-')}\")" "$r" "$tag"
     else
