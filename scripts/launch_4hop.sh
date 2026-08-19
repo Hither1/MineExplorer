@@ -64,6 +64,12 @@ LAYOUT_SUFFIX=""
 [[ "$PROMPT_LAYOUT" != "legacy" ]] && LAYOUT_SUFFIX="-$PROMPT_LAYOUT"
 [[ "$RESPONSE_STYLE" != "full" ]] && LAYOUT_SUFFIX="$LAYOUT_SUFFIX-$RESPONSE_STYLE"
 [[ "$CODEX_OUTPUT_SCHEMA" == "1" ]] && LAYOUT_SUFFIX="$LAYOUT_SUFFIX-schema"
+# ...but none of the three reach --agent-mode prolong: run_cell.sh drops them there, because
+# PRO-LONG writes its own prompt. So a prolong cell is the same arm whatever they are set to,
+# and it must keep the bare tag -- otherwise a layout campaign would re-run the arm from
+# scratch (4-54 min a cell) instead of resuming the prolong cells it already has, and would
+# file them under a name saying they ran a layout they cannot run.
+arm_suffix() { [[ "$1" == "prolong" ]] && echo "" || echo "$LAYOUT_SUFFIX"; }
 export PROMPT_LAYOUT RESPONSE_STYLE CODEX_OUTPUT_SCHEMA MODEL
 read -r -a servers <<< "$SERVERS"
 
@@ -72,7 +78,7 @@ cells=()
 for arm in $ARMS; do
   agent=${arm%%:*}; channel=${arm##*:}
   for s in $SCENES; do
-    tag="$PREFIX-$agent-$channel$LAYOUT_SUFFIX-$s"
+    tag="$PREFIX-$agent-$channel$(arm_suffix "$agent")-$s"
     if [[ -f "outputs/$tag/$MODEL_DIR/4-hop/$s/result.json" ]]; then
       echo "[launcher] $(date '+%H:%M:%S') skip $tag (result.json exists)"
       continue
@@ -89,7 +95,7 @@ for cell in "${cells[@]}"; do
   agent=$1; channel=$2; scene=$3
   url=${servers[$(( i % ${#servers[@]} ))]}
   i=$((i + 1))
-  tag="$PREFIX-$agent-$channel$LAYOUT_SUFFIX-$scene"
+  tag="$PREFIX-$agent-$channel$(arm_suffix "$agent")-$scene"
   while (( running >= CONC )); do
     wait -n || true
     running=$((running - 1))
@@ -110,7 +116,7 @@ echo "[launcher] $(date '+%H:%M:%S') all cells finished"
 for arm in $ARMS; do
   agent=${arm%%:*}; channel=${arm##*:}
   for s in $SCENES; do
-    tag="$PREFIX-$agent-$channel$LAYOUT_SUFFIX-$s"
+    tag="$PREFIX-$agent-$channel$(arm_suffix "$agent")-$s"
     r="outputs/$tag/$MODEL_DIR/4-hop/$s/result.json"
     if [[ -f "$r" ]]; then
       python3 -c "import json,sys; j=json.load(open(sys.argv[1])); print(f\"{sys.argv[2]:30s} steps={j['total_steps']:3d} {j['termination_reason']:10s} milestones={j['milestones_completed']}/{j['milestones_trackable']} sandboxed={j.get('codex_sandboxed','-')}\")" "$r" "$tag"

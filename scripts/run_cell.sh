@@ -89,14 +89,23 @@ RESPONSE_STYLE=${RESPONSE_STYLE:-full}
 CODEX_OUTPUT_SCHEMA=${CODEX_OUTPUT_SCHEMA:-0}
 
 ARGS=(--model "$MODEL" --benchmark-dir "$BENCH_DIR" --output-dir "$OUT"
-      --max-steps "$MAX_STEPS" --temperature 0.7 --agent-mode "$AGENT_MODE" --resume
-      --prompt-layout "$PROMPT_LAYOUT" --response-style "$RESPONSE_STYLE")
+      --max-steps "$MAX_STEPS" --temperature 0.7 --agent-mode "$AGENT_MODE" --resume)
+
+# All three knobs above describe the default/hypothesis agents' request. PRO-LONG writes its
+# own prompt (prolong_mc: its own AGENTS.md workflow and one resumed conversation), so
+# eval_benchmark.py rejects all three for --agent-mode prolong rather than accept a flag it
+# would silently ignore. Pass them only to the agents they reach, so one campaign can put the
+# direct arms on a faster layout while the prolong arm runs its own protocol unchanged --
+# which is also why launch_4hop.sh gives a prolong cell no layout suffix.
+if [[ "$AGENT_MODE" != "prolong" ]]; then
+  ARGS+=(--prompt-layout "$PROMPT_LAYOUT" --response-style "$RESPONSE_STYLE")
+fi
 
 case "$CHANNEL" in
   vllm)  ARGS+=(--use-vllm --vllm-url "$VLLM_URL") ;;
   codex)
     ARGS+=(--use-codex --codex-base-url "$VLLM_URL" --codex-effort low)
-    [[ "$CODEX_OUTPUT_SCHEMA" == "1" ]] && ARGS+=(--codex-output-schema)
+    [[ "$CODEX_OUTPUT_SCHEMA" == "1" && "$AGENT_MODE" != "prolong" ]] && ARGS+=(--codex-output-schema)
     # The sandbox's own assertions, through the wrapper this cell will use, before a
     # single step is spent. Set SKIP_SANDBOX_SELFTEST=1 only for a deliberate probe.
     # (without the per-cell episode home: the selftest asserts the wrapper's own
@@ -109,5 +118,7 @@ case "$CHANNEL" in
   *) echo "channel must be vllm or codex, got '$CHANNEL'" >&2; exit 2 ;;
 esac
 
-echo "[cell] $TAG  agent=$AGENT_MODE channel=$CHANNEL layout=$PROMPT_LAYOUT style=$RESPONSE_STYLE schema=$CODEX_OUTPUT_SCHEMA steps=$MAX_STEPS bench=$BENCH_DIR"
+knobs="layout=$PROMPT_LAYOUT style=$RESPONSE_STYLE schema=$CODEX_OUTPUT_SCHEMA"
+[[ "$AGENT_MODE" == "prolong" ]] && knobs="layout/style/schema=n/a (PRO-LONG writes its own prompt)"
+echo "[cell] $TAG  agent=$AGENT_MODE channel=$CHANNEL $knobs steps=$MAX_STEPS bench=$BENCH_DIR"
 exec .venv/bin/python eval_benchmark.py "${ARGS[@]}"

@@ -442,6 +442,17 @@ well-formed object with a degenerate string), and the 748 ceiling timeouts are u
 Recorded in `result.json` as `codex_output_schema`, tagged `-schema` by `launch_4hop.sh`,
 and rejected for `--agent-mode prolong`.
 
+**None of the three reaches the prolong arm, and a mixed campaign is fine.** PRO-LONG
+writes its own prompt (`prolong_mc`: its own AGENTS.md workflow and one resumed
+conversation), so `eval_benchmark.py` rejects all three for `--agent-mode prolong` rather
+than accept a flag it would silently ignore. `run_cell.sh` therefore does not pass them
+for that agent, and `launch_4hop.sh` gives a prolong cell no tag suffix: one campaign can
+set `PROMPT_LAYOUT` / `RESPONSE_STYLE` / `CODEX_OUTPUT_SCHEMA` for the direct arms while
+`prolong:codex` runs its own protocol unchanged, and the prolong cells resume into — and
+are pooled with — the prolong cells of a `legacy` run of the same `PREFIX`, since under
+any setting of the three they are the same arm. `result.json` records `legacy` / `full`
+for them, which is what they ran.
+
 ### The codex arms' sandbox
 
 Upstream PRO-LONG runs its agent in a Docker container on an `--internal` network
