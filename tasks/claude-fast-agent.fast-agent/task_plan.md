@@ -23,13 +23,13 @@
 
 ## Current Cycle
 
-- Working hypothesis: the direct arms' output is mostly re-emitted unchanged state (memory
+- Working hypothesis (confirmed 08:31-09:29): the direct arms' output is mostly re-emitted unchanged state (memory
   identical step-to-step in 28-36% of steps, 99% similar in median; hypothesis ops/plan repeated
   verbatim), plus pretty-printed JSON and long recaps in "thought"; a protocol that emits only
   what changed, in one line, halves the decode, and with append-only prefill the step becomes
   ~TTFT + a short decode.
-- Main uncertainty: does the model still update memory/hypotheses when it should under the
-  compact protocol (laziness), and how far does the thought shrink without instructions to.
+- Main uncertainty (resolved): laziness was real (v1: 0 memory writes in 54 steps) and is handled by the
+  always-present memory line; remaining unknown is success rate over seeds, which is a campaign question.
 - Next decisive experiment or implementation: implement `--response-style compact` for both
   agents (+ runner/launcher plumbing), bench legacy/full vs append-only/full vs
   append-only/compact at 1 and 3 cells on the dev server, then a 60-step real-sandbox smoke of
@@ -41,10 +41,10 @@
 
 ## Success Criteria
 
-- [ ] `prompt_layout_check.py --golden` still IDENTICAL for legacy/full after the change.
-- [ ] Bench table legacy/full vs append-only/full vs append-only/compact (default, hypothesis; 1 and 3 cells).
-- [ ] Real-sandbox smoke (>= 60 steps) per agent under fast with memory/hypothesis/plan update rates recorded.
-- [ ] Report + task files + memory updated; branch pushed.
+- [x] `prompt_layout_check.py --golden` still IDENTICAL for legacy/full after the change (6/6, twice).
+- [x] Bench table legacy/full vs append-only/full vs append-only/compact (default, hypothesis; 1 and 3 cells) -- and again on Qwen3.5.
+- [x] Real-sandbox cells: 300-step budget, both agents finished scene 0306 (118 / 170 steps, 4/4); update rates in findings.
+- [x] Report + task files + memory updated; branch pushed.
 
 ## Parallel Tracks
 
@@ -63,17 +63,17 @@
 
 ### Phase 2: Implement or run the decisive test
 
-- [ ] context.py / hypothesis_agent.py compact prompts; agents accept response_style; None-safe parse.
-- [ ] eval_benchmark.py / run_cell.sh / launch_4hop.sh / summarize_4hop.py plumbing; result.json records it.
-- [ ] Golden check; bench on dev server; real-sandbox smoke x2.
-- **Status:** in_progress
-- **Evidence:** none
+- [x] context.py / hypothesis_agent.py compact prompts; agents accept response_style; None-safe parse.
+- [x] eval_benchmark.py / run_cell.sh / launch_4hop.sh / summarize_4hop.py plumbing; result.json records it.
+- [x] Golden check; bench on dev server; real-sandbox cells x2 (v1 exposed the memory laziness, v2 fixed it).
+- **Status:** complete
+- **Evidence:** findings 08:31, 08:36, 08:52, 08:57, 09:29; commits 1ad9f8a, 6ca68e7
 
 ### Phase 3: Interpret and hand off
 
-- [ ] Report section + decision table; memory; commit/push.
-- **Status:** pending
-- **Evidence:** none
+- [x] Report section 6 + decision table + contract; memory files; commit/push.
+- **Status:** complete
+- **Evidence:** experiments/EVAL_LATENCY_helixon.md section 6; final commit on claude/fast-agent
 
 ## Decisions And Blockers
 
@@ -90,4 +90,4 @@
 
 ## Next Action
 
-Implement `--response-style compact` in mc_agent/context.py and mc_agent/hypothesis_agent.py.
+dz decides whether the next campaign runs `PROMPT_LAYOUT=append-only RESPONSE_STYLE=compact` for all arms (and relaunches the production slots with `--spec-tokens 3`); if a Qwen3.5 campaign goes through launch_4hop.sh / summarize_4hop.py, lift the hardcoded `Qwen3.8-27B` path segment first. Nothing else pending on this branch.

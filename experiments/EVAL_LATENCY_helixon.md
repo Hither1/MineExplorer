@@ -2,8 +2,10 @@
 
 Measured on the c4h campaign (`outputs/log-c4h-*.txt`, servers `qwen38-s1/2/3` on a227) and
 on a dev server (a227 GPU 1, TP=1, `:8004`, prefix cache, campaign wire contract: thinking
-off, cap 1024, temp 0.7). Branch `claude/eval-latency`. Nothing here changes a running arm:
-`--prompt-layout legacy` (the default) is today's prompt byte for byte.
+off, cap 1024, temp 0.7). Branches `claude/eval-latency` (§1–5: breakdown, serving knobs,
+`--prompt-layout`) and `claude/fast-agent` (§6: `--response-style`, real cells, Qwen3.5).
+Nothing here changes a running arm: `--prompt-layout legacy --response-style full` (the
+defaults) is today's prompt and protocol byte for byte.
 
 ## 1. The breakdown
 
@@ -115,11 +117,11 @@ result.json records `prompt_layout: append-only`, milestone 1/4 at frame 10, 4.0
 
 | knob | what it buys (measured) | changes the protocol? | who decides | status |
 |---|---|---|---|---|
-| MTP depth 3 on all servers | decode ×~1.7 per iteration, all arms | no (exact in distribution) | relaunch of a shared resource → dz OK, after the c4h campaign ends | run files written; not launched |
+| MTP depth 3 on all servers | decode ×~1.7 per iteration, all arms; same acceptance on Qwen3.5-27B (§6) | no (exact in distribution) | relaunch of a shared resource → dz; the slots now run Qwen3.5 k=1 (`qwen35-s{1,2,3}.sh`, relaunched 08:17 by the campaign session) | `qwen38-s{1,2,3}-k3.sh` written for Qwen3.8; a Qwen3.5 k=3 file is one `serve.sh --spec-tokens 3` away |
 | server layout at relaunch (3 × TP=2 vs 7 × TP=1) | private servers for a 7-cell arm: 4.3 s vs ~7 s per default step; TP=2 k=3 unmeasured | no | dz | measure both at relaunch, pick by numbers |
 | `--prompt-layout append-only` for the direct arms | 3 cells/server at single-cell speed (−40 % / −50 % step time) | yes: state after frames, window 20–29 | dz (new campaign, all arms same layout) | implemented, opt-in, smoke-tested |
 | `--prompt-layout static-first` | −7 % (default), more for hypothesis | yes (order only) | dz | implemented, opt-in |
-| shorter outputs (memory rewrite, hypothesis JSON) | up to −50 % of the remaining step | yes | dz | not implemented |
+| `--response-style compact` for the direct arms | with append-only: default 4.6 → 2.8 s, hypothesis 7.6 → 4.3 s at 3 cells/server (§6) | yes: one-line reply, 1–3-sentence thought, memory / hypotheses / plan only when they change | dz authorised the change class 08:00; adopting it for a campaign is still an arm choice | implemented, opt-in, benched, smoke-tested (§6) |
 | `--max-num-batched-tokens 2048` | nothing (same step, worse TTFT) | no | — | measured; keep 8192 |
 | codex ceiling 120 s | 47–63 % of the codex arm's wall | yes (scoring policy) | dz | unchanged |
 
@@ -127,14 +129,128 @@ result.json records `prompt_layout: append-only`, milestone 1/4 at frame 10, 4.0
 ## 5. Recommended contract for the next relaunch / campaign
 
 - Servers: as today (prefix cache, cap 1024, thinking off, temp 0.7/0.8/20, images 128,
-  model-len 131072, chunk 8192) **plus `--spec-tokens 3`**. Run files
-  `qwen35-serve/run/qwen38-s{1,2,3}-k3.sh` are written for the current 3 × TP=2 layout; at the
-  relaunch, spend 12 minutes on `bench_agent_latency.py` (default legacy, 1 and 3 cells) against
-  one TP=2 k=3 server and against the TP=1 k=3 dev server (`:8004`, GPU 1) to choose between
-  3 × TP=2 and 7 × TP=1 for a 7-cell arm.
-- Arms: `PROMPT_LAYOUT` unset (legacy) keeps every arm comparable with the c4h campaign;
-  `PROMPT_LAYOUT=append-only` for **all** arms of a new comparison halves the direct arms'
-  step time at 3 cells/server (and `launch_4hop.sh` tags them `-append-only`). Both are dz's
-  choice; nothing here changes by default.
-- Do not add layout cells to a legacy campaign, and do not pool them: `summarize_4hop.py`
-  labels them `agentxchannel[layout]`.
+  model-len 131072, chunk 8192) **plus `--spec-tokens 3`** — for Qwen3.5 as much as for Qwen3.8
+  (§6). Run files `qwen35-serve/run/qwen38-s{1,2,3}-k3.sh` are written for the 3 × TP=2 layout
+  (Qwen3.8); the slots have served Qwen3.5 k=1 since 08:17. At a relaunch, spend 12 minutes on
+  `bench_agent_latency.py` (default legacy, 1 and 3 cells) against one TP=2 k=3 server and
+  against the TP=1 k=3 dev server (`:8004`, GPU 1) to choose between 3 × TP=2 and 7 × TP=1 for
+  a 7-cell arm.
+- Arms: `PROMPT_LAYOUT` / `RESPONSE_STYLE` unset (legacy / full) keeps every arm comparable
+  with the c4h campaign; `PROMPT_LAYOUT=append-only RESPONSE_STYLE=compact` for **all** arms of
+  a new comparison cuts the direct arms' step time by 62–69 % at 3 cells/server (§6;
+  `launch_4hop.sh` tags them `-append-only-compact`). Both are dz's choice; nothing here
+  changes by default.
+- Do not add layout/style cells to a legacy campaign, and do not pool them: `summarize_4hop.py`
+  labels them `agentxchannel[layout,style]`.
+
+## 6. The response style: say only what changed, in one line (2026-08-19 08:00–)
+
+dz's call of 08:00: prompt order and output length may change as long as the agents keep doing
+what the methods do. So, on top of the layout, `--response-style compact` (branch
+`claude/fast-agent`, `RESPONSE_STYLE` for the scripts; `full` = today's protocol byte for byte,
+still the default).
+
+What the direct arms were spending their decode on (c4h campaign, 7 cells per arm, `/tokenize`):
+
+| arm | reply | thought | memory | action | hypotheses | plan | JSON pretty-printing + fences |
+|---|---|---|---|---|---|---|---|
+| default × vllm | 237 tok | 74 | 118 | 10 | – | – | ~35 |
+| hypothesis × vllm | 508 tok | 126 | 99 | 5 | 134 | 61 | ~83 |
+
+The memory is identical to the previous step's in 36 % (default) / 28 % (hypothesis) of steps and
+99 % similar in median; the hypothesis agent sends ≥ 1 hypothesis op on 99 % of steps and repeats
+the plan verbatim for runs of steps (e.g. 0306, steps 61–64: same plan four times, same h13 with
+the evidence reworded). Compact JSON alone: 237 → 208, 508 → 414 tokens; without the memory:
+88 / 302.
+
+`compact` asks for the same fields with the same meaning, but:
+- one JSON object on one line (no pretty-printing);
+- a 1–3 sentence thought that does not restate the memory, the hint lines or the captions;
+- `memory_update` only on steps where the memory changes (new landmark/object, sub-goal done,
+  failed direction/attempt, change of plan, or the memory is stale/wrong) — then the FULL memory,
+  as before; an absent key means "unchanged", which the runner already treats as "keep";
+- hypothesis agent: a hypothesis op only when a hypothesis is new or its confidence moves ≥ 0.1
+  or its status changes (id + changed fields + ≤ 15-word evidence); `plan` only when it changes.
+  `HypothesisAgent._apply_hypothesis_ops` already treats absent as "keep". The
+  hypothesis-writing guidance (one id per claim, decompose the task up front, evidence from the
+  position line, retire stale placeholders, Examples 1–6) is unchanged; a "quiet step" example is
+  added.
+The prompts are built from shared pieces (`_DEFAULT_*` / `_HYP_*` in `mc_agent/`), so `full`
+cannot drift from the campaign's prompt (`prompt_layout_check.py --golden`: 6/6 identical).
+
+Measured on the dev server (TP=1, MTP k=3, `outputs/bench/style.txt`; same replay as §2):
+
+| agent | layout | style | cells | step | TTFT | gen tok/req | decode per req | prefix hit |
+|---|---|---|---|---|---|---|---|---|
+| default | legacy | full | 3 | 7.3 s | 2.62 s | 192 | 36.8 tok/s | 2 % |
+| default | append-only | full | 3 | 4.6 s | 1.44 s | 185 | 59.7 | 62 % |
+| default | legacy | compact | 3 | 5.5 s | 2.69 s | 76 | 30.2 | 0 % |
+| default | append-only | **compact** | 3 | **2.8 s** | 1.14 s | 78 | 49.4 | 69 % |
+| default | append-only | compact | 1 | **2.2 s** | 0.68 s | 78 | 64.4 | 63 % |
+| hypothesis | legacy | full | 3 | 13.7 s | 2.83 s | 449 | 42.0 | 2 % |
+| hypothesis | append-only | full | 3 | 7.6 s | 1.28 s | 347 | 52.8 | 69 % |
+| hypothesis | legacy | compact | 3 | 9.7 s | 3.71 s | 178 | 33.2 | 0 % |
+| hypothesis | append-only | **compact** | 3 | **4.3 s** | 1.25 s | 154 | 48.9 | 74 % |
+| hypothesis | append-only | compact | 1 | **3.7 s** | 0.97 s | 157 | 62.3 | 65 % |
+
+Read: the two knobs are complementary and both are needed. Style alone leaves the uncached
+prefill (TTFT 2.7–3.7 s at 3 cells) and buys 25–30 %; layout alone leaves the 185–350-token
+decode and buys 37–45 %; together, at 3 cells per server, a default step goes 7.3 → 2.8 s (−62 %)
+and a hypothesis step 13.7 → 4.3 s (−69 %) — against the campaign's own k=1 servers (8.7 s
+default at 3 cells) it is −68 %. What is left of a step is now ~1.1 s TTFT (state block +
+the newest frame + the tail block that the 800-token cache granularity never hits) + ~1.6 s of
+decode for ~78 tokens; the hypothesis agent's ~154 tokens are the state it chose to change.
+
+**Does the model still keep its state?** The first compact cell answered no: 54 steps, three
+milestones, and not one `memory_update` — with the memory section simply absent while empty (as
+in `full`, where the model rewrites it every step regardless) and an example marked "USE THIS
+OFTEN" carrying no memory, the model ran on the captions' thoughts alone, i.e. a memoryless
+agent (`outputs/smoke-history/log-fast-default-vllm-0306.v1-nomemory.txt`). So `compact` now
+always renders a memory line the model can read staleness off: "empty - write it this step",
+otherwise "(last rewritten at step N; rewrite it whenever it no longer records everything you
+have found, completed or ruled out)" and, after `MEMORY_REWRITE_DUE` = 20 steps without a
+rewrite, "rewrite it this step"; the prompt says write it on step 1, and the examples start with
+a first-step memory. The agents track the memory-change step from what the runner hands them;
+the runner is untouched. Then, full-length real cells on scene 0306 (the 4-hop corridor; the
+legacy c4h cells of both agents finished it) against the dev server, both cells at once
+(`scripts/response_stats.py`):
+
+| cell (scene 0306) | steps | milestones (step) | wall | s/step (med) | reply | thought | memory sent | hypotheses / plan sent | retries |
+|---|---|---|---|---|---|---|---|---|---|
+| default, legacy/full (c4h 08-18 14:32, production server shared with codex cells) | 136, ESC | 4/4 (10, 41, 57, 135) | 106 min | 37 s | 915 ch | 339 ch | 100 % (469 ch) | – | 1 |
+| **default, append-only/compact** (dev, k=3) | 118, ESC | 4/4 (39, 60, 74, 117) | 6.5 min | 3.0 s | 270 ch | 201 ch | 37 % (427 ch), first at step 1 | – | 0 |
+| hypothesis, legacy/full (c4h 08-19 00:05, production server) | 107, ESC | 4/4 (7, 15, 46, 106) | 30 min | 16 s | 2004 ch | 459 ch | 100 % (431 ch) | 99 % / 99 % | 0 |
+| **hypothesis, append-only/compact** (dev, k=3) | 170, ESC | 4/4 (21, 23, 41, 169) | 12 min | 4.0 s | 734 ch | 253 ch | 59 % (280 ch) | 16 % / 56 % | 0 |
+
+Both fast cells finish the scene, every reply was one line, no parse retries, and the state is
+what the methods maintain: the default cell writes its memory at step 1 and rewrites it (in
+full: locations, findings, failed attempts, current plan) on 37 % of steps; the hypothesis cell
+opens the four-hypothesis chain h1→h2→h3→h4 at step 1, confirms h1–h3 with evidence as it
+finds them (h4 active at 0.85 when it ESCs), rewrites the memory on 59 % of steps and the plan
+on 56 %, and sends a hypothesis op only on 16 % of steps instead of 99 %. Milestone steps are
+one seed each and not a quality claim; that is the next campaign's job. Sandbox note: two
+`reset_env` calls issued at the same instant made one hang for its 600 s timeout and succeed on
+the retry (seen in both smoke rounds); stagger cell starts.
+
+**On Qwen3.5-27B, the model the production slots serve since 08:17.** At 08:17 the campaign
+session replaced `qwen38-s1/2/3` with `qwen35-s1/2/3` (Qwen3.5-27B, same flags, k=1), so the next
+campaign's model is Qwen3.5; the dev slot was switched to Qwen3.5-27B TP=1 k=3
+(`qwen35-serve/run/qwen35-dev.k3.sh`) and the same bench and short real cells repeated
+(`outputs/bench/style_qwen35.txt`, `outputs/log-fast-q35-*-0306.txt`):
+
+| Qwen3.5-27B, TP=1, k=3, 3 cells | legacy/full | append-only/full | append-only/compact | MTP tokens/iter |
+|---|---|---|---|---|
+| default step (gen tok/req) | 7.2 s (180) | 4.3 s (162) | **3.3 s** (100) | 3.2–3.4 |
+| hypothesis step (gen tok/req) | 12.3 s (416) | 6.8 s (305) | **4.1 s** (127) | 3.3–3.4 |
+
+Same picture as Qwen3.8 (compact replies run ~25 tokens longer on Qwen3.5), and the MTP head is
+accepted just as often, so `--spec-tokens 3` is worth the same there. Real 60-step cells on
+scene 0306: default 55 steps, 4/4 milestones at 6/15/20/54 then ESC, 3.0 s/step, memory written
+at steps 1, 3, 23, 36 (coherent, tracks progress), 98 % one-line, one retry (the model answered a
+bare `<think>` once — a Qwen3.5 quirk with thinking off, the retry parsed); hypothesis 60 steps,
+3/4 by step 25, 4.0 s/step, 100 % one-line, 0 retries, memory 22 % / hypotheses 40 % / plan
+27 %. Two of 38 bench requests on hypothesis/compact came back as junk (` button\n柳`,
+` user...`) and were retried — watch the retry column in a Qwen3.5 campaign. `run_cell.sh` now
+takes `MODEL=Qwen3.5-27B` (default unchanged); `launch_4hop.sh` / `summarize_4hop.py` still
+look for `outputs/<tag>/Qwen3.8-27B/...` and need the model name lifted before a Qwen3.5
+campaign is launched through them.

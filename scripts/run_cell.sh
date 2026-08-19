@@ -25,7 +25,7 @@ BENCH_DIR=${3:?benchmark-dir}
 TAG=${4:?tag}
 MAX_STEPS=${5:-300}
 
-MODEL=Qwen3.8-27B
+MODEL=${MODEL:-Qwen3.8-27B}
 VLLM_URL=${VLLM_URL:-http://192.168.2.20:8001/v1}
 OUT="outputs/$TAG"
 
