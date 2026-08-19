@@ -405,35 +405,39 @@ fails the check exactly like one that appears), with the same reasoning in its c
 **Recommendation: do not restrict the tools. Re-measure the arm on Qwen3.5 before assuming it is
 expensive.**
 
-**`--output-schema` is the one codex setting worth adopting, and it is a reliability fix —
-now implemented** as `--codex-output-schema` / `CODEX_OUTPUT_SCHEMA=1` (opt-in, default off).
-It constrains codex's final message to the agent's reply schema. What it buys: the codex arms
-cannot answer with unparsable text. On the c4h campaign the `default × codex` arm logged 148
-parse failures / retry-exhaustions over 2266 calls (~7 % of calls are retries the arm pays for
-at 8–40 s each) while the direct arms logged none.
+**`--output-schema`: implemented, measured, and it should stay off.** It is wired up as
+`--codex-output-schema` / `CODEX_OUTPUT_SCHEMA=1` (opt-in, default off, recorded in
+`result.json`, tagged `-schema`, rejected for `--agent-mode prolong`). `CodexProvider` writes
+the agent's reply schema (`default_reply_schema` / `hypothesis_reply_schema`, which track the
+prompt: under `compact` the keys the model only sends when they change stay optional) into the
+call's workdir — it has to be *inside* the sandbox workspace, or every call dies with
+`schema file …: No such file or directory` (measured both ways).
 
-The one implementation detail that decides whether it works: **the schema file must be inside
-the call's sandbox workspace** — with the file in `/tmp` outside the workspace codex fails the
-whole call with `schema file …: No such file or directory` (measured both ways), so
-`CodexProvider` writes it into the per-call workdir rather than taking a static flag. The schema
-comes from `default_reply_schema` / `hypothesis_reply_schema`, which track the prompt: under
-`compact` the keys the model only sends when they change (`memory_update`, `hypotheses`, `plan`)
-stay optional.
+It does what it says to the reply. Both agents × both styles, three replayed steps each, codex
+0.148: with the schema the reply is exactly the schema's key set and never markdown-fenced
+(without it, `full` replies arrive fenced); `compact`'s optional keys stay optional (one reply
+came back `thought`+`action` only); step time 18/14/13/10 s with against 24/19/15/12 s without.
+End to end through `run_cell.sh`: a 10-step `default × codex` cell on Qwen3.5, 8 s/step, zero
+parse failures, `result.json` carrying `codex_output_schema: true`.
 
-Verified on codex 0.148, both agents × both styles, three real replayed steps each:
+**But codex applies the constraint to every assistant turn, not only the final one, so the model
+cannot call a tool at all.** Given a prompt that explicitly ordered a shell command first, with
+the schema on the model ran **0** tool calls 3/3 (and said in its own `thought` that it needed
+to run one); with it off, 4 tool calls and the file written. So the flag quietly turns the
+`default/hypothesis × codex` arms into single-shot arms — the same objection that rules out
+`--disable view_image`, arriving through a different door: these arms are PRO-LONG's scaffold
+control, and PRO-LONG keeps its tools.
 
-| | schema off | schema on |
-|---|---|---|
-| reply keys | the right ones, but the object arrives markdown-fenced under `full` | exactly the schema's key set, never fenced |
-| `compact` optional keys | model's choice | still the model's choice (one reply came back `thought`+`action` only) |
-| step time (n=3, dev server) | 24 / 19 / 15 / 12 s | 18 / 14 / 13 / 10 s |
+And what it fixes is narrower than it first looked. Of 2266 calls on the c4h `default × codex`
+arm: **148 parse-failure retries** (0 exhausted — every one recovered on the retry), of which
+**46** are prose answers with no JSON object (a schema fixes these) and **102** are repetition
+collapses (`!!!!!!…`); under a schema a collapse can come back as a well-formed object with a
+degenerate string, i.e. *accepted* instead of retried, which is worse. The **748 ceiling
+timeouts** — the arm's real failure mode — are untouched either way.
 
-and end to end through `run_cell.sh`: a 10-step `default × codex` cell on Qwen3.5, 8 s/step,
-**0 parse failures**, `result.json` carrying `codex_output_schema: true`. The step times say it
-is not slower — three steps per cell is too few to claim it is faster. `_run_benchmark` rejects
-the flag for `--agent-mode prolong` and for non-codex runs, and (fixed while here) all such
-argument checks now run *before* the sandbox session is created, so a rejected combination no
-longer leaks an environment.
+Verdict: keep it implemented and off. It is the right tool for a deliberately single-shot codex
+arm and the wrong one for the scaffold control. If the goal is only to stop paying for the 46
+prose replies, that is ~2 % of calls and the retry already recovers them.
 
 **Everything else on the codex side, measured or checked:** the ceiling is a policy knob (§7);
 `--ephemeral` would drop the rollouts, which are the only record of what a call did — do not use

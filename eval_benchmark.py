@@ -829,12 +829,14 @@ def eval_benchmark(
                                             "in mc_agent/context.py."),
     codex_output_schema: bool = typer.Option(False, "--codex-output-schema",
                                              help="Codex channel only (default/hypothesis agents): "
-                                                  "constrain codex's final message to the agent's reply "
-                                                  "schema via `codex exec --output-schema`. Removes the "
-                                                  "channel's unparsable-answer failure mode (148 of 2266 "
-                                                  "calls on the c4h default x codex arm) but changes what "
-                                                  "the model emits, so it is a different arm and is "
-                                                  "recorded in result.json."),
+                                                  "constrain codex's output to the agent's reply schema via "
+                                                  "`codex exec --output-schema`. NOTE: codex applies the "
+                                                  "constraint to every assistant turn, so the model can no "
+                                                  "longer call tools (measured) -- this makes the arm "
+                                                  "single-shot, which is a change of arm, not a reliability "
+                                                  "switch. It fixes the 46-of-2266 prose answers the c4h "
+                                                  "default x codex arm had to retry; it does nothing for the "
+                                                  "748 ceiling timeouts. Recorded in result.json."),
 ):
     """Evaluate all benchmark scenarios in benchmark_dir."""
     logger.info(f"--- Starting evaluation (model={model}) ---")

@@ -45,11 +45,13 @@ def default_reply_schema(style: str = "full") -> dict:
     """The JSON Schema for the default agent's reply, mirroring its RESPONSE FORMAT block.
 
     Only the codex channel uses it (`CodexProvider(output_schema=...)` -> `codex exec
-    --output-schema`, which constrains the final message). It exists because that channel is
-    the only one that can answer with something unparsable: on the c4h campaign the
-    default x codex arm logged 148 parse failures / retry-exhaustions over 2266 calls while
-    the direct arms logged none. The shape must track the prompt: `full` sends the memory
-    every step, `compact` only when it changes, so `memory_update` is required only for `full`.
+    --output-schema`). It exists because that channel is the only one that can answer with
+    something unparsable: on the c4h campaign the default x codex arm retried 148 of 2266
+    calls on a parse failure while the direct arms retried none. Read the warning on
+    `CodexProvider.output_schema` before turning it on -- codex applies the constraint to
+    every assistant turn, so it also takes tool use away. The shape must track the prompt:
+    `full` sends the memory every step, `compact` only when it changes, so `memory_update`
+    is required only for `full`.
     """
     required = ["thought", "action"] + (["memory_update"] if style == "full" else [])
     return {

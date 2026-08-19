@@ -302,12 +302,21 @@ class CodexProvider(BaseLLMProvider):
         self.transcript_dir = Path(transcript_dir) if transcript_dir else None
         if self.transcript_dir:
             self.transcript_dir.mkdir(parents=True, exist_ok=True)
-        # When set, `codex exec --output-schema` constrains the final message to this JSON
-        # Schema (see default_reply_schema / hypothesis_reply_schema). This channel is the
-        # only one that can answer with unparsable text -- 148 parse failures over 2266 calls
-        # on the c4h default x codex arm, none on the direct arms -- and the schema removes
-        # that failure mode. It also changes what the model emits, so it is opt-in and the
-        # run records it. The file has to be written per call, not once: see chat().
+        # When set, `codex exec --output-schema` constrains codex's output to this JSON
+        # Schema (see default_reply_schema / hypothesis_reply_schema).
+        #
+        # WARNING, measured 2026-08-19 on codex 0.148: the constraint applies to EVERY
+        # assistant turn, not only the last one, so the model cannot emit a tool call at all.
+        # Told explicitly to run a shell command first, it ran none 3/3 with the schema on
+        # and 4 tool calls with it off. That makes this flag a change of arm, not a
+        # reliability switch: the default/hypothesis codex arms are PRO-LONG's scaffold
+        # control (same tool surface), and this silently makes them single-shot.
+        # What it does buy: of 2266 calls on the c4h default x codex arm, 148 were retried on
+        # a parse failure -- 46 prose answers with no JSON (the schema fixes these) and 102
+        # repetition collapses (`!!!!...`, which today are caught and retried successfully;
+        # under a schema they can come back as a well-formed object with a degenerate string,
+        # i.e. accepted instead of retried). The 748 ceiling timeouts are untouched.
+        # Opt-in, recorded in result.json. The file has to be written per call: see chat().
         self.output_schema = output_schema
         self._calls = 0
 
