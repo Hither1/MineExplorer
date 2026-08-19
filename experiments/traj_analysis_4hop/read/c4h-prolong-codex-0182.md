@@ -1,0 +1,375 @@
+# c4h-prolong-codex-0182  arm=prolong
+TASK: Find the green banner landmark, then locate and find the dark oak button on the stone wall. Pass through the wall opening, mine magma blocks from the deposit, then build a bridge across the lava gap to reach the gold block on the far platform.
+MILESTONE RULES (spawn-relative coords; x+ = east, z+ = south; Minecraft yaw: 0=south(+z), 90=west(-x), 180/-180=north(-z), -90=east(+x)):
+  - find_green_banner: position_near_with_facing {"target": [4, 0, 5], "max_distance": 5, "facing_tolerance": 60, "coordinate_frame": "spawn_relative"}
+  - find_dark_oak_button: position_near_with_facing {"target": [7, 1, 5], "max_distance": 5, "facing_tolerance": 60, "coordinate_frame": "spawn_relative"}
+  - mine_magma_block: inventory_has {"item": "magma_block", "min_count": 1}
+  - bridge_lava_gap: position_inside_box {"min": [19, -1, 1], "max": [25, 3, 9], "coordinate_frame": "spawn_relative"}
+spawn_abs=(-3009.5, 71.0, -5572.5)  milestones_done(frame)={}  esc_rejected_steps(n=0)=[]
+PHASES (action-class runs; pos = spawn-relative x,z at start -> end):
+  steps   1-  3 (  3) turn        (0.0,0.0)->(0.0,0.0) yaw -45->0
+  steps   4-108 (105) move        (0.0,0.1)->(1.1,27.2) yaw 0->0
+  steps 109-113 (  5) turn        (1.1,27.4)->(1.1,28.0) yaw -30->-180
+  steps 114-123 ( 10) move        (1.1,28.0)->(1.1,26.0) yaw -180->-180
+  steps 124-124 (  1) turn        (1.1,25.8)->(1.1,25.8) yaw -180->-180
+  steps 125-127 (  3) jump+move   (1.1,25.8)->(1.1,25.8) yaw -180->-180
+  steps 128-128 (  1) turn        (1.1,25.8)->(1.1,25.8) yaw 90->90
+  steps 129-131 (  3) jump+move   (1.1,25.8)->(1.0,25.8) yaw 90->90
+  steps 132-132 (  1) turn        (0.9,25.8)->(0.9,25.8) yaw 45->45
+  steps 133-137 (  5) move        (0.9,25.8)->(0.8,26.1) yaw 45->45
+  steps 138-142 (  5) attack      (0.8,26.1)->(0.8,26.2) yaw 45->45
+  steps 143-147 (  5) move        (0.8,26.3)->(0.8,26.9) yaw 45->45
+  steps 148-148 (  1) turn        (0.8,26.9)->(0.8,26.9) yaw -0->-0
+  steps 149-168 ( 20) jump+move   (0.8,27.3)->(0.5,31.5) yaw -0->-0
+  steps 169-169 (  1) turn        (0.5,31.7)->(0.5,31.7) yaw 45->45
+  steps 170-189 ( 20) jump+move   (0.4,31.9)->(-2.2,33.2) yaw 45->45
+  steps 190-190 (  1) turn        (-2.2,33.2)->(-2.2,33.2) yaw -45->-45
+  steps 191-195 (  5) jump+move   (-2.1,33.2)->(-1.9,33.3) yaw -45->-45
+  steps 196-201 (  6) turn        (-1.8,33.3)->(-1.5,33.5) yaw 0->-135
+  steps 202-211 ( 10) move        (-1.4,33.4)->(-0.1,32.1) yaw -135->-135
+  steps 212-212 (  1) turn        (0.0,32.0)->(0.0,32.0) yaw 135->135
+  steps 213-217 (  5) jump+move   (0.1,31.9)->(0.1,31.4) yaw 135->135
+  steps 218-218 (  1) turn        (0.1,31.3)->(0.1,31.3) yaw 45->45
+  steps 219-238 ( 20) jump+move   (0.0,31.3)->(-2.3,33.2) yaw 45->45
+  steps 239-241 (  3) turn        (-2.4,33.2)->(-2.5,33.2) yaw -0->-0
+  steps 242-251 ( 10) move        (-2.5,33.3)->(-2.7,35.2) yaw -0->-0
+  steps 252-256 (  5) attack      (-2.7,35.2)->(-2.7,35.2) yaw -0->-0
+  steps 257-261 (  5) move        (-2.7,35.2)->(-2.7,35.2) yaw -0->-0
+  steps 262-262 (  1) turn        (-2.7,35.2)->(-2.7,35.2) yaw 90->90
+  steps 263-272 ( 10) move        (-2.8,35.2)->(-4.2,35.2) yaw 90->90
+  steps 273-282 ( 10) jump+move   (-4.2,35.2)->(-5.7,35.2) yaw 90->90
+  steps 283-299 ( 17) move        (-6.0,35.2)->(-10.5,35.2) yaw 90->90
+  steps 300-300 (  1) none        (-10.8,35.2)->(-10.8,35.2) yaw 90->90
+
+STEPS: step | rel_pos(x,y,z) yaw pitch | moved | per-milestone d=3D dist to target / f=facing error deg (* = rule satisfied this step; "-" = non-position rule) | action | T: thought (trunc) | M: memory (shown when changed, every ~25 steps) | H: hypothesis ops (new statements / status changes)
+  1 | (0.0,0.0,0.0) yaw=-45 p=0 | mv=0.00 | find_green_b:d6.4/f6 find_dark_oa:d8.7/f9 mine_magma_b:- bridge_lava_:d19.0 | {"camera":[0,-45]} [1/1]
+      PLAN: Looking left to survey the area and find the green banner landmark. I can see a stone path ahead and a stone wall to the left. Turning left to get a better view of the surroundings before moving forward.
+  2 | (0.0,0.0,0.0) yaw=-90 p=0 | mv=0.00 | find_green_b:d6.4/f51 find_dark_oa:d8.7/f36 mine_magma_b:- bridge_lava_:d19.0 | {"camera":[0,-45]} [1/1]
+  3 | (0.0,0.0,0.0) yaw=0 p=0 | mv=0.00 | find_green_b:d6.4/f39 find_dark_oa:d8.7/f54 mine_magma_b:- bridge_lava_:d19.0 | {"camera":[0,90]} [1/1]
+      PLAN: Turning back to face north (the original direction) and sprinting forward along the stone path to find the green banner landmark. I saw a green banner on the left wall in the initial frame, so I'll look for it as I move forward.
+  4 | (0.0,0.0,0.1) yaw=0 p=0 | mv=0.13 | find_green_b:d6.3/f39 find_dark_oa:d8.6/f55 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [1/10]
+  5 | (0.0,0.0,0.3) yaw=0 p=0 | mv=0.20 | find_green_b:d6.2/f41 find_dark_oa:d8.5/f56 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [2/10]
+  6 | (0.0,0.0,0.6) yaw=0 p=0 | mv=0.23 | find_green_b:d6.0/f42 find_dark_oa:d8.3/f58 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [3/10]
+  7 | (0.0,0.0,0.8) yaw=0 p=0 | mv=0.26 | find_green_b:d5.8/f44 find_dark_oa:d8.2/f59 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [4/10]
+  8 | (0.0,0.0,1.1) yaw=0 p=0 | mv=0.27 | find_green_b:d5.6/f46 find_dark_oa:d8.1/f61 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [5/10]
+  9 | (0.0,0.0,1.4) yaw=0 p=0 | mv=0.27 | find_green_b:d5.4/f48 find_dark_oa:d8.0/f62 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [6/10]
+ 10 | (0.0,0.0,1.6) yaw=0 p=0 | mv=0.28 | find_green_b:d5.2/f50 find_dark_oa:d7.8/f64 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [7/10]
+ 11 | (0.0,0.0,1.9) yaw=0 p=0 | mv=0.28 | find_green_b:d5.1/f52 find_dark_oa:d7.7/f66 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [8/10]
+ 12 | (0.0,0.0,2.2) yaw=0 p=0 | mv=0.28 | find_green_b:d4.9/f55 find_dark_oa:d7.6/f68 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [9/10]
+ 13 | (0.0,0.0,2.5) yaw=0 p=0 | mv=0.28 | find_green_b:d4.7/f58 find_dark_oa:d7.5/f70 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [10/10]
+ 14 | (0.0,0.0,2.7) yaw=0 p=0 | mv=0.28 | find_green_b:d4.6/f61 find_dark_oa:d7.4/f72 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [1/20]
+      PLAN: Continuing to sprint forward along the stone path to find the green banner landmark. I've only moved about 2.5 blocks so far, so there's more to go. The path stretches ahead with trees on both sides.
+ 15 | (0.0,0.0,3.0) yaw=0 p=0 | mv=0.28 | find_green_b:d4.5/f64 find_dark_oa:d7.3/f74 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [2/20]
+ 16 | (0.0,0.0,3.3) yaw=0 p=0 | mv=0.28 | find_green_b:d4.3/f67 find_dark_oa:d7.3/f76 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [3/20]
+ 17 | (0.0,0.0,3.6) yaw=0 p=0 | mv=0.28 | find_green_b:d4.2/f71 find_dark_oa:d7.2/f79 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [4/20]
+ 18 | (0.0,0.0,3.9) yaw=0 p=0 | mv=0.28 | find_green_b:d4.2/f74 find_dark_oa:d7.2/f81 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [5/20]
+ 19 | (0.0,0.0,4.2) yaw=0 p=0 | mv=0.28 | find_green_b:d4.1/f78 find_dark_oa:d7.1/f83 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [6/20]
+ 20 | (0.0,0.0,4.4) yaw=0 p=0 | mv=0.28 | find_green_b:d4.0/f82 find_dark_oa:d7.1/f85 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [7/20]
+ 21 | (0.0,0.0,4.7) yaw=0 p=0 | mv=0.28 | find_green_b:d4.0/f86 find_dark_oa:d7.1/f88 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [8/20]
+ 22 | (0.0,0.0,5.0) yaw=0 p=0 | mv=0.28 | find_green_b:d4.0/f90 find_dark_oa:d7.1/f90 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [9/20]
+ 23 | (0.0,0.0,5.3) yaw=0 p=0 | mv=0.28 | find_green_b:d4.0/f94 find_dark_oa:d7.1/f92 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [10/20]
+ 24 | (0.0,0.0,5.6) yaw=0 p=0 | mv=0.28 | find_green_b:d4.0/f98 find_dark_oa:d7.1/f95 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [11/20]
+ 25 | (0.0,0.0,5.8) yaw=0 p=0 | mv=0.28 | find_green_b:d4.1/f102 find_dark_oa:d7.1/f97 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [12/20]
+ 26 | (0.0,0.0,6.1) yaw=0 p=0 | mv=0.28 | find_green_b:d4.2/f106 find_dark_oa:d7.2/f99 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [13/20]
+ 27 | (0.0,0.0,6.4) yaw=0 p=0 | mv=0.28 | find_green_b:d4.2/f109 find_dark_oa:d7.2/f101 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [14/20]
+ 28 | (0.0,0.0,6.7) yaw=0 p=0 | mv=0.28 | find_green_b:d4.3/f113 find_dark_oa:d7.3/f103 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [15/20]
+ 29 | (0.0,0.0,7.0) yaw=0 p=0 | mv=0.28 | find_green_b:d4.5/f116 find_dark_oa:d7.3/f106 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [16/20]
+ 30 | (0.0,0.0,7.2) yaw=0 p=0 | mv=0.28 | find_green_b:d4.6/f119 find_dark_oa:d7.4/f108 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [17/20]
+ 31 | (0.0,0.0,7.5) yaw=0 p=0 | mv=0.28 | find_green_b:d4.7/f122 find_dark_oa:d7.5/f110 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [18/20]
+ 32 | (0.0,0.0,7.8) yaw=0 p=0 | mv=0.28 | find_green_b:d4.9/f125 find_dark_oa:d7.6/f112 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [19/20]
+ 33 | (0.0,0.0,8.1) yaw=0 p=0 | mv=0.28 | find_green_b:d5.0/f128 find_dark_oa:d7.7/f114 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [20/20]
+ 34 | (0.0,0.0,8.4) yaw=0 p=0 | mv=0.28 | find_green_b:d5.2/f130 find_dark_oa:d7.8/f116 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [1/20]
+      PLAN: Continuing to sprint north along the stone path. I've covered about 5.6 blocks so far and need to keep going to find the green banner landmark. The path stretches ahead with trees on both sides.
+ 35 | (0.0,0.0,8.6) yaw=0 p=0 | mv=0.28 | find_green_b:d5.4/f132 find_dark_oa:d8.0/f117 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [2/20]
+ 36 | (0.0,0.0,8.9) yaw=0 p=0 | mv=0.28 | find_green_b:d5.6/f134 find_dark_oa:d8.1/f119 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [3/20]
+ 37 | (0.0,0.0,9.2) yaw=0 p=0 | mv=0.28 | find_green_b:d5.8/f136 find_dark_oa:d8.2/f121 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [4/20]
+ 38 | (0.0,0.0,9.5) yaw=0 p=0 | mv=0.28 | find_green_b:d6.0/f138 find_dark_oa:d8.4/f123 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [5/20]
+ 39 | (0.0,0.0,9.8) yaw=0 p=0 | mv=0.28 | find_green_b:d6.2/f140 find_dark_oa:d8.5/f124 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [6/20]
+ 40 | (0.0,0.0,10.0) yaw=0 p=0 | mv=0.28 | find_green_b:d6.4/f142 find_dark_oa:d8.7/f126 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [7/20]
+ 41 | (0.0,0.0,10.3) yaw=0 p=0 | mv=0.28 | find_green_b:d6.7/f143 find_dark_oa:d8.9/f127 mine_magma_b:- bridge_lava_:d19.0 | {"forward":1,"sprint":1} [8/20]
+ 42 | (0.0,0.0,10.6) yaw=0 p=0 | mv=0.28 | find_green_b:d6.9/f144 find_dark_oa:d9.0/f129 mine_magma_b:- bridge_lava_:d19.1 | {"forward":1,"sprint":1} [9/20]
+ 43 | (0.0,0.0,10.9) yaw=0 p=0 | mv=0.28 | find_green_b:d7.1/f146 find_dark_oa:d9.2/f130 mine_magma_b:- bridge_lava_:d19.1 | {"forward":1,"sprint":1} [10/20]
+ 44 | (0.0,0.0,11.2) yaw=0 p=0 | mv=0.28 | find_green_b:d7.4/f147 find_dark_oa:d9.4/f131 mine_magma_b:- bridge_lava_:d19.1 | {"forward":1,"sprint":1} [11/20]
+ 45 | (0.0,0.0,11.4) yaw=0 p=0 | mv=0.28 | find_green_b:d7.6/f148 find_dark_oa:d9.6/f133 mine_magma_b:- bridge_lava_:d19.2 | {"forward":1,"sprint":1} [12/20]
+ 46 | (0.0,0.0,11.7) yaw=0 p=0 | mv=0.28 | find_green_b:d7.8/f149 find_dark_oa:d9.8/f134 mine_magma_b:- bridge_lava_:d19.2 | {"forward":1,"sprint":1} [13/20]
+ 47 | (0.0,0.0,12.0) yaw=0 p=0 | mv=0.28 | find_green_b:d8.1/f150 find_dark_oa:d10.0/f135 mine_magma_b:- bridge_lava_:d19.2 | {"forward":1,"sprint":1} [14/20]
+ 48 | (0.0,0.0,12.3) yaw=0 p=0 | mv=0.28 | find_green_b:d8.3/f151 find_dark_oa:d10.2/f136 mine_magma_b:- bridge_lava_:d19.3 | {"forward":1,"sprint":1} [15/20]
+ 49 | (0.0,0.0,12.6) yaw=0 p=0 | mv=0.28 | find_green_b:d8.6/f152 find_dark_oa:d10.4/f137 mine_magma_b:- bridge_lava_:d19.3 | {"forward":1,"sprint":1} [16/20]
+ 50 | (0.0,0.0,12.9) yaw=0 p=0 | mv=0.28 | find_green_b:d8.8/f153 find_dark_oa:d10.6/f138 mine_magma_b:- bridge_lava_:d19.4 | {"forward":1,"sprint":1} [17/20]
+ 51 | (0.0,0.0,13.1) yaw=0 p=0 | mv=0.28 | find_green_b:d9.1/f154 find_dark_oa:d10.8/f139 mine_magma_b:- bridge_lava_:d19.4 | {"forward":1,"sprint":1} [18/20]
+ 52 | (0.0,0.0,13.4) yaw=0 p=0 | mv=0.28 | find_green_b:d9.3/f155 find_dark_oa:d11.0/f140 mine_magma_b:- bridge_lava_:d19.5 | {"forward":1,"sprint":1} [19/20]
+ 53 | (0.0,0.0,13.7) yaw=0 p=0 | mv=0.28 | find_green_b:d9.6/f155 find_dark_oa:d11.2/f141 mine_magma_b:- bridge_lava_:d19.6 | {"forward":1,"sprint":1} [20/20]
+ 54 | (0.0,0.0,14.0) yaw=0 p=0 | mv=0.28 | find_green_b:d9.8/f156 find_dark_oa:d11.4/f142 mine_magma_b:- bridge_lava_:d19.6 | {"forward":1,"sprint":1} [1/20]
+      PLAN: Continuing to sprint north along the stone path. I've covered about 13.7 blocks so far. The path continues ahead with trees on both sides. Need to keep going to find the green banner landmark.
+ 55 | (0.0,0.0,14.3) yaw=0 p=0 | mv=0.28 | find_green_b:d10.1/f157 find_dark_oa:d11.6/f143 mine_magma_b:- bridge_lava_:d19.7 | {"forward":1,"sprint":1} [2/20]
+ 56 | (0.0,0.0,14.5) yaw=0 p=0 | mv=0.28 | find_green_b:d10.3/f157 find_dark_oa:d11.9/f144 mine_magma_b:- bridge_lava_:d19.8 | {"forward":1,"sprint":1} [3/20]
+ 57 | (0.0,0.0,14.8) yaw=0 p=0 | mv=0.28 | find_green_b:d10.6/f158 find_dark_oa:d12.1/f145 mine_magma_b:- bridge_lava_:d19.9 | {"forward":1,"sprint":1} [4/20]
+ 58 | (0.0,0.0,15.1) yaw=0 p=0 | mv=0.28 | find_green_b:d10.9/f158 find_dark_oa:d12.3/f145 mine_magma_b:- bridge_lava_:d20.0 | {"forward":1,"sprint":1} [5/20]
+ 59 | (0.0,0.0,15.4) yaw=0 p=0 | mv=0.28 | find_green_b:d11.1/f159 find_dark_oa:d12.6/f146 mine_magma_b:- bridge_lava_:d20.0 | {"forward":1,"sprint":1} [6/20]
+ 60 | (0.0,0.0,15.7) yaw=0 p=0 | mv=0.28 | find_green_b:d11.4/f159 find_dark_oa:d12.8/f147 mine_magma_b:- bridge_lava_:d20.1 | {"forward":1,"sprint":1} [7/20]
+ 61 | (0.0,0.0,15.9) yaw=0 p=0 | mv=0.28 | find_green_b:d11.6/f160 find_dark_oa:d13.0/f147 mine_magma_b:- bridge_lava_:d20.2 | {"forward":1,"sprint":1} [8/20]
+ 62 | (0.0,0.0,16.2) yaw=0 p=0 | mv=0.28 | find_green_b:d11.9/f160 find_dark_oa:d13.3/f148 mine_magma_b:- bridge_lava_:d20.3 | {"forward":1,"sprint":1} [9/20]
+ 63 | (0.0,0.0,16.5) yaw=0 p=0 | mv=0.28 | find_green_b:d12.2/f161 find_dark_oa:d13.5/f149 mine_magma_b:- bridge_lava_:d20.4 | {"forward":1,"sprint":1} [10/20]
+ 64 | (0.0,0.0,16.8) yaw=0 p=0 | mv=0.28 | find_green_b:d12.4/f161 find_dark_oa:d13.7/f149 mine_magma_b:- bridge_lava_:d20.5 | {"forward":1,"sprint":1} [11/20]
+ 65 | (0.0,0.0,17.1) yaw=0 p=0 | mv=0.28 | find_green_b:d12.7/f162 find_dark_oa:d14.0/f150 mine_magma_b:- bridge_lava_:d20.6 | {"forward":1,"sprint":1} [12/20]
+ 66 | (0.0,0.0,17.3) yaw=0 p=0 | mv=0.28 | find_green_b:d13.0/f162 find_dark_oa:d14.2/f150 mine_magma_b:- bridge_lava_:d20.8 | {"forward":1,"sprint":1} [13/20]
+ 67 | (0.0,0.0,17.6) yaw=0 p=0 | mv=0.28 | find_green_b:d13.2/f162 find_dark_oa:d14.5/f151 mine_magma_b:- bridge_lava_:d20.9 | {"forward":1,"sprint":1} [14/20]
+ 68 | (0.0,0.0,17.9) yaw=0 p=0 | mv=0.28 | find_green_b:d13.5/f163 find_dark_oa:d14.7/f152 mine_magma_b:- bridge_lava_:d21.0 | {"forward":1,"sprint":1} [15/20]
+ 69 | (0.0,0.0,18.2) yaw=0 p=0 | mv=0.28 | find_green_b:d13.8/f163 find_dark_oa:d15.0/f152 mine_magma_b:- bridge_lava_:d21.1 | {"forward":1,"sprint":1} [16/20]
+ 70 | (0.0,0.0,18.5) yaw=0 p=0 | mv=0.28 | find_green_b:d14.0/f163 find_dark_oa:d15.2/f153 mine_magma_b:- bridge_lava_:d21.2 | {"forward":1,"sprint":1} [17/20]
+ 71 | (0.0,0.0,18.7) yaw=0 p=0 | mv=0.28 | find_green_b:d14.3/f164 find_dark_oa:d15.5/f153 mine_magma_b:- bridge_lava_:d21.4 | {"forward":1,"sprint":1} [18/20]
+ 72 | (0.0,0.0,19.0) yaw=0 p=0 | mv=0.28 | find_green_b:d14.6/f164 find_dark_oa:d15.7/f153 mine_magma_b:- bridge_lava_:d21.5 | {"forward":1,"sprint":1} [19/20]
+ 73 | (0.0,0.0,19.3) yaw=0 p=0 | mv=0.28 | find_green_b:d14.9/f164 find_dark_oa:d16.0/f154 mine_magma_b:- bridge_lava_:d21.6 | {"forward":1,"sprint":1} [20/20]
+ 74 | (0.0,0.0,19.6) yaw=0 p=0 | mv=0.28 | find_green_b:d15.1/f165 find_dark_oa:d16.2/f154 mine_magma_b:- bridge_lava_:d21.8 | {"forward":1,"sprint":1} [1/20]
+      PLAN: Continuing to sprint north along the stone path. I can see the path curving ahead with some water visible on the left. I've covered about 19 blocks so far and need to keep going to find the green banner landmark.
+ 75 | (0.0,0.0,19.9) yaw=0 p=0 | mv=0.28 | find_green_b:d15.4/f165 find_dark_oa:d16.5/f155 mine_magma_b:- bridge_lava_:d21.9 | {"forward":1,"sprint":1} [2/20]
+ 76 | (0.0,0.0,20.1) yaw=0 p=0 | mv=0.28 | find_green_b:d15.7/f165 find_dark_oa:d16.7/f155 mine_magma_b:- bridge_lava_:d22.0 | {"forward":1,"sprint":1} [3/20]
+ 77 | (0.0,0.0,20.4) yaw=0 p=0 | mv=0.28 | find_green_b:d15.9/f165 find_dark_oa:d17.0/f156 mine_magma_b:- bridge_lava_:d22.2 | {"forward":1,"sprint":1} [4/20]
+ 78 | (0.0,0.0,20.7) yaw=0 p=0 | mv=0.28 | find_green_b:d16.2/f166 find_dark_oa:d17.2/f156 mine_magma_b:- bridge_lava_:d22.3 | {"forward":1,"sprint":1} [5/20]
+ 79 | (0.0,0.0,21.0) yaw=0 p=0 | mv=0.28 | find_green_b:d16.5/f166 find_dark_oa:d17.5/f156 mine_magma_b:- bridge_lava_:d22.5 | {"forward":1,"sprint":1} [6/20]
+ 80 | (0.0,0.0,21.3) yaw=0 p=0 | mv=0.28 | find_green_b:d16.8/f166 find_dark_oa:d17.7/f157 mine_magma_b:- bridge_lava_:d22.6 | {"forward":1,"sprint":1} [7/20]
+ 81 | (0.0,0.0,21.6) yaw=0 p=0 | mv=0.28 | find_green_b:d17.0/f166 find_dark_oa:d18.0/f157 mine_magma_b:- bridge_lava_:d22.8 | {"forward":1,"sprint":1} [8/20]
+ 82 | (0.0,0.0,21.8) yaw=0 p=0 | mv=0.28 | find_green_b:d17.3/f167 find_dark_oa:d18.3/f157 mine_magma_b:- bridge_lava_:d22.9 | {"forward":1,"sprint":1} [9/20]
+ 83 | (0.0,0.0,22.1) yaw=0 p=0 | mv=0.28 | find_green_b:d17.6/f167 find_dark_oa:d18.5/f158 mine_magma_b:- bridge_lava_:d23.1 | {"forward":1,"sprint":1} [10/20]
+ 84 | (0.0,0.0,22.4) yaw=0 p=0 | mv=0.28 | find_green_b:d17.8/f167 find_dark_oa:d18.8/f158 mine_magma_b:- bridge_lava_:d23.2 | {"forward":1,"sprint":1} [11/20]
+ 85 | (0.0,0.0,22.7) yaw=0 p=0 | mv=0.28 | find_green_b:d18.1/f167 find_dark_oa:d19.0/f158 mine_magma_b:- bridge_lava_:d23.4 | {"forward":1,"sprint":1} [12/20]
+ 86 | (0.0,0.0,23.0) yaw=0 p=0 | mv=0.28 | find_green_b:d18.4/f167 find_dark_oa:d19.3/f159 mine_magma_b:- bridge_lava_:d23.6 | {"forward":1,"sprint":1} [13/20]
+ 87 | (0.0,0.0,23.2) yaw=0 p=0 | mv=0.28 | find_green_b:d18.7/f168 find_dark_oa:d19.6/f159 mine_magma_b:- bridge_lava_:d23.7 | {"forward":1,"sprint":1} [14/20]
+ 88 | (0.0,0.0,23.5) yaw=0 p=0 | mv=0.28 | find_green_b:d18.9/f168 find_dark_oa:d19.8/f159 mine_magma_b:- bridge_lava_:d23.9 | {"forward":1,"sprint":1} [15/20]
+ 89 | (0.0,0.0,23.8) yaw=0 p=0 | mv=0.28 | find_green_b:d19.2/f168 find_dark_oa:d20.1/f160 mine_magma_b:- bridge_lava_:d24.1 | {"forward":1,"sprint":1} [16/20]
+ 90 | (0.0,0.0,24.1) yaw=0 p=0 | mv=0.28 | find_green_b:d19.5/f168 find_dark_oa:d20.3/f160 mine_magma_b:- bridge_lava_:d24.3 | {"forward":1,"sprint":1} [17/20]
+ 91 | (0.0,0.0,24.4) yaw=0 p=0 | mv=0.28 | find_green_b:d19.8/f168 find_dark_oa:d20.6/f160 mine_magma_b:- bridge_lava_:d24.4 | {"forward":1,"sprint":1} [18/20]
+ 92 | (0.0,0.0,24.6) yaw=0 p=0 | mv=0.28 | find_green_b:d20.0/f168 find_dark_oa:d20.9/f160 mine_magma_b:- bridge_lava_:d24.6 | {"forward":1,"sprint":1} [19/20]
+ 93 | (0.0,0.0,24.9) yaw=0 p=0 | mv=0.28 | find_green_b:d20.3/f169 find_dark_oa:d21.1/f161 mine_magma_b:- bridge_lava_:d24.8 | {"forward":1,"sprint":1} [20/20]
+ 94 | (0.1,0.0,25.1) yaw=0 p=0 | mv=0.18 | find_green_b:d20.4/f169 find_dark_oa:d21.2/f161 mine_magma_b:- bridge_lava_:d24.8 | {"left":1,"sprint":1} [1/5]
+      PLAN: I'm blocked by tree leaves ahead. Strafing left to get around the tree, then continuing forward along the path. I've covered about 25 blocks north so far and still need to find the green banner.
+ 95 | (0.2,0.0,25.2) yaw=0 p=0 | mv=0.17 | find_green_b:d20.5/f169 find_dark_oa:d21.3/f161 mine_magma_b:- bridge_lava_:d24.7 | {"left":1,"sprint":1} [2/5]
+ 96 | (0.4,0.0,25.2) yaw=0 p=0 | mv=0.19 | find_green_b:d20.5/f170 find_dark_oa:d21.3/f162 mine_magma_b:- bridge_lava_:d24.6 | {"left":1,"sprint":1} [3/5]
+ 97 | (0.6,0.0,25.2) yaw=0 p=0 | mv=0.20 | find_green_b:d20.5/f171 find_dark_oa:d21.2/f162 mine_magma_b:- bridge_lava_:d24.5 | {"left":1,"sprint":1} [4/5]
+ 98 | (0.8,0.0,25.2) yaw=0 p=0 | mv=0.21 | find_green_b:d20.4/f171 find_dark_oa:d21.1/f163 mine_magma_b:- bridge_lava_:d24.3 | {"left":1,"sprint":1} [5/5]
+ 99 | (0.9,0.0,25.3) yaw=0 p=0 | mv=0.17 | find_green_b:d20.6/f171 find_dark_oa:d21.2/f163 mine_magma_b:- bridge_lava_:d24.3 | {"forward":1,"sprint":1} [1/10]
+100 | (1.0,0.0,25.5) yaw=0 p=0 | mv=0.21 | find_green_b:d20.7/f172 find_dark_oa:d21.4/f164 mine_magma_b:- bridge_lava_:d24.4 | {"forward":1,"sprint":1} [2/10]
+101 | (1.0,0.0,25.8) yaw=0 p=0 | mv=0.24 | find_green_b:d21.0/f172 find_dark_oa:d21.6/f164 mine_magma_b:- bridge_lava_:d24.6 | {"forward":1,"sprint":1} [3/10]
+102 | (1.1,0.0,26.0) yaw=0 p=0 | mv=0.26 | find_green_b:d21.2/f172 find_dark_oa:d21.9/f164 mine_magma_b:- bridge_lava_:d24.7 | {"forward":1,"sprint":1} [4/10]
+103 | (1.1,-0.1,26.3) yaw=0 p=0 | mv=0.27 | find_green_b:d21.5/f172 find_dark_oa:d22.1/f164 mine_magma_b:- bridge_lava_:d24.9 | {"forward":1,"sprint":1} [5/10]
+104 | (1.1,-0.2,26.5) yaw=0 p=0 | mv=0.17 | find_green_b:d21.7/f172 find_dark_oa:d22.3/f165 mine_magma_b:- bridge_lava_:d25.0 | {"forward":1,"sprint":1} [6/10]
+105 | (1.1,-0.5,26.6) yaw=0 p=0 | mv=0.18 | find_green_b:d21.8/f172 find_dark_oa:d22.5/f165 mine_magma_b:- bridge_lava_:d25.1 | {"forward":1,"sprint":1} [7/10]
+106 | (1.1,-0.8,26.8) yaw=0 p=0 | mv=0.19 | find_green_b:d22.0/f172 find_dark_oa:d22.7/f165 mine_magma_b:- bridge_lava_:d25.3 | {"forward":1,"sprint":1} [8/10]
+107 | (1.1,-1.1,27.0) yaw=0 p=0 | mv=0.20 | find_green_b:d22.2/f172 find_dark_oa:d22.9/f165 mine_magma_b:- bridge_lava_:d25.4 | {"forward":1,"sprint":1} [9/10]
+108 | (1.1,-1.6,27.2) yaw=0 p=0 | mv=0.21 | find_green_b:d22.5/f173 find_dark_oa:d23.1/f165 mine_magma_b:- bridge_lava_:d25.6 | {"forward":1,"sprint":1} [10/10]
+109 | (1.1,-2.1,27.4) yaw=-30 p=0 | mv=0.19 | find_green_b:d22.7/f143 find_dark_oa:d23.4/f135 mine_magma_b:- bridge_lava_:d25.7 | {"camera":[0,-30]} [1/1]
+      PLAN: I've dropped into a lower area with water ahead. Looking around to find the path and the green banner landmark. I need to survey the area before deciding where to go next.
+110 | (1.1,-2.7,27.6) yaw=-30 p=-10 | mv=0.17 | find_green_b:d22.9/f143 find_dark_oa:d23.6/f135 mine_magma_b:- bridge_lava_:d25.8 | {"camera":[-10,0]} [1/1]
+111 | (1.1,-3.3,27.7) yaw=30 p=-0 | mv=0.16 | find_green_b:d23.2/f157 find_dark_oa:d23.9/f165 mine_magma_b:- bridge_lava_:d25.9 | {"camera":[10,60]} [1/1]
+      PLAN: I've fallen into a low area with water. Looking right and up to find the stone path and the green banner landmark. I need to get back on the path to continue the quest.
+112 | (1.1,-4.0,27.9) yaw=60 p=-0 | mv=0.14 | find_green_b:d23.4/f127 find_dark_oa:d24.2/f134 mine_magma_b:- bridge_lava_:d26.0 | {"camera":[0,30]} [1/1]
+113 | (1.1,-4.0,28.0) yaw=-180 p=-0 | mv=0.13 | find_green_b:d23.5/f7 find_dark_oa:d24.3/f14 mine_magma_b:- bridge_lava_:d26.1 | {"camera":[0,120]} [1/1]
+      PLAN: I'm stuck in a low area at y=67. Turning to face south and sprinting back toward the stone path to get back on track. I need to find the green banner landmark which should be along the stone path.
+114 | (1.1,-4.0,28.0) yaw=-180 p=-0 | mv=0.06 | find_green_b:d23.5/f7 find_dark_oa:d24.2/f14 mine_magma_b:- bridge_lava_:d26.1 | {"forward":1,"sprint":1} [1/10]
+115 | (1.1,-4.0,27.8) yaw=-180 p=-0 | mv=0.16 | find_green_b:d23.3/f7 find_dark_oa:d24.1/f15 mine_magma_b:- bridge_lava_:d26.0 | {"forward":1,"sprint":1} [2/10]
+116 | (1.1,-4.0,27.6) yaw=-180 p=-0 | mv=0.21 | find_green_b:d23.1/f7 find_dark_oa:d23.9/f15 mine_magma_b:- bridge_lava_:d25.8 | {"forward":1,"sprint":1} [3/10]
+117 | (1.1,-4.0,27.3) yaw=-180 p=-0 | mv=0.24 | find_green_b:d22.9/f7 find_dark_oa:d23.6/f15 mine_magma_b:- bridge_lava_:d25.6 | {"forward":1,"sprint":1} [4/10]
+118 | (1.1,-4.0,27.2) yaw=-180 p=-0 | mv=0.13 | find_green_b:d22.8/f7 find_dark_oa:d23.5/f15 mine_magma_b:- bridge_lava_:d25.5 | {"forward":1,"sprint":1} [5/10]
+119 | (1.1,-4.0,27.0) yaw=-180 p=-0 | mv=0.20 | find_green_b:d22.6/f8 find_dark_oa:d23.3/f15 mine_magma_b:- bridge_lava_:d25.4 | {"forward":1,"sprint":1} [6/10]
+120 | (1.1,-4.0,26.8) yaw=-180 p=-0 | mv=0.23 | find_green_b:d22.3/f8 find_dark_oa:d23.1/f15 mine_magma_b:- bridge_lava_:d25.2 | {"forward":1,"sprint":1} [7/10]
+121 | (1.1,-4.0,26.5) yaw=-180 p=-0 | mv=0.26 | find_green_b:d22.1/f8 find_dark_oa:d22.9/f15 mine_magma_b:- bridge_lava_:d25.1 | {"forward":1,"sprint":1} [8/10]
+122 | (1.1,-4.0,26.3) yaw=-180 p=-0 | mv=0.27 | find_green_b:d21.8/f8 find_dark_oa:d22.6/f16 mine_magma_b:- bridge_lava_:d24.9 | {"forward":1,"sprint":1} [9/10]
+123 | (1.1,-4.0,26.0) yaw=-180 p=-0 | mv=0.27 | find_green_b:d21.6/f8 find_dark_oa:d22.4/f16 mine_magma_b:- bridge_lava_:d24.7 | {"forward":1,"sprint":1} [10/10]
+124 | (1.1,-4.0,25.8) yaw=-180 p=-30 | mv=0.15 | find_green_b:d21.4/f8 find_dark_oa:d22.2/f16 mine_magma_b:- bridge_lava_:d24.6 | {"camera":[-30,0]} [1/1]
+      PLAN: I'm stuck in a low area at y=67 facing a stone wall. Looking up and trying to jump over the wall to get back to the stone path. If that doesn't work, I'll try going west (left) to find another way out.
+125 | (1.1,-3.6,25.8) yaw=-180 p=-30 | mv=0.04 | find_green_b:d21.3/f8 find_dark_oa:d22.1/f16 mine_magma_b:- bridge_lava_:d24.6 | {"jump":1,"forward":1} [1/3]
+126 | (1.1,-3.2,25.8) yaw=-180 p=-30 | mv=0.00 | find_green_b:d21.3/f8 find_dark_oa:d22.0/f16 mine_magma_b:- bridge_lava_:d24.6 | {"jump":1,"forward":1} [2/3]
+127 | (1.1,-3.0,25.8) yaw=-180 p=-30 | mv=0.00 | find_green_b:d21.2/f8 find_dark_oa:d22.0/f16 mine_magma_b:- bridge_lava_:d24.6 | {"jump":1,"forward":1} [3/3]
+128 | (1.1,-2.8,25.8) yaw=90 p=-30 | mv=0.00 | find_green_b:d21.2/f98 find_dark_oa:d22.0/f106 mine_magma_b:- bridge_lava_:d24.6 | {"camera":[0,-90]} [1/1]
+129 | (1.1,-2.8,25.8) yaw=90 p=-30 | mv=0.02 | find_green_b:d21.2/f98 find_dark_oa:d21.9/f106 mine_magma_b:- bridge_lava_:d24.6 | {"jump":1,"forward":1} [1/3]
+130 | (1.0,-2.7,25.8) yaw=90 p=-30 | mv=0.04 | find_green_b:d21.2/f98 find_dark_oa:d22.0/f106 mine_magma_b:- bridge_lava_:d24.6 | {"jump":1,"forward":1} [2/3]
+131 | (1.0,-2.8,25.8) yaw=90 p=-30 | mv=0.05 | find_green_b:d21.2/f98 find_dark_oa:d22.0/f106 mine_magma_b:- bridge_lava_:d24.6 | {"jump":1,"forward":1} [3/3]
+132 | (0.9,-3.0,25.8) yaw=45 p=-10 | mv=0.05 | find_green_b:d21.2/f143 find_dark_oa:d22.0/f151 mine_magma_b:- bridge_lava_:d24.7 | {"camera":[20,-45]} [1/1]
+      PLAN: Still stuck in the low area. Looking down-left (northwest) to find an opening, then trying to move that direction to escape. I need to get back to the stone path at y=71.
+133 | (0.9,-3.2,25.8) yaw=45 p=-10 | mv=0.06 | find_green_b:d21.3/f144 find_dark_oa:d22.1/f151 mine_magma_b:- bridge_lava_:d24.7 | {"forward":1,"sprint":1} [1/5]
+134 | (0.8,-3.5,25.8) yaw=45 p=-10 | mv=0.08 | find_green_b:d21.4/f144 find_dark_oa:d22.2/f152 mine_magma_b:- bridge_lava_:d24.8 | {"forward":1,"sprint":1} [2/5]
+135 | (0.8,-3.9,25.9) yaw=45 p=-10 | mv=0.05 | find_green_b:d21.5/f144 find_dark_oa:d22.3/f152 mine_magma_b:- bridge_lava_:d24.8 | {"forward":1,"sprint":1} [3/5]
+136 | (0.8,-4.0,26.0) yaw=45 p=-10 | mv=0.06 | find_green_b:d21.6/f144 find_dark_oa:d22.4/f151 mine_magma_b:- bridge_lava_:d24.9 | {"forward":1,"sprint":1} [4/5]
+137 | (0.8,-4.0,26.1) yaw=45 p=-10 | mv=0.12 | find_green_b:d21.7/f144 find_dark_oa:d22.5/f151 mine_magma_b:- bridge_lava_:d25.0 | {"forward":1,"sprint":1} [5/5]
+138 | (0.8,-4.0,26.1) yaw=45 p=-10 | mv=0.07 | find_green_b:d21.8/f144 find_dark_oa:d22.6/f151 mine_magma_b:- bridge_lava_:d25.0 | {"attack":1} [1/5]
+      PLAN: I'm stuck in a low area at y=67, blocked by tree leaves. Trying to mine the leaves to create a path through, then moving forward to escape this area and get back to the stone path.
+139 | (0.8,-4.0,26.2) yaw=45 p=-10 | mv=0.04 | find_green_b:d21.8/f144 find_dark_oa:d22.6/f151 mine_magma_b:- bridge_lava_:d25.0 | {"attack":1} [2/5]
+140 | (0.8,-4.0,26.2) yaw=45 p=-10 | mv=0.02 | find_green_b:d21.8/f144 find_dark_oa:d22.6/f151 mine_magma_b:- bridge_lava_:d25.0 | {"attack":1} [3/5]
+141 | (0.8,-4.0,26.2) yaw=45 p=-10 | mv=0.01 | find_green_b:d21.8/f144 find_dark_oa:d22.7/f151 mine_magma_b:- bridge_lava_:d25.0 | {"attack":1} [4/5]
+142 | (0.8,-4.0,26.2) yaw=45 p=-10 | mv=0.01 | find_green_b:d21.8/f144 find_dark_oa:d22.7/f151 mine_magma_b:- bridge_lava_:d25.1 | {"attack":1} [5/5]
+143 | (0.8,-4.0,26.3) yaw=45 p=-10 | mv=0.09 | find_green_b:d21.9/f144 find_dark_oa:d22.7/f151 mine_magma_b:- bridge_lava_:d25.1 | {"forward":1,"sprint":1} [1/5]
+144 | (0.8,-4.0,26.4) yaw=45 p=-10 | mv=0.12 | find_green_b:d22.0/f143 find_dark_oa:d22.9/f151 mine_magma_b:- bridge_lava_:d25.2 | {"forward":1,"sprint":1} [2/5]
+145 | (0.8,-4.0,26.6) yaw=45 p=-10 | mv=0.13 | find_green_b:d22.2/f143 find_dark_oa:d23.0/f151 mine_magma_b:- bridge_lava_:d25.3 | {"forward":1,"sprint":1} [3/5]
+146 | (0.8,-4.0,26.7) yaw=45 p=-10 | mv=0.14 | find_green_b:d22.3/f143 find_dark_oa:d23.1/f151 mine_magma_b:- bridge_lava_:d25.4 | {"forward":1,"sprint":1} [4/5]
+147 | (0.8,-4.0,26.9) yaw=45 p=-10 | mv=0.15 | find_green_b:d22.4/f143 find_dark_oa:d23.3/f151 mine_magma_b:- bridge_lava_:d25.5 | {"forward":1,"sprint":1} [5/5]
+148 | (0.8,-4.0,26.9) yaw=-0 p=-10 | mv=0.08 | find_green_b:d22.5/f172 find_dark_oa:d23.3/f164 mine_magma_b:- bridge_lava_:d25.6 | {"camera":[0,-45]} [1/1]
+      PLAN: Turning to face north and jumping forward to try to climb up out of this low area (y=67) back to the stone path at y=71. I can see an opening ahead with dirt terrain that might lead back up to the path.
+149 | (0.8,-3.6,27.3) yaw=-0 p=-10 | mv=0.37 | find_green_b:d22.8/f172 find_dark_oa:d23.6/f164 mine_magma_b:- bridge_lava_:d25.8 | {"jump":1,"forward":1,"sprint":1} [1/10]
+150 | (0.8,-3.2,27.5) yaw=-0 p=-10 | mv=0.23 | find_green_b:d23.0/f172 find_dark_oa:d23.8/f165 mine_magma_b:- bridge_lava_:d26.0 | {"jump":1,"forward":1,"sprint":1} [2/10]
+151 | (0.8,-3.0,27.8) yaw=-0 p=-10 | mv=0.23 | find_green_b:d23.2/f172 find_dark_oa:d23.9/f165 mine_magma_b:- bridge_lava_:d26.1 | {"jump":1,"forward":1,"sprint":1} [3/10]
+152 | (0.8,-2.8,28.0) yaw=-0 p=-10 | mv=0.24 | find_green_b:d23.4/f172 find_dark_oa:d24.1/f165 mine_magma_b:- bridge_lava_:d26.3 | {"jump":1,"forward":1,"sprint":1} [4/10]
+153 | (0.8,-2.8,28.2) yaw=-0 p=-10 | mv=0.24 | find_green_b:d23.6/f172 find_dark_oa:d24.4/f165 mine_magma_b:- bridge_lava_:d26.5 | {"jump":1,"forward":1,"sprint":1} [5/10]
+154 | (0.8,-2.7,28.5) yaw=-0 p=-10 | mv=0.25 | find_green_b:d23.9/f172 find_dark_oa:d24.6/f165 mine_magma_b:- bridge_lava_:d26.7 | {"jump":1,"forward":1,"sprint":1} [6/10]
+155 | (0.8,-2.8,28.7) yaw=-0 p=-10 | mv=0.25 | find_green_b:d24.1/f172 find_dark_oa:d24.8/f165 mine_magma_b:- bridge_lava_:d26.9 | {"jump":1,"forward":1,"sprint":1} [7/10]
+156 | (0.8,-3.0,29.0) yaw=-0 p=-10 | mv=0.25 | find_green_b:d24.4/f172 find_dark_oa:d25.1/f166 mine_magma_b:- bridge_lava_:d27.0 | {"jump":1,"forward":1,"sprint":1} [8/10]
+157 | (0.8,-3.2,29.2) yaw=-0 p=-10 | mv=0.25 | find_green_b:d24.7/f172 find_dark_oa:d25.4/f166 mine_magma_b:- bridge_lava_:d27.2 | {"jump":1,"forward":1,"sprint":1} [9/10]
+158 | (0.8,-3.5,29.5) yaw=-0 p=-10 | mv=0.26 | find_green_b:d25.0/f173 find_dark_oa:d25.7/f166 mine_magma_b:- bridge_lava_:d27.4 | {"jump":1,"forward":1,"sprint":1} [10/10]
+159 | (0.8,-3.9,29.8) yaw=-0 p=-10 | mv=0.25 | find_green_b:d25.3/f173 find_dark_oa:d26.0/f166 mine_magma_b:- bridge_lava_:d27.6 | {"right":1,"jump":1,"forward":1} [1/10]
+      PLAN: I'm in a water channel at y=67.5. Trying to climb up the right (east) bank by strafing right while jumping and moving forward. I need to get back to y=71 where the stone path is.
+160 | (0.8,-4.0,30.0) yaw=-0 p=-10 | mv=0.25 | find_green_b:d25.5/f173 find_dark_oa:d26.2/f166 mine_magma_b:- bridge_lava_:d27.8 | {"right":1,"jump":1,"forward":1} [2/10]
+161 | (0.8,-3.6,30.3) yaw=-0 p=-10 | mv=0.30 | find_green_b:d25.8/f173 find_dark_oa:d26.5/f166 mine_magma_b:- bridge_lava_:d28.0 | {"right":1,"jump":1,"forward":1} [3/10]
+162 | (0.8,-3.2,30.5) yaw=-0 p=-10 | mv=0.18 | find_green_b:d25.9/f173 find_dark_oa:d26.6/f166 mine_magma_b:- bridge_lava_:d28.2 | {"right":1,"jump":1,"forward":1} [4/10]
+163 | (0.8,-3.0,30.7) yaw=-0 p=-10 | mv=0.17 | find_green_b:d26.0/f173 find_dark_oa:d26.7/f166 mine_magma_b:- bridge_lava_:d28.3 | {"right":1,"jump":1,"forward":1} [5/10]
+164 | (0.8,-2.8,30.8) yaw=-0 p=-10 | mv=0.17 | find_green_b:d26.2/f173 find_dark_oa:d26.8/f166 mine_magma_b:- bridge_lava_:d28.4 | {"right":1,"jump":1,"forward":1} [6/10]
+165 | (0.7,-2.8,31.0) yaw=-0 p=-10 | mv=0.18 | find_green_b:d26.3/f173 find_dark_oa:d27.0/f166 mine_magma_b:- bridge_lava_:d28.6 | {"right":1,"jump":1,"forward":1} [7/10]
+166 | (0.7,-2.7,31.2) yaw=-0 p=-10 | mv=0.18 | find_green_b:d26.5/f173 find_dark_oa:d27.2/f166 mine_magma_b:- bridge_lava_:d28.8 | {"right":1,"jump":1,"forward":1} [8/10]
+167 | (0.6,-2.8,31.3) yaw=-0 p=-10 | mv=0.18 | find_green_b:d26.7/f173 find_dark_oa:d27.4/f166 mine_magma_b:- bridge_lava_:d28.9 | {"right":1,"jump":1,"forward":1} [9/10]
+168 | (0.5,-3.0,31.5) yaw=-0 p=-10 | mv=0.18 | find_green_b:d26.9/f173 find_dark_oa:d27.6/f166 mine_magma_b:- bridge_lava_:d29.1 | {"right":1,"jump":1,"forward":1} [10/10]
+169 | (0.5,-3.0,31.7) yaw=45 p=-10 | mv=0.16 | find_green_b:d27.1/f143 find_dark_oa:d27.7/f149 mine_magma_b:- bridge_lava_:d29.3 | {"camera":[0,45]} [1/1]
+      PLAN: Turning to face east (toward the dirt bank) and jumping forward to try to climb up out of the water channel. I need to get to y=71 to reach the stone path.
+170 | (0.4,-2.6,31.9) yaw=45 p=-10 | mv=0.24 | find_green_b:d27.2/f143 find_dark_oa:d27.9/f149 mine_magma_b:- bridge_lava_:d29.5 | {"jump":1,"forward":1} [1/5]
+171 | (0.3,-2.2,32.0) yaw=45 p=-10 | mv=0.15 | find_green_b:d27.3/f143 find_dark_oa:d28.0/f149 mine_magma_b:- bridge_lava_:d29.7 | {"jump":1,"forward":1} [2/5]
+172 | (0.2,-2.0,32.1) yaw=45 p=-10 | mv=0.16 | find_green_b:d27.5/f143 find_dark_oa:d28.1/f149 mine_magma_b:- bridge_lava_:d29.8 | {"jump":1,"forward":1} [3/5]
+173 | (0.1,-1.8,32.3) yaw=45 p=-10 | mv=0.16 | find_green_b:d27.6/f143 find_dark_oa:d28.3/f149 mine_magma_b:- bridge_lava_:d30.0 | {"jump":1,"forward":1} [4/5]
+174 | (-0.0,-1.8,32.4) yaw=45 p=-10 | mv=0.17 | find_green_b:d27.7/f143 find_dark_oa:d28.4/f149 mine_magma_b:- bridge_lava_:d30.1 | {"jump":1,"forward":1} [5/5]
+175 | (-0.1,-1.7,32.5) yaw=45 p=-10 | mv=0.17 | find_green_b:d27.9/f144 find_dark_oa:d28.6/f149 mine_magma_b:- bridge_lava_:d30.3 | {"jump":1,"forward":1} [1/5]
+176 | (-0.2,-1.8,32.7) yaw=45 p=-10 | mv=0.18 | find_green_b:d28.0/f144 find_dark_oa:d28.7/f150 mine_magma_b:- bridge_lava_:d30.5 | {"jump":1,"forward":1} [2/5]
+177 | (-0.3,-2.0,32.8) yaw=45 p=-10 | mv=0.18 | find_green_b:d28.2/f144 find_dark_oa:d28.9/f150 mine_magma_b:- bridge_lava_:d30.7 | {"jump":1,"forward":1} [3/5]
+178 | (-0.5,-2.0,32.9) yaw=45 p=-10 | mv=0.18 | find_green_b:d28.4/f144 find_dark_oa:d29.1/f150 mine_magma_b:- bridge_lava_:d30.8 | {"jump":1,"forward":1} [4/5]
+179 | (-0.6,-2.0,33.1) yaw=45 p=-10 | mv=0.26 | find_green_b:d28.6/f144 find_dark_oa:d29.3/f150 mine_magma_b:- bridge_lava_:d31.1 | {"jump":1,"forward":1} [5/5]
+180 | (-1.0,-1.6,33.2) yaw=45 p=-10 | mv=0.33 | find_green_b:d28.7/f145 find_dark_oa:d29.4/f151 mine_magma_b:- bridge_lava_:d31.4 | {"jump":1,"forward":1,"sprint":1} [1/10]
+      PLAN: I'm at y=69, climbing up out of the water channel. Continuing to jump and sprint forward (northeast) to get over the dirt wall and back up to the stone path at y=71.
+181 | (-1.2,-1.2,33.2) yaw=45 p=-10 | mv=0.20 | find_green_b:d28.7/f145 find_dark_oa:d29.4/f151 mine_magma_b:- bridge_lava_:d31.5 | {"jump":1,"forward":1,"sprint":1} [2/10]
+182 | (-1.3,-1.0,33.2) yaw=45 p=-10 | mv=0.19 | find_green_b:d28.7/f146 find_dark_oa:d29.5/f151 mine_magma_b:- bridge_lava_:d31.6 | {"jump":1,"forward":1,"sprint":1} [3/10]
+183 | (-1.5,-0.8,33.2) yaw=45 p=-10 | mv=0.19 | find_green_b:d28.8/f146 find_dark_oa:d29.5/f152 mine_magma_b:- bridge_lava_:d31.7 | {"jump":1,"forward":1,"sprint":1} [4/10]
+184 | (-1.7,-0.8,33.2) yaw=45 p=-10 | mv=0.19 | find_green_b:d28.8/f146 find_dark_oa:d29.6/f152 mine_magma_b:- bridge_lava_:d31.9 | {"jump":1,"forward":1,"sprint":1} [5/10]
+185 | (-1.9,-0.7,33.2) yaw=45 p=-10 | mv=0.18 | find_green_b:d28.8/f147 find_dark_oa:d29.6/f153 mine_magma_b:- bridge_lava_:d32.0 | {"jump":1,"forward":1,"sprint":1} [6/10]
+186 | (-2.1,-0.8,33.2) yaw=45 p=-10 | mv=0.18 | find_green_b:d28.9/f147 find_dark_oa:d29.7/f153 mine_magma_b:- bridge_lava_:d32.1 | {"jump":1,"forward":1,"sprint":1} [7/10]
+187 | (-2.2,-1.0,33.2) yaw=45 p=-10 | mv=0.11 | find_green_b:d28.9/f147 find_dark_oa:d29.7/f153 mine_magma_b:- bridge_lava_:d32.2 | {"jump":1,"forward":1,"sprint":1} [8/10]
+188 | (-2.2,-1.0,33.2) yaw=45 p=-10 | mv=0.00 | find_green_b:d28.9/f147 find_dark_oa:d29.7/f153 mine_magma_b:- bridge_lava_:d32.2 | {"jump":1,"forward":1,"sprint":1} [9/10]
+189 | (-2.2,-1.0,33.2) yaw=45 p=-10 | mv=0.00 | find_green_b:d28.9/f147 find_dark_oa:d29.7/f153 mine_magma_b:- bridge_lava_:d32.2 | {"jump":1,"forward":1,"sprint":1} [10/10]
+190 | (-2.2,-1.0,33.2) yaw=-45 p=-10 | mv=0.00 | find_green_b:d28.9/f123 find_dark_oa:d29.7/f117 mine_magma_b:- bridge_lava_:d32.2 | {"camera":[0,-90]} [1/1]
+      PLAN: I'm at y=70, blocked by dirt walls to the northeast. Turning to face northwest and trying to jump over the wall to find a way up to the stone path at y=71.
+191 | (-2.1,-0.6,33.2) yaw=-45 p=-10 | mv=0.07 | find_green_b:d28.9/f123 find_dark_oa:d29.7/f117 mine_magma_b:- bridge_lava_:d32.1 | {"jump":1,"forward":1,"sprint":1} [1/5]
+192 | (-2.1,-0.2,33.2) yaw=-45 p=-10 | mv=0.05 | find_green_b:d28.8/f123 find_dark_oa:d29.7/f117 mine_magma_b:- bridge_lava_:d32.1 | {"jump":1,"forward":1,"sprint":1} [2/5]
+193 | (-2.0,0.0,33.2) yaw=-45 p=-10 | mv=0.06 | find_green_b:d28.8/f123 find_dark_oa:d29.6/f117 mine_magma_b:- bridge_lava_:d32.1 | {"jump":1,"forward":1,"sprint":1} [3/5]
+194 | (-1.9,0.2,33.2) yaw=-45 p=-10 | mv=0.07 | find_green_b:d28.9/f123 find_dark_oa:d29.6/f117 mine_magma_b:- bridge_lava_:d32.0 | {"jump":1,"forward":1,"sprint":1} [4/5]
+195 | (-1.9,0.2,33.3) yaw=-45 p=-10 | mv=0.09 | find_green_b:d28.9/f123 find_dark_oa:d29.6/f118 mine_magma_b:- bridge_lava_:d32.0 | {"jump":1,"forward":1,"sprint":1} [5/5]
+196 | (-1.8,0.3,33.3) yaw=0 p=0 | mv=0.08 | find_green_b:d28.9/f168 find_dark_oa:d29.7/f163 mine_magma_b:- bridge_lava_:d32.0 | {"camera":[10,45]} [1/1]
+      PLAN: I'm back at y=71.25, having escaped the low area. Looking around to find the stone path and the green banner landmark. I need to head north along the path to find the banner.
+197 | (-1.7,0.2,33.4) yaw=45 p=0 | mv=0.08 | find_green_b:d28.9/f146 find_dark_oa:d29.7/f152 mine_magma_b:- bridge_lava_:d32.0 | {"camera":[0,45]} [1/1]
+198 | (-1.7,0.0,33.4) yaw=90 p=0 | mv=0.07 | find_green_b:d28.9/f101 find_dark_oa:d29.7/f107 mine_magma_b:- bridge_lava_:d32.0 | {"camera":[0,45]} [1/1]
+      PLAN: I'm at y=71, facing northeast. Looking further east to find the stone path. I need to get back on the path to find the green banner landmark.
+199 | (-1.6,0.0,33.4) yaw=135 p=0 | mv=0.06 | find_green_b:d29.0/f56 find_dark_oa:d29.7/f62 mine_magma_b:- bridge_lava_:d32.0 | {"camera":[0,45]} [1/1]
+200 | (-1.6,0.0,33.4) yaw=-180 p=0 | mv=0.06 | find_green_b:d29.0/f11 find_dark_oa:d29.7/f17 mine_magma_b:- bridge_lava_:d31.9 | {"camera":[0,45]} [1/1]
+      PLAN: I'm at y=71 in a forested area, facing southeast with a tree trunk in front of me. Turning to face south to look for the stone path. I need to get back on the path to find the green banner.
+201 | (-1.5,0.0,33.5) yaw=-135 p=0 | mv=0.03 | find_green_b:d29.0/f34 find_dark_oa:d29.7/f28 mine_magma_b:- bridge_lava_:d31.9 | {"camera":[0,45]} [1/1]
+202 | (-1.4,0.0,33.4) yaw=-135 p=0 | mv=0.13 | find_green_b:d28.9/f34 find_dark_oa:d29.6/f28 mine_magma_b:- bridge_lava_:d31.8 | {"forward":1,"sprint":1} [1/10]
+      PLAN: I can see the stone path/bridge ahead (facing southwest). Moving forward to get onto the path, then I'll head north along it to find the green banner landmark.
+203 | (-1.3,0.0,33.2) yaw=-135 p=0 | mv=0.20 | find_green_b:d28.7/f34 find_dark_oa:d29.4/f29 mine_magma_b:- bridge_lava_:d31.6 | {"forward":1,"sprint":1} [2/10]
+204 | (-1.1,0.0,33.1) yaw=-135 p=0 | mv=0.24 | find_green_b:d28.5/f35 find_dark_oa:d29.2/f29 mine_magma_b:- bridge_lava_:d31.4 | {"forward":1,"sprint":1} [3/10]
+205 | (-0.9,-0.1,32.9) yaw=-135 p=0 | mv=0.26 | find_green_b:d28.3/f35 find_dark_oa:d29.0/f29 mine_magma_b:- bridge_lava_:d31.1 | {"forward":1,"sprint":1} [4/10]
+206 | (-0.8,-0.2,32.8) yaw=-135 p=0 | mv=0.17 | find_green_b:d28.2/f35 find_dark_oa:d28.9/f29 mine_magma_b:- bridge_lava_:d30.9 | {"forward":1,"sprint":1} [5/10]
+207 | (-0.7,-0.5,32.7) yaw=-135 p=0 | mv=0.18 | find_green_b:d28.1/f35 find_dark_oa:d28.7/f29 mine_magma_b:- bridge_lava_:d30.8 | {"forward":1,"sprint":1} [6/10]
+208 | (-0.5,-0.8,32.5) yaw=-135 p=0 | mv=0.19 | find_green_b:d27.9/f36 find_dark_oa:d28.6/f30 mine_magma_b:- bridge_lava_:d30.6 | {"forward":1,"sprint":1} [7/10]
+209 | (-0.4,-1.1,32.4) yaw=-135 p=0 | mv=0.19 | find_green_b:d27.8/f36 find_dark_oa:d28.5/f30 mine_magma_b:- bridge_lava_:d30.4 | {"forward":1,"sprint":1} [8/10]
+210 | (-0.3,-1.6,32.2) yaw=-135 p=0 | mv=0.20 | find_green_b:d27.6/f36 find_dark_oa:d28.3/f30 mine_magma_b:- bridge_lava_:d30.2 | {"forward":1,"sprint":1} [9/10]
+211 | (-0.1,-2.0,32.1) yaw=-135 p=0 | mv=0.21 | find_green_b:d27.5/f36 find_dark_oa:d28.2/f30 mine_magma_b:- bridge_lava_:d30.0 | {"forward":1,"sprint":1} [10/10]
+212 | (0.0,-2.1,32.0) yaw=135 p=0 | mv=0.19 | find_green_b:d27.3/f53 find_dark_oa:d28.0/f60 mine_magma_b:- bridge_lava_:d29.8 | {"camera":[0,-90]} [1/1]
+      PLAN: I've dropped to y=69 near the stone bridge. Turning to face the bridge (south) and jumping to try to get up onto it. The bridge should be at y=71.
+213 | (0.1,-2.2,31.9) yaw=135 p=0 | mv=0.11 | find_green_b:d27.3/f53 find_dark_oa:d27.9/f59 mine_magma_b:- bridge_lava_:d29.7 | {"jump":1,"forward":1} [1/5]
+214 | (0.1,-2.5,31.8) yaw=135 p=0 | mv=0.10 | find_green_b:d27.2/f53 find_dark_oa:d27.9/f59 mine_magma_b:- bridge_lava_:d29.6 | {"jump":1,"forward":1} [2/5]
+215 | (0.1,-2.8,31.7) yaw=135 p=0 | mv=0.10 | find_green_b:d27.1/f53 find_dark_oa:d27.8/f59 mine_magma_b:- bridge_lava_:d29.5 | {"jump":1,"forward":1} [3/5]
+216 | (0.1,-3.0,31.6) yaw=135 p=0 | mv=0.10 | find_green_b:d27.0/f53 find_dark_oa:d27.7/f59 mine_magma_b:- bridge_lava_:d29.4 | {"jump":1,"forward":1} [4/5]
+217 | (0.1,-2.6,31.4) yaw=135 p=0 | mv=0.18 | find_green_b:d26.8/f53 find_dark_oa:d27.5/f60 mine_magma_b:- bridge_lava_:d29.3 | {"jump":1,"forward":1} [5/5]
+218 | (0.1,-2.2,31.3) yaw=45 p=0 | mv=0.10 | find_green_b:d26.7/f144 find_dark_oa:d27.4/f150 mine_magma_b:- bridge_lava_:d29.3 | {"camera":[0,-90]} [1/1]
+      PLAN: I'm at y=68, stuck in a low area. The stone bridge is to my right (west). Turning to face west and jumping forward to try to get up onto the bridge at y=71.
+219 | (0.0,-2.0,31.3) yaw=45 p=0 | mv=0.08 | find_green_b:d26.6/f144 find_dark_oa:d27.3/f150 mine_magma_b:- bridge_lava_:d29.3 | {"jump":1,"forward":1,"sprint":1} [1/10]
+220 | (-0.1,-1.8,31.2) yaw=45 p=0 | mv=0.07 | find_green_b:d26.6/f144 find_dark_oa:d27.3/f150 mine_magma_b:- bridge_lava_:d29.3 | {"jump":1,"forward":1,"sprint":1} [2/10]
+221 | (-0.1,-1.8,31.2) yaw=45 p=0 | mv=0.07 | find_green_b:d26.6/f144 find_dark_oa:d27.3/f150 mine_magma_b:- bridge_lava_:d29.3 | {"jump":1,"forward":1,"sprint":1} [3/10]
+222 | (-0.2,-1.7,31.2) yaw=45 p=0 | mv=0.08 | find_green_b:d26.6/f144 find_dark_oa:d27.3/f150 mine_magma_b:- bridge_lava_:d29.4 | {"jump":1,"forward":1,"sprint":1} [4/10]
+223 | (-0.3,-1.8,31.2) yaw=45 p=0 | mv=0.10 | find_green_b:d26.6/f144 find_dark_oa:d27.4/f151 mine_magma_b:- bridge_lava_:d29.4 | {"jump":1,"forward":1,"sprint":1} [5/10]
+224 | (-0.4,-2.0,31.2) yaw=45 p=0 | mv=0.11 | find_green_b:d26.7/f145 find_dark_oa:d27.4/f151 mine_magma_b:- bridge_lava_:d29.5 | {"jump":1,"forward":1,"sprint":1} [6/10]
+225 | (-0.5,-2.0,31.3) yaw=45 p=0 | mv=0.12 | find_green_b:d26.8/f145 find_dark_oa:d27.5/f151 mine_magma_b:- bridge_lava_:d29.6 | {"jump":1,"forward":1,"sprint":1} [7/10]
+226 | (-0.8,-1.6,31.6) yaw=45 p=0 | mv=0.43 | find_green_b:d27.1/f145 find_dark_oa:d27.8/f151 mine_magma_b:- bridge_lava_:d30.1 | {"jump":1,"forward":1,"sprint":1} [8/10]
+227 | (-1.0,-1.2,31.7) yaw=45 p=0 | mv=0.26 | find_green_b:d27.2/f146 find_dark_oa:d28.0/f152 mine_magma_b:- bridge_lava_:d30.3 | {"jump":1,"forward":1,"sprint":1} [9/10]
+228 | (-1.2,-1.0,31.9) yaw=45 p=0 | mv=0.26 | find_green_b:d27.4/f146 find_dark_oa:d28.2/f152 mine_magma_b:- bridge_lava_:d30.6 | {"jump":1,"forward":1,"sprint":1} [10/10]
+229 | (-1.4,-0.8,32.1) yaw=45 p=0 | mv=0.27 | find_green_b:d27.6/f146 find_dark_oa:d28.4/f152 mine_magma_b:- bridge_lava_:d30.8 | {"jump":1,"forward":1,"sprint":1} [1/10]
+      PLAN: I'm at y=70, close to the stone path level (y=71). Continuing to jump and sprint forward (northeast) to get up onto the path. Once I'm on the path, I'll head north to find the green banner.
+230 | (-1.6,-0.8,32.3) yaw=45 p=0 | mv=0.27 | find_green_b:d27.9/f147 find_dark_oa:d28.7/f153 mine_magma_b:- bridge_lava_:d31.1 | {"jump":1,"forward":1,"sprint":1} [2/10]
+231 | (-1.8,-0.7,32.4) yaw=45 p=0 | mv=0.27 | find_green_b:d28.1/f147 find_dark_oa:d28.9/f153 mine_magma_b:- bridge_lava_:d31.4 | {"jump":1,"forward":1,"sprint":1} [3/10]
+232 | (-2.0,-0.8,32.6) yaw=45 p=0 | mv=0.27 | find_green_b:d28.3/f147 find_dark_oa:d29.1/f153 mine_magma_b:- bridge_lava_:d31.6 | {"jump":1,"forward":1,"sprint":1} [4/10]
+233 | (-2.2,-1.0,32.8) yaw=45 p=0 | mv=0.24 | find_green_b:d28.5/f148 find_dark_oa:d29.4/f153 mine_magma_b:- bridge_lava_:d31.9 | {"jump":1,"forward":1,"sprint":1} [5/10]
+234 | (-2.2,-1.0,33.0) yaw=45 p=0 | mv=0.18 | find_green_b:d28.7/f147 find_dark_oa:d29.5/f153 mine_magma_b:- bridge_lava_:d32.0 | {"jump":1,"forward":1,"sprint":1} [6/10]
+235 | (-2.2,-1.0,33.2) yaw=45 p=0 | mv=0.21 | find_green_b:d28.9/f147 find_dark_oa:d29.7/f153 mine_magma_b:- bridge_lava_:d32.2 | {"jump":1,"forward":1,"sprint":1} [7/10]
+236 | (-2.2,-0.6,33.2) yaw=45 p=0 | mv=0.00 | find_green_b:d28.9/f147 find_dark_oa:d29.7/f153 mine_magma_b:- bridge_lava_:d32.2 | {"jump":1,"forward":1,"sprint":1} [8/10]
+237 | (-2.2,-0.2,33.2) yaw=45 p=0 | mv=0.00 | find_green_b:d28.9/f147 find_dark_oa:d29.7/f153 mine_magma_b:- bridge_lava_:d32.2 | {"jump":1,"forward":1,"sprint":1} [9/10]
+238 | (-2.3,0.0,33.2) yaw=45 p=0 | mv=0.08 | find_green_b:d28.9/f148 find_dark_oa:d29.7/f153 mine_magma_b:- bridge_lava_:d32.2 | {"jump":1,"forward":1,"sprint":1} [10/10]
+239 | (-2.4,0.2,33.2) yaw=-0 p=0 | mv=0.07 | find_green_b:d28.9/f167 find_dark_oa:d29.7/f162 mine_magma_b:- bridge_lava_:d32.3 | {"camera":[0,-45]} [1/1]
+      PLAN: I'm back at y=71, facing northeast. Turning to face north to look for the stone path and the green banner landmark. I need to get back on the main path.
+240 | (-2.4,0.2,33.2) yaw=-45 p=0 | mv=0.07 | find_green_b:d29.0/f122 find_dark_oa:d29.8/f117 mine_magma_b:- bridge_lava_:d32.3 | {"camera":[0,-45]} [1/1]
+241 | (-2.5,0.3,33.2) yaw=-0 p=0 | mv=0.06 | find_green_b:d29.0/f167 find_dark_oa:d29.8/f161 mine_magma_b:- bridge_lava_:d32.4 | {"camera":[0,45]} [1/1]
+      PLAN: I'm at y=71.25, facing northwest. Turning to face north and moving forward to find the stone path. I need to get back on the main path to find the green banner landmark.
+242 | (-2.5,0.2,33.3) yaw=-0 p=0 | mv=0.06 | find_green_b:d29.0/f167 find_dark_oa:d29.9/f161 mine_magma_b:- bridge_lava_:d32.5 | {"forward":1,"sprint":1} [1/10]
+243 | (-2.6,0.0,33.3) yaw=-0 p=0 | mv=0.07 | find_green_b:d29.1/f167 find_dark_oa:d29.9/f161 mine_magma_b:- bridge_lava_:d32.5 | {"forward":1,"sprint":1} [2/10]
+244 | (-2.6,0.0,33.4) yaw=-0 p=0 | mv=0.09 | find_green_b:d29.2/f167 find_dark_oa:d30.0/f161 mine_magma_b:- bridge_lava_:d32.6 | {"forward":1,"sprint":1} [3/10]
+245 | (-2.7,0.0,33.6) yaw=-0 p=0 | mv=0.20 | find_green_b:d29.4/f167 find_dark_oa:d30.2/f161 mine_magma_b:- bridge_lava_:d32.8 | {"forward":1,"sprint":1} [4/10]
+246 | (-2.7,0.0,33.8) yaw=-0 p=0 | mv=0.23 | find_green_b:d29.6/f167 find_dark_oa:d30.4/f161 mine_magma_b:- bridge_lava_:d33.0 | {"forward":1,"sprint":1} [5/10]
+247 | (-2.7,0.0,34.1) yaw=-0 p=0 | mv=0.25 | find_green_b:d29.8/f167 find_dark_oa:d30.7/f162 mine_magma_b:- bridge_lava_:d33.2 | {"forward":1,"sprint":1} [6/10]
+248 | (-2.7,0.0,34.4) yaw=-0 p=0 | mv=0.27 | find_green_b:d30.1/f167 find_dark_oa:d30.9/f162 mine_magma_b:- bridge_lava_:d33.4 | {"forward":1,"sprint":1} [7/10]
+249 | (-2.7,0.0,34.6) yaw=-0 p=0 | mv=0.27 | find_green_b:d30.4/f167 find_dark_oa:d31.2/f162 mine_magma_b:- bridge_lava_:d33.6 | {"forward":1,"sprint":1} [8/10]
+250 | (-2.7,0.0,34.9) yaw=-0 p=0 | mv=0.28 | find_green_b:d30.6/f167 find_dark_oa:d31.5/f162 mine_magma_b:- bridge_lava_:d33.8 | {"forward":1,"sprint":1} [9/10]
+251 | (-2.7,0.0,35.2) yaw=-0 p=0 | mv=0.28 | find_green_b:d30.9/f167 find_dark_oa:d31.7/f162 mine_magma_b:- bridge_lava_:d34.0 | {"forward":1,"sprint":1} [10/10]
+252 | (-2.7,0.0,35.2) yaw=-0 p=0 | mv=0.02 | find_green_b:d30.9/f167 find_dark_oa:d31.7/f162 mine_magma_b:- bridge_lava_:d34.0 | {"attack":1} [1/5]
+      PLAN: I'm at y=71, facing north, blocked by tree leaves. Mining the leaves to create a path through the forest, then moving forward to find the stone path and the green banner.
+253 | (-2.7,0.0,35.2) yaw=-0 p=0 | mv=0.00 | find_green_b:d30.9/f167 find_dark_oa:d31.7/f162 mine_magma_b:- bridge_lava_:d34.0 | {"attack":1} [2/5]
+254 | (-2.7,0.0,35.2) yaw=-0 p=0 | mv=0.00 | find_green_b:d30.9/f167 find_dark_oa:d31.7/f162 mine_magma_b:- bridge_lava_:d34.0 | {"attack":1} [3/5]
+255 | (-2.7,0.0,35.2) yaw=-0 p=0 | mv=0.00 | find_green_b:d30.9/f167 find_dark_oa:d31.7/f162 mine_magma_b:- bridge_lava_:d34.0 | {"attack":1} [4/5]
+256 | (-2.7,0.0,35.2) yaw=-0 p=0 | mv=0.00 | find_green_b:d30.9/f167 find_dark_oa:d31.7/f162 mine_magma_b:- bridge_lava_:d34.0 | {"attack":1} [5/5]
+257 | (-2.7,0.0,35.2) yaw=-0 p=0 | mv=0.00 | find_green_b:d30.9/f167 find_dark_oa:d31.7/f162 mine_magma_b:- bridge_lava_:d34.0 | {"forward":1,"sprint":1} [1/5]
+258 | (-2.7,0.0,35.2) yaw=-0 p=0 | mv=0.00 | find_green_b:d30.9/f167 find_dark_oa:d31.7/f162 mine_magma_b:- bridge_lava_:d34.0 | {"forward":1,"sprint":1} [2/5]
+259 | (-2.7,0.0,35.2) yaw=-0 p=0 | mv=0.00 | find_green_b:d30.9/f167 find_dark_oa:d31.7/f162 mine_magma_b:- bridge_lava_:d34.0 | {"forward":1,"sprint":1} [3/5]
+260 | (-2.7,0.0,35.2) yaw=-0 p=0 | mv=0.00 | find_green_b:d30.9/f167 find_dark_oa:d31.7/f162 mine_magma_b:- bridge_lava_:d34.0 | {"forward":1,"sprint":1} [4/5]
+261 | (-2.7,0.0,35.2) yaw=-0 p=0 | mv=0.00 | find_green_b:d30.9/f167 find_dark_oa:d31.7/f162 mine_magma_b:- bridge_lava_:d34.0 | {"forward":1,"sprint":1} [5/5]
+262 | (-2.7,0.0,35.2) yaw=90 p=0 | mv=0.00 | find_green_b:d30.9/f103 find_dark_oa:d31.7/f108 mine_magma_b:- bridge_lava_:d34.0 | {"camera":[0,90]} [1/1]
+      PLAN: I'm blocked by tree leaves to the north. Turning to face east and moving forward to find a path through the forest. I need to get back to the stone path to find the green banner.
+263 | (-2.8,0.0,35.2) yaw=90 p=0 | mv=0.13 | find_green_b:d31.0/f103 find_dark_oa:d31.8/f108 mine_magma_b:- bridge_lava_:d34.1 | {"forward":1,"sprint":1} [1/10]
+264 | (-3.0,0.0,35.2) yaw=90 p=0 | mv=0.20 | find_green_b:d31.0/f103 find_dark_oa:d31.8/f108 mine_magma_b:- bridge_lava_:d34.2 | {"forward":1,"sprint":1} [2/10]
+265 | (-3.3,0.0,35.2) yaw=90 p=0 | mv=0.23 | find_green_b:d31.1/f104 find_dark_oa:d31.9/f109 mine_magma_b:- bridge_lava_:d34.4 | {"forward":1,"sprint":1} [3/10]
+266 | (-3.5,0.0,35.2) yaw=90 p=0 | mv=0.26 | find_green_b:d31.1/f104 find_dark_oa:d32.0/f109 mine_magma_b:- bridge_lava_:d34.6 | {"forward":1,"sprint":1} [4/10]
+267 | (-3.8,0.0,35.2) yaw=90 p=0 | mv=0.27 | find_green_b:d31.2/f104 find_dark_oa:d32.1/f110 mine_magma_b:- bridge_lava_:d34.7 | {"forward":1,"sprint":1} [5/10]
+268 | (-4.1,0.0,35.2) yaw=90 p=0 | mv=0.27 | find_green_b:d31.3/f105 find_dark_oa:d32.2/f110 mine_magma_b:- bridge_lava_:d34.9 | {"forward":1,"sprint":1} [6/10]
+269 | (-4.2,0.0,35.2) yaw=90 p=0 | mv=0.13 | find_green_b:d31.3/f105 find_dark_oa:d32.2/f110 mine_magma_b:- bridge_lava_:d35.0 | {"forward":1,"sprint":1} [7/10]
+270 | (-4.2,0.0,35.2) yaw=90 p=0 | mv=0.00 | find_green_b:d31.3/f105 find_dark_oa:d32.2/f110 mine_magma_b:- bridge_lava_:d35.0 | {"forward":1,"sprint":1} [8/10]
+271 | (-4.2,0.0,35.2) yaw=90 p=0 | mv=0.00 | find_green_b:d31.3/f105 find_dark_oa:d32.2/f110 mine_magma_b:- bridge_lava_:d35.0 | {"forward":1,"sprint":1} [9/10]
+272 | (-4.2,0.0,35.2) yaw=90 p=0 | mv=0.00 | find_green_b:d31.3/f105 find_dark_oa:d32.2/f110 mine_magma_b:- bridge_lava_:d35.0 | {"forward":1,"sprint":1} [10/10]
+273 | (-4.2,0.4,35.2) yaw=90 p=0 | mv=0.00 | find_green_b:d31.3/f105 find_dark_oa:d32.2/f110 mine_magma_b:- bridge_lava_:d35.0 | {"jump":1,"forward":1,"sprint":1} [1/10]
+      PLAN: I'm at y=71, facing east, but blocked (moved=0.00). Trying to jump and sprint forward to get over whatever is blocking me. I need to find the stone path and the green banner.
+274 | (-4.2,0.8,35.2) yaw=90 p=0 | mv=0.00 | find_green_b:d31.3/f105 find_dark_oa:d32.2/f110 mine_magma_b:- bridge_lava_:d35.0 | {"jump":1,"forward":1,"sprint":1} [2/10]
+275 | (-4.3,1.0,35.2) yaw=90 p=0 | mv=0.15 | find_green_b:d31.3/f105 find_dark_oa:d32.3/f111 mine_magma_b:- bridge_lava_:d35.1 | {"jump":1,"forward":1,"sprint":1} [3/10]
+276 | (-4.5,1.2,35.2) yaw=90 p=0 | mv=0.15 | find_green_b:d31.4/f106 find_dark_oa:d32.3/f111 mine_magma_b:- bridge_lava_:d35.2 | {"jump":1,"forward":1,"sprint":1} [4/10]
+277 | (-4.7,1.2,35.2) yaw=90 p=0 | mv=0.17 | find_green_b:d31.4/f106 find_dark_oa:d32.4/f111 mine_magma_b:- bridge_lava_:d35.3 | {"jump":1,"forward":1,"sprint":1} [5/10]
+278 | (-4.8,1.3,35.2) yaw=90 p=0 | mv=0.18 | find_green_b:d31.5/f106 find_dark_oa:d32.4/f111 mine_magma_b:- bridge_lava_:d35.4 | {"jump":1,"forward":1,"sprint":1} [6/10]
+279 | (-5.0,1.2,35.2) yaw=90 p=0 | mv=0.19 | find_green_b:d31.5/f107 find_dark_oa:d32.5/f112 mine_magma_b:- bridge_lava_:d35.5 | {"jump":1,"forward":1,"sprint":1} [7/10]
+280 | (-5.2,1.0,35.2) yaw=90 p=0 | mv=0.19 | find_green_b:d31.6/f107 find_dark_oa:d32.6/f112 mine_magma_b:- bridge_lava_:d35.7 | {"jump":1,"forward":1,"sprint":1} [8/10]
+281 | (-5.4,1.0,35.2) yaw=90 p=0 | mv=0.20 | find_green_b:d31.7/f107 find_dark_oa:d32.7/f112 mine_magma_b:- bridge_lava_:d35.8 | {"jump":1,"forward":1,"sprint":1} [9/10]
+282 | (-5.7,1.0,35.2) yaw=90 p=0 | mv=0.31 | find_green_b:d31.7/f108 find_dark_oa:d32.8/f113 mine_magma_b:- bridge_lava_:d36.0 | {"jump":1,"forward":1,"sprint":1} [10/10]
+283 | (-6.0,1.0,35.2) yaw=90 p=0 | mv=0.30 | find_green_b:d31.8/f108 find_dark_oa:d32.9/f113 mine_magma_b:- bridge_lava_:d36.2 | {"forward":1,"sprint":1} [1/20]
+      PLAN: I'm at y=72, facing east, and I can see a grassy path ahead with trees on both sides. Continuing to sprint forward to find the stone path and the green banner landmark.
+284 | (-6.3,1.0,35.2) yaw=90 p=0 | mv=0.29 | find_green_b:d31.9/f109 find_dark_oa:d33.0/f114 mine_magma_b:- bridge_lava_:d36.4 | {"forward":1,"sprint":1} [2/20]
+285 | (-6.6,1.0,35.2) yaw=90 p=0 | mv=0.29 | find_green_b:d32.0/f109 find_dark_oa:d33.1/f114 mine_magma_b:- bridge_lava_:d36.6 | {"forward":1,"sprint":1} [3/20]
+286 | (-6.9,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d32.1/f110 find_dark_oa:d33.2/f115 mine_magma_b:- bridge_lava_:d36.8 | {"forward":1,"sprint":1} [4/20]
+287 | (-7.2,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d32.2/f110 find_dark_oa:d33.4/f115 mine_magma_b:- bridge_lava_:d37.0 | {"forward":1,"sprint":1} [5/20]
+288 | (-7.5,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d32.3/f111 find_dark_oa:d33.5/f116 mine_magma_b:- bridge_lava_:d37.2 | {"forward":1,"sprint":1} [6/20]
+289 | (-7.7,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d32.4/f111 find_dark_oa:d33.6/f116 mine_magma_b:- bridge_lava_:d37.4 | {"forward":1,"sprint":1} [7/20]
+290 | (-8.0,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d32.5/f112 find_dark_oa:d33.7/f116 mine_magma_b:- bridge_lava_:d37.6 | {"forward":1,"sprint":1} [8/20]
+291 | (-8.3,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d32.6/f112 find_dark_oa:d33.9/f117 mine_magma_b:- bridge_lava_:d37.8 | {"forward":1,"sprint":1} [9/20]
+292 | (-8.6,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d32.7/f113 find_dark_oa:d34.0/f117 mine_magma_b:- bridge_lava_:d38.0 | {"forward":1,"sprint":1} [10/20]
+293 | (-8.9,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d32.8/f113 find_dark_oa:d34.1/f118 mine_magma_b:- bridge_lava_:d38.2 | {"forward":1,"sprint":1} [11/20]
+294 | (-9.1,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d33.0/f114 find_dark_oa:d34.2/f118 mine_magma_b:- bridge_lava_:d38.4 | {"forward":1,"sprint":1} [12/20]
+295 | (-9.4,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d33.1/f114 find_dark_oa:d34.4/f119 mine_magma_b:- bridge_lava_:d38.7 | {"forward":1,"sprint":1} [13/20]
+296 | (-9.7,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d33.2/f114 find_dark_oa:d34.5/f119 mine_magma_b:- bridge_lava_:d38.9 | {"forward":1,"sprint":1} [14/20]
+297 | (-10.0,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d33.3/f115 find_dark_oa:d34.6/f119 mine_magma_b:- bridge_lava_:d39.1 | {"forward":1,"sprint":1} [15/20]
+298 | (-10.3,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d33.4/f115 find_dark_oa:d34.8/f120 mine_magma_b:- bridge_lava_:d39.3 | {"forward":1,"sprint":1} [16/20]
+299 | (-10.5,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d33.5/f116 find_dark_oa:d34.9/f120 mine_magma_b:- bridge_lava_:d39.5 | {"forward":1,"sprint":1} [17/20]
+300 | (-10.8,1.0,35.2) yaw=90 p=0 | mv=0.28 | find_green_b:d33.7/f116 find_dark_oa:d35.1/f121 mine_magma_b:- bridge_lava_:d39.7 | None [None/None]

@@ -341,10 +341,11 @@ error, and both are fixable at the harness/prompt level rather than the model le
 
 ## 6. Files
 
-- Digests, per-scene reports and the metrics table used here: `outputs/_traj_analysis/`
-  (`read/*.md`, `prolong/*.md`, `summary.csv`, `scene_reports/scene-*.md`, `README.md` with
-  the digest format and conventions; not in git — outputs/ is ignored); regenerate the
-  digests and the table with `python scripts/analyze_4hop_traj.py`.
+- Digests, per-scene reports and the metrics table used here: `experiments/traj_analysis_4hop/`
+  (`read/*.md`, `prolong/*.md`, `summary.csv`, `scene_reports/scene-*.md`, `scenes.txt`,
+  `README.md` with the digest format and conventions); regenerate the digests and the
+  table with `python scripts/analyze_4hop_traj.py experiments/traj_analysis_4hop`.
+- Chinese version of this write-up: `BEHAVIOR_helixon_4hop.zh.md`.
 - Raw evidence: `outputs/log-c4h-*.txt`, `outputs/log-q35-*.txt`,
   `outputs/*-prolong-codex-*/*/4-hop/*/prolong_workspace/logs.txt` and
   `codex_turns/turn_*.events.jsonl`, `outputs/*-hypothesis-vllm-*/*/4-hop/*/hypothesis_graph.json`;
