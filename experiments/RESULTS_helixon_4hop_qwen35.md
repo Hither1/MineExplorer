@@ -43,7 +43,9 @@ Serving: three identical TP=2 servers on a227 — `:8001` GPUs 2,3, `:8002` GPUs
 `--override-generation-config '{"temperature":0.7,"top_p":0.8,"top_k":20,"max_new_tokens":1024}'`,
 `--default-chat-template-kwargs '{"enable_thinking":false}'`, `--enable-auto-tool-choice
 --tool-call-parser qwen3_xml`. 8.5 min from launch to ready. 21 cells at concurrency 14
-dealt round-robin never queued a request (2–4 running, 1.6–5.1 % KV).
+dealt round-robin barely loaded them: over the campaign's 1888 engine snapshots, 7 showed
+any queue at all (max 4 waiting), running requests peaked at 6 per server and KV usage at
+20 %.
 
 ## Results
 
