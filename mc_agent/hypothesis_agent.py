@@ -62,6 +62,7 @@ def hypothesis_reply_schema(style: str = "full") -> dict:
                         "statement": {"type": "string"},
                         "confidence": {"type": "number"},
                         "status": {"type": "string", "enum": ["active", "confirmed", "refuted", "stale"]},
+                        "kind": {"type": "string", "enum": ["goal", "location", "mechanism", "state", "other"]},
                         "depends_on": {"type": "array", "items": {"type": "string"}},
                         "evidence": {"type": "string"},
                     },
@@ -69,6 +70,7 @@ def hypothesis_reply_schema(style: str = "full") -> dict:
                 },
             },
             "plan": {"type": "array", "items": {"type": "string"}},
+            "testing": {"type": ["string", "null"]},
         },
         "required": required,
     }
@@ -79,7 +81,8 @@ class HypothesisContextBuilder(DefaultContextBuilder):
     prompt that adds hypothesis-DAG + planning instructions and sections."""
 
     @classmethod
-    def _hypothesis_sections(cls, hypothesis_summary: str = "", plan_summary: str = "") -> dict[str, str]:
+    def _hypothesis_sections(cls, hypothesis_summary: str = "", plan_summary: str = "",
+                             discipline_summary: str = "") -> dict[str, str]:
         return {
             "hypothesis_section": (
                 HYPOTHESIS_SECTION_TEMPLATE.format(hypothesis_summary=hypothesis_summary.strip())
@@ -89,6 +92,11 @@ class HypothesisContextBuilder(DefaultContextBuilder):
             "plan_section": (
                 PLAN_SECTION_TEMPLATE.format(plan_summary=plan_summary.strip())
                 if plan_summary and plan_summary.strip()
+                else ""
+            ),
+            "discipline_section": (
+                DISCIPLINE_SECTION_TEMPLATE.format(discipline_summary=discipline_summary.strip())
+                if discipline_summary and discipline_summary.strip()
                 else ""
             ),
         }
@@ -107,6 +115,7 @@ class HypothesisContextBuilder(DefaultContextBuilder):
         style: str = "full",
         memory_step: int | None = None,
         current_step: int | None = None,
+        discipline_summary: str = "",
     ):
         TASK_SUFFIX = "end the episode by setting the 'ESC' action to 1."
         goal_desc = f"{task_desc}, {TASK_SUFFIX}"
@@ -115,14 +124,15 @@ class HypothesisContextBuilder(DefaultContextBuilder):
         if layout == "legacy":
             sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint,
                                            style, memory_step, current_step)
-            sections.update(cls._hypothesis_sections(hypothesis_summary, plan_summary))
+            sections.update(cls._hypothesis_sections(hypothesis_summary, plan_summary, discipline_summary))
         else:
             # Same idea as DefaultContextBuilder: the state -- memory, hints, hypothesis graph,
             # plan -- moves to state_block() after the frames, and this block never changes.
             sections = dict(memory_section="", milestone_section="", camera_section="",
-                            movement_section="", hypothesis_section="", plan_section="")
+                            movement_section="", hypothesis_section="", plan_section="",
+                            discipline_section="")
         template = HYPOTHESIS_BASE_PROMPT if style == "full" else HYPOTHESIS_BASE_PROMPT_COMPACT
-        text = template.format(goal_desc=goal_desc, **sections)
+        text = template.format(goal_desc=goal_desc, test_budget=TEST_BUDGET_STEPS, **sections)
         if layout == "append-only":
             text = text.replace(APPEND_ONLY_WINDOW_PHRASE[0], APPEND_ONLY_WINDOW_PHRASE[1])
         builder.buffer.write(text)
@@ -140,10 +150,11 @@ class HypothesisContextBuilder(DefaultContextBuilder):
         style: str = "full",
         memory_step: int | None = None,
         current_step: int | None = None,
+        discipline_summary: str = "",
     ) -> str:
         sections = cls._state_sections(long_term_memory, milestone_hint, camera_hint, movement_hint,
                                        style, memory_step, current_step)
-        sections.update(cls._hypothesis_sections(hypothesis_summary, plan_summary))
+        sections.update(cls._hypothesis_sections(hypothesis_summary, plan_summary, discipline_summary))
         # The hypothesis section is never empty (HYPOTHESIS_EMPTY_TEMPLATE), so this block always
         # exists for the hypothesis agent -- the graph is state the model must read every step.
         return STATE_BLOCK_HEADER + "".join(sections.values())
@@ -163,6 +174,18 @@ PLAN_SECTION_TEMPLATE = """
 {plan_summary}
 """
 
+DISCIPLINE_SECTION_TEMPLATE = """
+**Harness notices (facts about your own graph, enforced -- not advice):**
+{discipline_summary}
+"""
+
+# Steps a hypothesis may stay "under test" with no change in its confidence before the
+# harness marks it stale and clears the plan. Calibrated on the 4-hop trajectories: 46
+# attack ticks on "breaking the trunks will clear a path" (0311, confidence 0.65
+# throughout) and 202 ESC presses on "I mined the quartz" (0603) -- a test that has not
+# moved a belief in 25 steps is not a test any more.
+TEST_BUDGET_STEPS = 25
+
 # The hypothesis agent's prompt, in pieces so that the two response styles share every piece
 # they have in common (HYPOTHESIS_BASE_PROMPT, the `full` style, is the concatenation the campaign
 # has always used -- byte for byte, see scripts/prompt_layout_check.py --golden).
@@ -175,7 +198,32 @@ You are an expert Minecraft player embodied as an AI agent. Your mission is to s
 {movement_section}
 {hypothesis_section}
 {plan_section}
+{discipline_section}
 You will be given a recent history of your thoughts and a sequence of the last 20 frames from your point of view. Based on this full context, you must decide on your next thought, action, memory update, hypothesis updates, and plan.
+"""
+
+# The discipline the harness enforces on the graph (HypothesisAgent._enforce_discipline),
+# stated once so the model can act on it rather than be surprised by it. Shared by both
+# response styles. Why each rule exists is in experiments/HYPOTHESIS_V2_DESIGN.md.
+_HYP_DISCIPLINE = """
+**Kinds, and what the harness enforces:**
+- Give every hypothesis a `kind`: "goal" (a sub-goal the task names: found / reached / mined X -- the
+  step-2 scaffolding is all "goal"), "location" (where something is, relative to you or to spawn),
+  "mechanism" (how the world responds to an action: "attacking this trunk clears the path"), "state"
+  (what you carry or have done: "the pickaxe is in slot 3"), or "other".
+- **Goals are confirmed by the environment, not by you.** A "goal" hypothesis stays "active" until the
+  Environment-verified task status says the task HAS been verified; until then use confidence (up
+  to 0.9) to say how sure you are. A "confirmed" you send for a goal before that is reverted. An
+  item is "mined" only if it is in your hotbar/inventory; a landmark is "found" only when you stand
+  next to it and look at it; a door is "open" only if you can walk through it.
+- **If your ESC is refused, every goal you believed complete is capped at 0.5 and locked** (shown
+  as "locked" in the graph): at least one of them is NOT done, whatever your memory says. Re-verify
+  each locked goal physically, starting with the least directly observed, instead of pressing ESC
+  again -- ESC while the status says NOT verified is dropped before it reaches the game.
+- Name the hypothesis your action tests in `"testing"` (an id, or null for plain travel). A
+  hypothesis under test for {test_budget} steps without a change in its confidence is marked "stale"
+  and your plan is cleared -- pick a different hypothesis, or a different way to test this one,
+  before that happens.
 """
 
 _HYP_THOUGHT_PROCESS_FULL = """
@@ -358,16 +406,18 @@ Your actions are controlled by a JSON object. Available keys:
 
 _HYP_RESPONSE_FULL = """
 **RESPONSE FORMAT:**
-Your response **MUST** be valid JSON with these keys: "thought", "action", "memory_update", "hypotheses", "plan".
+Your response **MUST** be valid JSON with these keys: "thought", "action", "memory_update", "hypotheses", "plan", "testing".
 - "thought": your current reasoning and plan (string)
 - "action": the action JSON object
 - "memory_update": updated long-term memory (string, max 200 words, write the FULL memory not just the delta)
 - "hypotheses": a list of hypothesis objects you are proposing or updating this step (can be empty list if none). Each object:
-  {{"id": "h1", "statement": "...", "confidence": 0.6, "status": "active", "depends_on": [], "evidence": "what you just observed"}}
+  {{"id": "h1", "kind": "location", "statement": "...", "confidence": 0.6, "status": "active", "depends_on": [], "evidence": "what you just observed"}}
   - "id" is required (reuse an existing id to update it; a new id creates a new hypothesis).
   - All other fields are optional on an update — omit a field to leave it unchanged.
-  - "status" is one of "active", "confirmed", "refuted", "stale".
+  - "kind" is one of "goal", "location", "mechanism", "state", "other".
+  - "status" is one of "active", "confirmed", "refuted", "stale" ("confirmed" is not accepted for a goal until the environment verifies the task).
 - "plan": a list of 2-5 short strings describing your next intended steps (can be empty list).
+- "testing": the id of the hypothesis this action tests, or null.
 
 **Examples:**
 
@@ -378,9 +428,10 @@ Example 1 - Proposing a hypothesis while exploring:
   "action": {{"forward": 1, "sprint": 1, "camera": [0, 15]}},
   "memory_update": "Step 1: Spawned in plains biome. Spotted smoke to the northeast, heading there.",
   "hypotheses": [
-    {{"id": "h1", "statement": "There is a village to the northeast (smoke visible).", "confidence": 0.4, "status": "active", "evidence": "saw smoke rising above the treeline"}}
+    {{"id": "h1", "kind": "location", "statement": "There is a village to the northeast (smoke visible).", "confidence": 0.4, "status": "active", "evidence": "saw smoke rising above the treeline"}}
   ],
-  "plan": ["Continue northeast toward the smoke", "Confirm village on arrival", "Look for animal pens or houses"]
+  "plan": ["Continue northeast toward the smoke", "Confirm village on arrival", "Look for animal pens or houses"],
+  "testing": "h1"
 }}
 ```
 
@@ -432,11 +483,12 @@ Example 5 - Decomposing a multi-step task description into a dependency chain on
   "action": {{"camera": [0, 30]}},
   "memory_update": "Step 1: task requires 3 sequential sub-goals (trapdoor entrance -> cactus in first room -> fletching table in back room). Scanning surroundings for the stone building.",
   "hypotheses": [
-    {{"id": "h1", "statement": "There is a spruce trapdoor entrance to a stone building somewhere nearby.", "confidence": 0.3, "status": "active", "evidence": "stated as the first sub-goal in the task description"}},
-    {{"id": "h2", "statement": "There is a potted cactus in the first room, reachable once I'm through the trapdoor.", "confidence": 0.2, "status": "active", "depends_on": ["h1"], "evidence": "stated as the second sub-goal; requires entering through h1 first"}},
-    {{"id": "h3", "statement": "There is a fletching table in a back room, reachable once I've found the cactus room.", "confidence": 0.2, "status": "active", "depends_on": ["h2"], "evidence": "stated as the third sub-goal; requires passing through the cactus room first"}}
+    {{"id": "h1", "kind": "goal", "statement": "There is a spruce trapdoor entrance to a stone building somewhere nearby.", "confidence": 0.3, "status": "active", "evidence": "stated as the first sub-goal in the task description"}},
+    {{"id": "h2", "kind": "goal", "statement": "There is a potted cactus in the first room, reachable once I'm through the trapdoor.", "confidence": 0.2, "status": "active", "depends_on": ["h1"], "evidence": "stated as the second sub-goal; requires entering through h1 first"}},
+    {{"id": "h3", "kind": "goal", "statement": "There is a fletching table in a back room, reachable once I've found the cactus room.", "confidence": 0.2, "status": "active", "depends_on": ["h2"], "evidence": "stated as the third sub-goal; requires passing through the cactus room first"}}
   ],
-  "plan": ["Locate the stone building with the spruce trapdoor", "Enter through the trapdoor", "Find the potted cactus in the first room", "Proceed to back room and find fletching table"]
+  "plan": ["Locate the stone building with the spruce trapdoor", "Enter through the trapdoor", "Find the potted cactus in the first room", "Proceed to back room and find fletching table"],
+  "testing": null
 }}
 ```
 
@@ -467,11 +519,13 @@ Your response **MUST** be exactly one JSON object on a single line - no line bre
 - "action": the action JSON object (only the keys you set; omitted keys are 0) - always
 - "memory_update": the FULL long-term memory (string, max 200 words) - on your first step and whenever the memory changes or the memory line says it is due; then send the whole memory, never just the delta. No key means "memory unchanged".
 - "hypotheses": the hypothesis objects you are proposing or updating THIS step - only when there is one. Each object:
-  {{"id": "h1", "statement": "...", "confidence": 0.6, "status": "active", "depends_on": [], "evidence": "what you just observed"}}
+  {{"id": "h1", "kind": "location", "statement": "...", "confidence": 0.6, "status": "active", "depends_on": [], "evidence": "what you just observed"}}
   - "id" is required (reuse an existing id to update it; a new id creates a new hypothesis).
   - On an update send only "id" plus the fields that changed (omitted fields stay as they are) and a short "evidence" phrase.
-  - "status" is one of "active", "confirmed", "refuted", "stale".
+  - "kind" is one of "goal", "location", "mechanism", "state", "other".
+  - "status" is one of "active", "confirmed", "refuted", "stale" ("confirmed" is not accepted for a goal until the environment verifies the task).
 - "plan": a list of 2-5 short strings describing your next intended steps - only when the plan changes. No key means "same plan".
+- "testing": the id of the hypothesis this action tests - only when it changes; null for plain travel.
 
 **Examples:**
 
@@ -479,7 +533,7 @@ Example 0 - A quiet step: nothing to record, the plan still stands (USE THIS OFT
 {{"thought": "Still crossing the plain toward the smoke; nothing new in view. Keep sprinting.", "action": {{"forward": 1, "sprint": 1}}}}
 
 Example 1 - Proposing a hypothesis while exploring:
-{{"thought": "Smoke in the distance, possibly a village. Heading toward it.", "action": {{"forward": 1, "sprint": 1, "camera": [0, 15]}}, "memory_update": "Step 1: Spawned in plains biome. Spotted smoke to the northeast, heading there.", "hypotheses": [{{"id": "h1", "statement": "There is a village to the northeast (smoke visible).", "confidence": 0.4, "status": "active", "evidence": "smoke above the treeline"}}], "plan": ["Continue northeast toward the smoke", "Confirm village on arrival", "Look for animal pens or houses"]}}
+{{"thought": "Smoke in the distance, possibly a village. Heading toward it.", "action": {{"forward": 1, "sprint": 1, "camera": [0, 15]}}, "memory_update": "Step 1: Spawned in plains biome. Spotted smoke to the northeast, heading there.", "hypotheses": [{{"id": "h1", "kind": "location", "statement": "There is a village to the northeast (smoke visible).", "confidence": 0.4, "status": "active", "evidence": "smoke above the treeline"}}], "plan": ["Continue northeast toward the smoke", "Confirm village on arrival", "Look for animal pens or houses"], "testing": "h1"}}
 
 Example 2 - Confirming a hypothesis with new evidence:
 {{"thought": "Houses and a path are now visible - the village is confirmed. Entering it.", "action": {{"forward": 1}}, "memory_update": "Confirmed village to the northeast. Approaching main path now.", "hypotheses": [{{"id": "h1", "confidence": 0.95, "status": "confirmed", "evidence": "houses and a path visible"}}], "plan": ["Enter the village", "Look for animal pen location", "Check for existing fences/gates"]}}
@@ -491,7 +545,7 @@ Example 4 - Ruling out one candidate and opening a new id for the next (don't re
 {{"thought": "The stone-brick hut is fully searched and has no polished diorite stairs; the larger building to the east is a new candidate.", "action": {{"forward": 1, "sprint": 1}}, "memory_update": "Searched the first stone-brick hut fully - no stairs, ruled out. Spotted a second, larger building to the east; heading there now as a new candidate.", "hypotheses": [{{"id": "h1", "status": "refuted", "confidence": 0.05, "evidence": "interior, walls and roof searched; no polished diorite"}}, {{"id": "h2", "statement": "The larger building to the east contains the polished diorite stairs.", "confidence": 0.3, "status": "active", "evidence": "larger building spotted east of the ruled-out hut"}}], "plan": ["Approach the second building", "Enter and search it", "If empty, rule it out (h2 -> refuted) and open a new id for the next candidate"]}}
 
 Example 5 - Decomposing a multi-step task description into a dependency chain on your very first step (do this immediately whenever the task names multiple sub-goals, before you've seen anything):
-{{"thought": "The task names three sub-goals in order (trapdoor entrance, potted cactus in the first room, fletching table in the back room); I will open one hypothesis per sub-goal, chained in that order, and start scanning.", "action": {{"camera": [0, 30]}}, "memory_update": "Step 1: task requires 3 sequential sub-goals (trapdoor entrance -> cactus in first room -> fletching table in back room). Scanning surroundings for the stone building.", "hypotheses": [{{"id": "h1", "statement": "There is a spruce trapdoor entrance to a stone building somewhere nearby.", "confidence": 0.3, "status": "active", "evidence": "first sub-goal in the task description"}}, {{"id": "h2", "statement": "There is a potted cactus in the first room, reachable once I'm through the trapdoor.", "confidence": 0.2, "status": "active", "depends_on": ["h1"], "evidence": "second sub-goal; requires h1 first"}}, {{"id": "h3", "statement": "There is a fletching table in a back room, reachable once I've found the cactus room.", "confidence": 0.2, "status": "active", "depends_on": ["h2"], "evidence": "third sub-goal; requires h2 first"}}], "plan": ["Locate the stone building with the spruce trapdoor", "Enter through the trapdoor", "Find the potted cactus in the first room", "Proceed to back room and find fletching table"]}}
+{{"thought": "The task names three sub-goals in order (trapdoor entrance, potted cactus in the first room, fletching table in the back room); I will open one hypothesis per sub-goal, chained in that order, and start scanning.", "action": {{"camera": [0, 30]}}, "memory_update": "Step 1: task requires 3 sequential sub-goals (trapdoor entrance -> cactus in first room -> fletching table in back room). Scanning surroundings for the stone building.", "hypotheses": [{{"id": "h1", "kind": "goal", "statement": "There is a spruce trapdoor entrance to a stone building somewhere nearby.", "confidence": 0.3, "status": "active", "evidence": "first sub-goal in the task description"}}, {{"id": "h2", "kind": "goal", "statement": "There is a potted cactus in the first room, reachable once I'm through the trapdoor.", "confidence": 0.2, "status": "active", "depends_on": ["h1"], "evidence": "second sub-goal; requires h1 first"}}, {{"id": "h3", "kind": "goal", "statement": "There is a fletching table in a back room, reachable once I've found the cactus room.", "confidence": 0.2, "status": "active", "depends_on": ["h2"], "evidence": "third sub-goal; requires h2 first"}}], "plan": ["Locate the stone building with the spruce trapdoor", "Enter through the trapdoor", "Find the potted cactus in the first room", "Proceed to back room and find fletching table"]}}
 
 Example 6 - Deepening a stale goal-restatement placeholder into a specific hypothesis after real search (the required pivot once a first-step placeholder like h1 above has survived many steps of searching with no new evidence - use the Environment-reported position numbers, not a step count, to decide how much ground you've actually covered):
 {{"thought": "h1 has had no new evidence for 40 steps and I am still only ~35 blocks from spawn, so I have been circling, not searching. Granite pillars are placed structures, likelier near a clearing or biome edge; I will retire h1 and commit to a sustained push south.", "action": {{"camera": [0, 90]}}, "memory_update": "Spent ~40 steps near spawn without finding the granite pillar (spawn-distance only ~35 blocks despite the step count - was circling). Retired the goal-restatement hypothesis. New theory: pillars are placed structures, likelier near a clearing or biome edge than deep forest. Committing to a sustained push south (unexplored direction) for at least 100 blocks of real spawn-distance before reassessing.", "hypotheses": [{{"id": "h1", "status": "stale", "confidence": 0.15, "evidence": "40 steps but spawn-distance stayed ~35 blocks: circling, not a negative result"}}, {{"id": "h2", "statement": "The pillar is a placed decorative structure, more likely near a clearing or this biome's edge than deep in unbroken forest - committing to a sustained push south, unexplored so far.", "confidence": 0.35, "status": "active", "evidence": "pillars do not generate in dense forest; south not yet covered per position history"}}], "plan": ["Turn to face south (one step, camera only)", "Sprint south in a straight line for several steps, checking Environment-reported spawn-distance grows", "Watch for a clearing, biome transition, or structure", "Reassess only once spawn-distance actually exceeds ~100 blocks in this direction"]}}
@@ -503,11 +557,20 @@ _HYP_ESC_RULE = """
 **Important**: Only set ESC=1 when the "Environment-verified task status" line above says the task HAS been verified complete. Your own visual read of a frame is not proof the action worked — trust the environment-verified status, not your impression of the last frame. If it says the task is not yet complete, keep working even if you believe you just succeeded.
 """
 
-HYPOTHESIS_BASE_PROMPT = (_HYP_HEADER + _HYP_THOUGHT_PROCESS_FULL + _HYP_ACTION_REFERENCE
-                          + _HYP_RESPONSE_FULL + _HYP_ESC_RULE)
+HYPOTHESIS_BASE_PROMPT = (_HYP_HEADER + _HYP_THOUGHT_PROCESS_FULL + _HYP_DISCIPLINE
+                          + _HYP_ACTION_REFERENCE + _HYP_RESPONSE_FULL + _HYP_ESC_RULE)
 
-HYPOTHESIS_BASE_PROMPT_COMPACT = (_HYP_HEADER + _HYP_THOUGHT_PROCESS_COMPACT + _HYP_ACTION_REFERENCE
-                                  + _HYP_RESPONSE_COMPACT + _HYP_ESC_RULE)
+HYPOTHESIS_BASE_PROMPT_COMPACT = (_HYP_HEADER + _HYP_THOUGHT_PROCESS_COMPACT + _HYP_DISCIPLINE
+                                  + _HYP_ACTION_REFERENCE + _HYP_RESPONSE_COMPACT + _HYP_ESC_RULE)
+
+
+def _env_verified(milestone_hint: str) -> bool | None:
+    """The environment's verification bit as the harness renders it: True once the task
+    is verified, False while it is not, None under the no-hint protocol (no line)."""
+    text = (milestone_hint or "").strip()
+    if not text:
+        return None
+    return "HAS verified" in text
 
 
 class HypothesisAgent:
@@ -549,6 +612,17 @@ class HypothesisAgent:
 
         self.graph = HypothesisGraph()
         self.current_plan: list[str] = []
+        # Discipline state (experiments/HYPOTHESIS_V2_DESIGN.md): which goal ids are locked
+        # after a refused ESC, what is under test since when, and the counters that say how
+        # often each rule fired -- written by save_state next to the graph.
+        self._locked: set[str] = set()
+        self._testing: tuple[str, int, float] | None = None   # (id, since_step, confidence then)
+        self._env_verified: bool | None = None                # None under the no-hint protocol
+        self._first_response_step: int | None = None
+        self.discipline = {
+            "goal_confirm_reverted": 0, "locked_raise_capped": 0, "esc_dropped": 0,
+            "esc_lock_events": 0, "stale_by_budget": 0,
+        }
 
         logger.info(
             f"HypothesisAgent  action_space={self.action_space.__class__.__name__}  "
@@ -591,8 +665,19 @@ class HypothesisAgent:
             thought, action = self.get_default_action()
             return thought, action, long_term_memory
 
-        hypothesis_summary = self.graph.to_prompt_summary(max_items=self.max_hypotheses_in_prompt)
+        self._env_verified = _env_verified(milestone_hint)
+        if self._env_verified:
+            # The environment has verified the task: nothing is locked any more.
+            self._locked.clear()
+        flags = {hid: "locked" for hid in self._locked}
+        if self._testing and self._testing[0] in self.graph.nodes and current_step is not None:
+            flags[self._testing[0]] = (
+                f"under test for {current_step - self._testing[1]} steps (budget {TEST_BUDGET_STEPS})"
+            )
+        hypothesis_summary = self.graph.to_prompt_summary(
+            max_items=self.max_hypotheses_in_prompt, flags=flags)
         plan_summary = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(self.current_plan))
+        discipline_summary = self._discipline_summary()
         layout = self.prompt_layout
         self._note_memory(long_term_memory, current_step)
 
@@ -608,6 +693,7 @@ class HypothesisAgent:
             style=self.response_style,
             memory_step=self._memory_step,
             current_step=current_step,
+            discipline_summary=discipline_summary,
         ).build()}]
         save_content = copy.deepcopy(content)
 
@@ -656,6 +742,7 @@ class HypothesisAgent:
                 style=self.response_style,
                 memory_step=self._memory_step,
                 current_step=current_step,
+                discipline_summary=discipline_summary,
             )
             if state_text:
                 content.append({"type": "text", "text": state_text})
@@ -676,6 +763,7 @@ class HypothesisAgent:
                 action = self.action_space.dump_action_to_dict(action_state)
 
                 self._apply_hypothesis_ops(response_content, current_step or 0)
+                action = self._gate_esc(action, current_step or 0)
                 break
 
             except Exception as e:
@@ -727,11 +815,20 @@ class HypothesisAgent:
             logger.warning(f"[HypothesisAgent] Could not parse hypotheses/plan block: {e}")
             return
 
+        if self._first_response_step is None:
+            self._first_response_step = step
+
+        touched: list[str] = []
         for op in parsed.get("hypotheses", []) or []:
             if not isinstance(op, dict) or not op.get("id"):
                 continue
             hid = str(op["id"])
             evidence = op.get("evidence")
+            kind = op.get("kind")
+            # The prompt's step 2 says the first response opens one hypothesis per named
+            # sub-goal; a model that forgets `kind` there still means "goal".
+            if kind is None and hid not in self.graph.nodes and step == self._first_response_step:
+                kind = "goal"
             try:
                 self.graph.add_or_update(
                     id=hid,
@@ -740,7 +837,9 @@ class HypothesisAgent:
                     status=op.get("status"),
                     evidence=[str(evidence)] if evidence else None,
                     step=step,
+                    kind=kind,
                 )
+                touched.append(hid)
                 for parent_id in op.get("depends_on", []) or []:
                     self.graph.add_dependency(hid, str(parent_id), step=step)
             except CycleError as e:
@@ -748,9 +847,153 @@ class HypothesisAgent:
             except Exception as e:
                 logger.warning(f"[HypothesisAgent] Skipped malformed hypothesis op {op!r}: {e}")
 
+        self._enforce_discipline(touched, step)
+
         plan = parsed.get("plan")
         if isinstance(plan, list) and plan:
             self.current_plan = [str(p) for p in plan]
+
+        self._track_testing(parsed.get("testing"), step)
+
+    # -- discipline: the rules the harness holds the graph to ------------------
+
+    def _enforce_discipline(self, touched: list[str], step: int) -> None:
+        """Goals are confirmed by the environment; locked goals cannot be raised.
+
+        The rules answer two things the 4-hop trajectories showed (BEHAVIOR §3.3, §3.6):
+        goal nodes marked "confirmed" from a visual read (0603: "mined the quartz" after
+        one attack tick), and re-confirmation at 1.0 on the very step after the harness
+        had demoted them (q35-hyp-0603, steps 99-300, ESC on every one). Each
+        intervention is written into the node's evidence so the model sees why the graph
+        does not say what it just said.
+        """
+        for hid in touched:
+            node = self.graph.nodes.get(hid)
+            if node is None:
+                continue
+            if node.kind == "goal" and node.status == "confirmed" and self._env_verified is False:
+                node.status = "active"
+                node.confidence = min(node.confidence, 0.9)
+                node.evidence.append(
+                    f"[harness, step {step}] reverted to active: only the environment "
+                    "confirms goals, and its status says NOT verified"
+                )
+                self.discipline["goal_confirm_reverted"] += 1
+            if hid in self._locked and self._env_verified is not True:
+                if node.status == "confirmed" or node.confidence > 0.5:
+                    node.status = "active" if node.status == "confirmed" else node.status
+                    node.confidence = min(node.confidence, 0.5)
+                    node.evidence.append(
+                        f"[harness, step {step}] capped at 0.5: locked since ESC was refused; "
+                        "re-verify physically before raising this again"
+                    )
+                    self.discipline["locked_raise_capped"] += 1
+            if len(node.evidence) > 8:
+                node.evidence = node.evidence[-8:]
+
+    def _track_testing(self, testing: Any, step: int) -> None:
+        """Mark a hypothesis stale once it has been 'under test' for TEST_BUDGET_STEPS
+        with no change in confidence, and clear the plan that was testing it."""
+        tid = str(testing) if isinstance(testing, str) and testing.strip() else None
+        if tid and tid not in self.graph.nodes:
+            tid = None
+        if tid is None:
+            # A model that stops naming the test keeps the last one on the clock: silence
+            # is not a pivot.
+            tid = self._testing[0] if self._testing else None
+            if tid is None:
+                return
+        node = self.graph.nodes.get(tid)
+        if node is None or node.status != "active" or node.kind == "goal":
+            # Goals are the task's map, not a test that can run out of budget: searching
+            # for hop 2 for 40 steps is the job, not perseveration.
+            self._testing = None
+            return
+        if self._testing is None or self._testing[0] != tid or abs(self._testing[2] - node.confidence) >= 0.05:
+            self._testing = (tid, step, node.confidence)
+            return
+        if step - self._testing[1] >= TEST_BUDGET_STEPS:
+            node.status = "stale"
+            node.evidence.append(
+                f"[harness, step {step}] stale: under test for {step - self._testing[1]} steps "
+                f"with no change in confidence; test something else, or test this differently"
+            )
+            node.updated_step = step
+            self.current_plan = []
+            self.discipline["stale_by_budget"] += 1
+            self._testing = None
+
+    def _lock_goals(self, step: int, why: str) -> None:
+        """Cap and lock every goal the model believes done. Called when the model tries
+        to end the episode while the environment says the task is not verified."""
+        self.discipline["esc_lock_events"] += 1
+        for node in self.graph.nodes.values():
+            # What the model "believed complete": a goal it rated likely, or any
+            # confirmed claim about what it has done or carries. Location/mechanism
+            # beliefs are not completion claims and are left alone.
+            believed_done = (
+                (node.kind == "goal" and (node.status == "confirmed" or node.confidence >= 0.5))
+                or (node.kind in ("state", "other") and node.status == "confirmed")
+            )
+            if not believed_done or node.status in ("refuted", "stale"):
+                continue
+            if node.status == "confirmed":
+                node.status = "active"
+            node.confidence = min(node.confidence, 0.5)
+            node.updated_step = step
+            if node.id not in self._locked:
+                self._locked.add(node.id)
+                node.evidence.append(
+                    f"[harness, step {step}] {why}: at least one goal is NOT done; this one is "
+                    "capped at 0.5 and locked until the environment verifies the task"
+                )
+                if len(node.evidence) > 8:
+                    node.evidence = node.evidence[-8:]
+
+    def _gate_esc(self, action: dict, step: int) -> dict:
+        """Drop ESC while the environment says NOT verified (the harness would refuse it
+        anyway), and treat the attempt as the belief error it is: lock the goals.
+
+        Under the no-hint protocol (`_env_verified is None`) ESC passes through: there
+        the agent is allowed to end its own episode.
+        """
+        if not action.get("ESC") or self._env_verified is not False:
+            return action
+        self.discipline["esc_dropped"] += 1
+        self._lock_goals(step, "ESC dropped (environment status: NOT verified)")
+        logger.warning(
+            f"[HypothesisAgent] step {step}: ESC dropped -- the environment has not verified "
+            f"the task; goals locked: {sorted(self._locked)}"
+        )
+        action = dict(action)
+        action["ESC"] = 0
+        return action
+
+    def _discipline_summary(self) -> str:
+        lines = []
+        if self.discipline["esc_dropped"]:
+            n = self.discipline["esc_dropped"]
+            lines.append(
+                f"- You tried to end the episode {n} time(s) while the environment said NOT "
+                f"verified; each ESC was dropped. At least one goal is not done."
+            )
+        if self._locked and self._env_verified is not True:
+            lines.append(
+                f"- Locked goals (capped at 0.5 until the environment verifies the task): "
+                f"{', '.join(sorted(self._locked))}. Re-verify each physically -- an item is "
+                f"mined only if it is in your hotbar/inventory."
+            )
+        if self.discipline["goal_confirm_reverted"]:
+            lines.append(
+                f"- {self.discipline['goal_confirm_reverted']} 'confirmed' on goals were reverted: "
+                f"the environment has not verified the task."
+            )
+        if self.discipline["stale_by_budget"]:
+            lines.append(
+                f"- {self.discipline['stale_by_budget']} hypothesis(es) went stale for staying under "
+                f"test {TEST_BUDGET_STEPS} steps without a confidence change; the plan was cleared."
+            )
+        return "\n".join(lines)
 
     def on_esc_rejected(self, step: int | None = None) -> None:
         """Called by the harness when it ignores a premature ESC because the
@@ -762,17 +1005,9 @@ class HypothesisAgent:
         getting echoed back into the prompt as settled fact every step
         (see HypothesisGraph.to_prompt_summary), which anchors the LLM into
         repeating the same wrong ESC instead of gathering new evidence."""
-        for node in self.graph.nodes.values():
-            if node.status != "confirmed":
-                continue
-            node.status = "active"
-            node.confidence = min(node.confidence, 0.5)
-            node.evidence.append(
-                "ESC was rejected: the environment has NOT verified this hypothesis. "
-                "Re-examine directly instead of trusting the earlier visual read."
-            )
-            if step is not None:
-                node.updated_step = step
+        # Normally unreachable now that _gate_esc drops ESC before the harness sees it;
+        # kept for a harness that refuses ESC on its own grounds.
+        self._lock_goals(step or 0, "ESC was rejected by the environment")
 
     def get_default_action(self, is_call_failed: bool = True) -> tuple[str, dict]:
         if is_call_failed:
@@ -793,3 +1028,10 @@ class HypothesisAgent:
         self.graph.save(out / "hypothesis_graph.json")
         with open(out / "hypothesis_plan.json", "w", encoding="utf-8") as f:
             json.dump({"plan": self.current_plan}, f, ensure_ascii=False, indent=2)
+        with open(out / "hypothesis_discipline.json", "w", encoding="utf-8") as f:
+            json.dump(
+                {**self.discipline, "locked": sorted(self._locked),
+                 "testing": list(self._testing) if self._testing else None,
+                 "test_budget_steps": TEST_BUDGET_STEPS},
+                f, ensure_ascii=False, indent=2,
+            )

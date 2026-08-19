@@ -27,11 +27,19 @@ HypothesisStatus = Literal["active", "confirmed", "refuted", "stale"]
 MAX_EVIDENCE_PER_NODE = 8
 
 
+# What a hypothesis is about. `goal` is a sub-goal the task names (found / reached /
+# mined X) and is the one kind the harness holds to a rule: only the environment
+# confirms goals (see HypothesisAgent._enforce_discipline).
+HypothesisKind = Literal["goal", "location", "mechanism", "state", "other"]
+KINDS = ("goal", "location", "mechanism", "state", "other")
+
+
 class Hypothesis(BaseModel):
     id: str
     statement: str
     confidence: float = 0.5
     status: HypothesisStatus = "active"
+    kind: HypothesisKind = "other"
     depends_on: List[str] = Field(default_factory=list)
     evidence: List[str] = Field(default_factory=list)
     created_step: int = 0
@@ -59,6 +67,7 @@ class HypothesisGraph:
         status: Optional[str] = None,
         evidence: Optional[List[str]] = None,
         step: int = 0,
+        kind: Optional[str] = None,
     ) -> Hypothesis:
         """Create a hypothesis node if `id` is new, otherwise update the
         fields that were actually supplied (None/omitted fields are left
@@ -70,6 +79,7 @@ class HypothesisGraph:
                 statement=statement or "(unspecified)",
                 confidence=confidence if confidence is not None else 0.5,
                 status=status or "active",
+                kind=kind if kind in KINDS else "other",
                 evidence=(list(evidence) if evidence else [])[-MAX_EVIDENCE_PER_NODE:],
                 created_step=step,
                 updated_step=step,
@@ -77,6 +87,8 @@ class HypothesisGraph:
             self.nodes[id] = node
             return node
 
+        if kind in KINDS:
+            node.kind = kind
         if statement:
             node.statement = statement
         if confidence is not None:
@@ -147,11 +159,21 @@ class HypothesisGraph:
         candidates.sort(key=lambda n: (abs(n.confidence - 0.5), n.updated_step))
         return candidates[:k]
 
-    def to_prompt_summary(self, max_items: int = 8) -> str:
+    def to_prompt_summary(self, max_items: int = 8, flags: Optional[Dict[str, str]] = None) -> str:
+        """`flags` maps id -> a short tag the harness wants shown next to the node
+        (e.g. "locked", "under test for 12 steps"). Goals are listed first: they are
+        the map of the task the rest of the graph hangs off, and the discipline rules
+        act on them."""
         if not self.nodes:
             return ""
-        ranked = self.frontier(k=max_items)
+        goals = sorted((n for n in self.nodes.values() if n.kind == "goal"),
+                       key=lambda n: n.created_step)
+        ranked = goals[:max_items]
         shown_ids = {n.id for n in ranked}
+        for n in self.frontier(k=max_items):
+            if n.id not in shown_ids and len(ranked) < max_items:
+                ranked.append(n)
+                shown_ids.add(n.id)
         remaining = [n for n in self.nodes.values() if n.id not in shown_ids]
         remaining.sort(key=lambda n: n.updated_step, reverse=True)
         ranked = ranked + remaining[: max(0, max_items - len(ranked))]
@@ -159,8 +181,10 @@ class HypothesisGraph:
         lines = []
         for n in ranked:
             deps = f" (depends on: {', '.join(n.depends_on)})" if n.depends_on else ""
+            flag = f", {flags[n.id]}" if flags and n.id in flags else ""
             lines.append(
-                f"- [{n.id}] ({n.status}, confidence={n.confidence:.2f}) {n.statement}{deps}"
+                f"- [{n.id}] ({n.kind}, {n.status}, confidence={n.confidence:.2f}{flag}) "
+                f"{n.statement}{deps}"
             )
         return "\n".join(lines)
 
