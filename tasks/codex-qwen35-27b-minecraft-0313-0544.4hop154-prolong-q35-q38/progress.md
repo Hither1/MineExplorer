@@ -472,3 +472,37 @@ q35a rows in `experiments/4hop_cells.csv`.
    `MAX_STEPS=200 CONC=9 bash scripts/launch_4hop.sh` -- and the same with `ARMS="default:vllm"`.
 6. `python scripts/emit_stats_q35a.py && python scripts/export_cells_csv.py --prefix q35a --campaign q35a`
    to refresh the committed statistics.
+
+### 02:55 -- leftovers cleaned; a230 sessions are the one thing that cannot be cleaned yet
+
+**Removed:** 510 stale `codexpx-*` sandbox-proxy directories under `/run/user/637400009/`,
+one per PRO-LONG cell, timestamps spanning 08-20 10:08 to 17:42 -- all from arm 1, which
+finished at 20:37. Confirmed orphaned before deleting: no process anywhere had a `codexpx`
+path as its cwd, and no ruihan-owned `codex_sandbox.sh` or `bwrap` process existed. They held
+8 KB of a 101 GB tmpfs, so this was clutter rather than pressure.
+
+**Deliberately not removed:** the 154 `prolong_workspace.codexhome/` trees under `outputs/`
+(1.3 GB). They hold the codex rollouts, which are the evidence behind the PRO-LONG retrieval
+census in `ANALYSIS_4hop_three_arms.md` §4 -- the `tail`-vs-`grep` split cannot be reproduced
+without them.
+
+**Nothing of ours was left on a227.** No `api_server`, `VLLM::Worker` or `EngineCore` process
+owned by this account; the four servers exited cleanly at 02:24:59-02:25:00 and left nothing
+behind. Two things there belong to other people and were left alone: 3.1 GB of GPU-0 memory
+held by `majianzhu`'s `dplm` python, and three tmux sessions (`af3` and `dataPre` from May 28,
+`af4` from Aug 10) that predate this campaign. Our `qwen35-s*-k3` tmux sessions are gone.
+
+Likewise on the runner, the only `codex` processes present belong to **other users**
+(`gaoguanfei`'s node codex, 27 days old; `chenzhaohui`'s vscode chatgpt extension) and were
+not touched.
+
+**Final sweep, all zero:** `eval_benchmark` 0, `launch_4hop` 0, `run_cell` 0, watchers 0,
+`codex_sandbox.sh` 0, `codexpx` dirs 0, vLLM ports serving none.
+
+**Outstanding, and only doable once a230 returns:** the Minecraft sessions that were live when
+the host vanished were never released. Whether they survive depends on whether the container
+restarts. First check on resume is
+`python -c "import urllib.request,json; print(len(json.loads(urllib.request.urlopen('http://192.168.2.22:8000/list_sessions',timeout=15).read())['sessions']))"`
+-- a non-zero count before any cell starts is leaked state, and the fix is to restart the
+container rather than to let the next arm pay for it. This is the same leak check
+`run_remaining_arms.sh` already logs between arms.
