@@ -424,3 +424,51 @@ table on the **20 scenes all arms share**, with a sign test on the paired per-sc
 Only `prolong > hypothesis` separates (10-2 on 12 discordant pairs, p = 0.039); `prolong >
 default` (8-2, p = 0.109) and `default > hypothesis` (6-3, p = 0.508) point the right way but
 do not clear n = 20. Direction and gap match the earlier 24-scene legacy head-to-head.
+
+### 02:45 -- everything stopped at the user's request, waiting on a230
+
+**Stopped by me:** `deadline_enforcer.sh` (pid 49252) and `resume_after_a230.sh` (pid 50072),
+plus the session's progress monitor. Verified: 0 campaign processes remain -- no launcher, no
+`eval_benchmark`, no watcher. Nothing will now restart on its own; a230 coming back does
+**not** resume the run any more.
+
+**Already stopped by someone else:** all four vLLM servers on a227, cleanly at 02:24:59-02:25:00
+(`Waiting for application shutdown` / `Application shutdown complete` in each log, four within
+one second). Not us -- this session never touched :8001-:8003, and :8004 was left running when
+the sprint was killed at 00:24. a227 itself did not reboot (154 days uptime, load 0.86). All
+8 GPUs now read 0 % and ~17 MiB.
+
+**a230** is still off the network at 02:45, ARP `(incomplete)`, 2h25m after it went.
+
+**State preserved, nothing in flight** -- which is what makes the resume clean, because
+`launch_4hop.sh` decides its skip list from `[[ -f result.json ]]` at start and would otherwise
+duplicate running cells:
+
+| | cells |
+|---|---|
+| prolong (legacy) | 154/154 -- complete |
+| default (append-only) | 33/154 |
+| hypothesis (append-only) | 20/154 |
+| quarantined from the outage | 11, in `outputs/_damaged_a230_outage/` -- scenes re-runnable |
+
+Analysis of what exists is finished and pushed: `experiments/RESULTS_4hop154_q35a.md`,
+`experiments/ANALYSIS_4hop_three_arms.md`, `experiments/stats_q35a/` (six CSVs), and the 235
+q35a rows in `experiments/4hop_cells.csv`.
+
+**To resume when a230 is back**, in order:
+
+1. `ssh ruihan@192.168.2.22 'uptime; journalctl -b -1 -k | tail -50; dmesg | grep -iE "oom|panic|hardware error|link is down"'`
+   -- first, because an OOM record would overturn the attribution above.
+2. Restart the sandbox if the container did not come up:
+   `podman run -d --replace --name mineexplorer -p 8000:8000 docker.io/davidzhth/mineexplorer:0.0.1 bash start_mc_server.sh`
+   (`TMPDIR=/datapool/data3/storage/ruihan/.podman/tmp` first; see the podman runbook memory).
+3. Restart the model servers on a227: `qwen35-serve/run/qwen35-s{1,2,3}-k3.sh`, and
+   `qwen35-s4-k3.sh` only if GPUs 0,1 are still free -- it was ours, and freeing them is fine.
+4. Wire-check all servers (cap 1024, `finish_reason: length`, no `<think>`, no
+   `reasoning_content`) -- the check in `append_only_sprint.sh` lines 49-68 does it.
+5. Relaunch both arms; the launcher skips the 53 cells already on disk:
+   `PREFIX=q35a MODEL=Qwen3.5-27B SPLIT_ROOT=bench_4hop154/_split PROMPT_LAYOUT=append-only`
+   `RESPONSE_STYLE=full ARMS="hypothesis:vllm" SCENES="$(python scripts/screen_scenes.py --hops 4 | awk '$1 ~ /^[0-9]{4}$/ {printf "%s ", $1}')"`
+   `MAX_STEPS=200 CONC=9 bash scripts/launch_4hop.sh` -- and the same with `ARMS="default:vllm"`.
+6. `python scripts/emit_stats_q35a.py && python scripts/export_cells_csv.py --prefix q35a --campaign q35a`
+   to refresh the committed statistics.
