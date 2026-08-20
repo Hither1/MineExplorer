@@ -153,3 +153,43 @@ rate is flat at 0.58 cells/min over the last hour -> arm 1 ends ~17:30-18:15. Me
 keeps climbing (4.4 -> 12.2 -> 15.6 min as more cells finish) because fast cells finish
 first; the completion-rate estimate is the one not subject to that bias.
 Score so far: 63/248 milestones (25%), 2 scenes fully done, 3 early ESC.
+
+## 2026-08-20 20:37 — arm 1 complete (prolong x codex, 154/154), arm 2 started
+
+**154/154 results, 0 `Agent call failed` / `env.step failed` / `SandboxViolation` / `Traceback`
+across every cell log.** Sandbox sessions dropped to 0 at handover: nothing leaked.
+
+Score: **185/616 milestones = 30.0 %**, 5 scenes fully done, 8 early ESC.
+Distribution `0/4: 41, 1/4: 60, 2/4: 39, 3/4: 9, 4/4: 5`.
+
+**Read the denominator carefully — there are three defensible rates.** 52 of the 616
+milestones were already satisfied at spawn. `eval_benchmark.py` excludes them from
+`milestones_completed` (line 639-642) but *not* from `corrected_trackable = len(trackable_mids)`
+(line 643), so they sit in the denominator and can never be earned; a scene with one of them
+has a ceiling of 3/4 and can never report `all_milestones_done`, which is why only 5 scenes
+count as fully done.
+
+| convention | value | when to use |
+|---|---|---|
+| ours, as recorded in result.json | 185/616 = **30.0 %** | internal, conservative |
+| ceiling-corrected (drop presatisfied from both) | 185/564 = **32.8 %** | the honest agent-ability number |
+| the paper's MSR (a satisfied milestone counts, however it got satisfied) | 237/616 = **38.5 %** | the only one comparable to Table 6 |
+
+All three are monotone in the same per-arm quantity because the presatisfied set is a property
+of the scene, identical across arms, so the **arm comparison is unaffected** by the choice.
+
+**Timing: the tail, not the mean, set the wall.** 13:08 -> 20:37 = 7.5 h, against the 2.4 h
+projected. Per-cell wall: median 13.4 min, mean 25.6, p90 52.9, **max 334.6 min** (0016, which
+completed all 200 steps -- slow, not hung; so did every other tail cell). Total cell-time 65.7 h
+against an ideal 4.7 h at CONC=14, i.e. effective concurrency ~8.8: long cells hold slots while
+short ones cycle. Every projection in this file so far used means from the recorded seven-scene
+campaign, which had no tail like this -- a 154-scene set draws from the whole distribution and
+the tail is where the time is.
+
+Arms 2 and 3 are vllm-direct: one request per step, no codex tool loop, so their per-cell
+spread should be much tighter than prolong's. That is a prediction, and the arm-2 rate will
+test it within the hour.
+
+Arm 2 (`hypothesis:vllm`) started 20:37:41. A probe is armed to sample a230 and the three
+servers once arm 2 is at full concurrency and settled, which is the measurement that decides
+whether CONC can rise above 14 for arm 3.
