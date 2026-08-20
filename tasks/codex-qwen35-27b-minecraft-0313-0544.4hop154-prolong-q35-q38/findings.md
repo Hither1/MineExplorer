@@ -47,3 +47,30 @@ are position-tier; the other 147 are inventory / voxel-count and unmeasured.
   / top_k 20, `enable_thinking:false`, prefix caching, MTP k=3, `--max-num-seqs 64`,
   `qwen3_xml` tool parser.
 - Qwen3.8-27B weights present locally (52 G, `/datapool/data3/storage/ruihan/models/`).
+
+## PRO-LONG burns 31 % of its model calls on a truncation loop -- cost, not validity
+
+**Evidence.** Across arm 1's 154 cells: 7,594 analyzer turns, of which **2,342 (30.8 %) wrote
+no `actions.json` (rc=1)**, the error dominated by
+`{"error":{"message":"Unterminated string starting at: line 1 column 9 ...`. The plan JSON is
+being cut mid-string, codex fails to parse it, no action is emitted, the turn is retried, and
+the next reply is truncated the same way. The cause is our own serving contract: the plan
+exceeds the server's 1024-token `max_new_tokens`.
+
+**It is concentrated, not endemic.** 11/154 cells see the error at all; three cells account
+for essentially all of it -- 0326 (910/914 turns wasted), 0133 (865/869), 0016 (556/569).
+Those three cost **12 cell-h, 18 % of the arm**, and 31 % of its model calls.
+
+**No detectable score effect.** The three looping cells score 4/12 = 33.3 % ceiling-corrected
+against 181/552 = 32.8 % for the other 151. n=3 cannot prove absence, but there is no evidence
+the loop depressed arm 1's 185/616 and no reason to caveat the headline number for it.
+
+**What it does change: the cost model.** prolong's per-cell wall is 25.6 min with the loop and
+**21.3 min without it**; a 1+2+3-hop campaign for all three arms goes 718 -> 671 cell-h
+(2.0 -> 1.9 days). Small, because the waste is 18 % of one arm.
+
+**Fix, for after the campaign** (not during -- it would split the arm): bound the plan, or
+detect N consecutive unparsable turns and fall back to a single action instead of retrying
+forever. Related but distinct: the direct arms' `content: None` -> `UnboundLocalError` at
+`mc_agent/action_space.py:244`, same family (an empty/truncated completion is not handled as a
+named parse error), seen once tonight and recovered by retry.
