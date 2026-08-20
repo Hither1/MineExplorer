@@ -370,13 +370,40 @@ unreachable, and its **ARP entry reads `(incomplete)`** -- the host is not answe
 at all. It had been up 36 days; last healthy reading 23:14, load 67.6/255 cores, java=20.
 a227 and the four model servers were never affected and are still serving.
 
-**My own action is in the frame and I cannot rule it out.** `boost_hypothesis.sh` added 3
-sessions (18 -> 21) at 00:18:53; the first `/create_env` timeout is consistent with a request
-issued at 00:18:54, and env.step failures cluster at 00:20:05-00:20:09. Against that: three
-extra JVMs on a host at load 67/255 with a 1 TB-class memory budget is not a plausible cause of
-a full network drop -- an OOM kill takes processes, not the NIC -- and the host cannot be
-inspected while it is unreachable. Treat it as unresolved, and **the boost is deliberately not
-re-applied on resume** (`resume_after_a230.sh` goes back to 9+9).
+**Did `boost_hypothesis.sh` cause it? Almost certainly not** -- revised at 02:35 from
+"unresolved", once the per-10-second timeline was measured rather than only the timing.
+
+The one fact that points at us is a coincidence: the boost's first `/create_env` went out at
+00:18:57 and the last successful env.step in the whole campaign is at **00:18:59.551**, 2.5 s
+later. Everything else points away:
+
+- **Throughput was flat into the wall.** Successful steps per 10 s from 00:14:00: 31 26 24 27
+  28 22 / 26 26 23 22 25 27 / 23 25 24 26 26 25 / 31 26 25 28 26 28 / 25 26 20 26 25 21. The
+  final bucket sits inside the ordinary spread (the series already holds 20, 22, 22, 23), and
+  then the trace stops dead. Resource exhaustion degrades first -- sagging throughput, rising
+  latency, some requests timing out while others succeed. None of that is present. The 2.5 s
+  after our `create_env` were served at full rate; a world-gen that was exhausting memory would
+  have shown up inside them.
+- **Zero sandbox errors in the preceding 79 minutes**, across roughly 4,700 steps.
+- **`/create_env` was routine, not novel**: 79 of them between 23:01 and 00:19, ~1/minute. Ours
+  was the 79th.
+- **Only 16 cells were mid-episode at 00:18**, not 21 -- cells were finishing and being
+  replaced, so live session count at the moment of death was *below* the 18 that had run
+  cleanly for 79 minutes.
+- **The host is still off the network at 02:30**, ARP `(incomplete)`, two hours after every one
+  of our processes was killed at 00:24. User-space load does not do that; an OOM killer takes
+  processes and leaves the host pingable.
+- 36 days of uptime.
+
+Estimate: ~10-15 % that we contributed, and that residue exists only because a230's console is
+unreadable. **What would settle it**, once it is back: `uptime` (did it reboot at all),
+`journalctl -b -1 -k | tail` (panic, OOM, or an abrupt end with no error), `dmesg | grep -iE
+'oom|panic|hardware error|link is down'`. An OOM-killer record would overturn this reading.
+
+**The boost is still deliberately not re-applied on resume** (`resume_after_a230.sh` goes back
+to 9+9). Not because the evidence implicates it, but because the cluster is at its throughput
+knee anyway -- the boost was worth ~12 % -- and there is no reason to spend even a small risk
+on it while the cause is unconfirmed.
 
 **Damage, and why it is recoverable.** 11 cells wrote an error-schema `result.json` (`error`
 field, no `total_steps`, `milestones_trackable: 0`). Left in place, the launcher's
