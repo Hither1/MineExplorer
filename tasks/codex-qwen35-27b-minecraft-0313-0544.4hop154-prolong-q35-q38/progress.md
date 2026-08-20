@@ -193,3 +193,40 @@ test it within the hour.
 Arm 2 (`hypothesis:vllm`) started 20:37:41. A probe is armed to sample a230 and the three
 servers once arm 2 is at full concurrency and settled, which is the measurement that decides
 whether CONC can rise above 14 for arm 3.
+
+## 2026-08-20 21:40 — arm 2's shape is the opposite of arm 1's, and CONC is settled by measurement
+
+**The prediction held.** `hypothesis:vllm`, first 11 cells: mean 50.3 min, **median 50.3,
+range 42.0-55.7** -- a distribution so tight it finishes in waves of 14. Prolong's was median
+13.4 / mean 25.6 / max 334.6. One request per step has no tail; a codex tool loop does.
+So arm 2 and arm 3 are *predictable* even though they are slower per cell, and effective
+concurrency should stay near 14 instead of prolong's 8.8.
+
+**MTP k=3 bought the direct arm nothing:** 15.08 s/step now against the 14.8 s/step the
+recorded campaign measured at k=1. Every projection in this file that discounted the direct
+arms for k=3 (x0.72 / x0.55) was wrong to. The reason is visible in the probe: the servers
+run 3-5 requests with **0 waiting and 5-9 % KV**, so decode -- the only thing k=3 speeds up --
+is not what these cells wait on. At ~4 s of model time in a 15 s step, roughly two thirds of
+each step is elsewhere: a230's env.step, the ~600 KB of base64 for 20 frames on the wire, and
+server-side vision encoding of those 20 frames, which does not show up as "Running" or as KV.
+
+**CONC stays 14, now measured on both arm shapes.** At 14 direct-arm cells: a230 load
+176/215/231 on 255 cores (69-91 %), 16 java; the three servers idle (0 waiting, KV 5-9 %);
+runner a218 load 17.7/255 with all 14 cell processes together taking 45 % of one core's worth
+of CPU. The GPUs and the runner have enormous headroom and neither is the constraint; a230 is
+at 78 % mean and 91 % peak, and each cell costs it ~14 load units, so 16 cells lands at
+230-260 and 18 goes over the top. Raising CONC would slow every cell and risk an env.step
+timeout storm for a bounded gain.
+
+**Revised ETA, from measurement rather than projection:**
+
+| arm | per cell | waves of 14 | duration | ends |
+|---|---|---|---|---|
+| 1 prolong (done) | median 13.4 / mean 25.6 | -- | 7.5 h | 20:37 |
+| 2 hypothesis (running) | 50.3 min, tight | 11 | ~9.2 h | **~05:50** |
+| 3 default (queued) | ~35 min (10.5 s/step, no k=3 discount) | 11 | ~6.4 h | **~12:15** |
+
+Campaign total ~23 h, ending around **midday 08-21**, not the 05:00-08:00 said earlier. The
+error was discounting the direct arms for k=3 and using tail-free means from the seven-scene
+campaign. Arm 3 is a live decision for the user in the morning: 6.4 h for the third arm, or
+stop after two.
