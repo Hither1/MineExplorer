@@ -361,3 +361,39 @@ raises `value too great for base`. It happens to still fire at 06:15 and from 06
 deadline should not rest on that. The running shell already holds `past()` in memory and has
 not yet read the file's last three lines, so editing the script would be useless and unsafe --
 `deadline_enforcer.sh` now enforces 06:15 from outside (armed 00:14, pid confirmed).
+
+### 00:20-00:35 -- a230 died; the campaign is frozen at 20 matched scenes
+
+**What happened.** At 00:20 the sandbox host a230 (192.168.2.22) left the network. Not a
+service failure: no ICMP, no SSH (`kex_exchange_identification: Connection closed`), port 8000
+unreachable, and its **ARP entry reads `(incomplete)`** -- the host is not answering on the LAN
+at all. It had been up 36 days; last healthy reading 23:14, load 67.6/255 cores, java=20.
+a227 and the four model servers were never affected and are still serving.
+
+**My own action is in the frame and I cannot rule it out.** `boost_hypothesis.sh` added 3
+sessions (18 -> 21) at 00:18:53; the first `/create_env` timeout is consistent with a request
+issued at 00:18:54, and env.step failures cluster at 00:20:05-00:20:09. Against that: three
+extra JVMs on a host at load 67/255 with a 1 TB-class memory budget is not a plausible cause of
+a full network drop -- an OOM kill takes processes, not the NIC -- and the host cannot be
+inspected while it is unreachable. Treat it as unresolved, and **the boost is deliberately not
+re-applied on resume** (`resume_after_a230.sh` goes back to 9+9).
+
+**Damage, and why it is recoverable.** 11 cells wrote an error-schema `result.json` (`error`
+field, no `total_steps`, `milestones_trackable: 0`). Left in place, the launcher's
+`[[ -f result.json ]]` check would treat those scenes as done forever. They are quarantined to
+`outputs/_damaged_a230_outage/`, so the scenes are re-runnable and the analysis globs skip them.
+15 stalled cells were SIGTERMed. Surviving valid results: **prolong 154/154, hypothesis 20,
+default 33.**
+
+**No recovery is possible from this account tonight.** The sandbox image is on shared storage
+(14 GB under `.podman/storage`) but a230 was the only host with podman and fuse-overlayfs;
+a226, a227, a231 and b7 have neither, and `ruihan` is not in the `docker` group on a218.
+Restoring service needs console/IPMI access to a230, or podman installed elsewhere -- both
+admin actions. `resume_after_a230.sh` polls every 30 s and will relaunch both arms at 9 slots
+the moment a230 answers, with a fresh four-server wire-check, up to the 06:15 stop.
+
+**Deliverable as it stands.** `experiments/RESULTS_4hop154_q35a.md` now carries the three-arm
+table on the **20 scenes all arms share**, with a sign test on the paired per-scene outcomes.
+Only `prolong > hypothesis` separates (10-2 on 12 discordant pairs, p = 0.039); `prolong >
+default` (8-2, p = 0.109) and `default > hypothesis` (6-3, p = 0.508) point the right way but
+do not clear n = 20. Direction and gap match the earlier 24-scene legacy head-to-head.
