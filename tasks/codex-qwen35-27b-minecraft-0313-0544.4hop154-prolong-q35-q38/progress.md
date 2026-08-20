@@ -273,3 +273,53 @@ no `reasoning_content`) and refuses on any failure; hard-stops the launchers at 
 writes the summary, so a table exists by 07:00 whatever has finished.
 
 **Expected:** ~130-140 scenes covered by both arms at 06:15, against 70 under the legacy plan.
+
+### 23:15 -- sprint is live and measured at full concurrency; the deadline is no longer the binding constraint
+
+Launched 23:01/23:01:22. All four servers passed the wire-check (`cap=1024 finish=length
+think=False` on :8001-:8004). 18 cells in flight, 9 per arm, as configured.
+
+**Measured step rates at true full concurrency** (the 23:06 numbers I first quoted -- hyp 4.69,
+def 3.67 -- were taken during the 45 s-stagger ramp, with only ~12 cells actually running, so
+they were optimistic):
+
+| arm | legacy | append-only @18 in flight | change |
+|---|---|---|---|
+| hypothesis | 14.3 s/step | **6.84** (median of 9 cells) | -52 % |
+| default | ~10.5 s/step | **4.62** (median of 10 cells) | -56 % |
+
+Still better than the repo's projected -45 %/-37 %, and enough to change the deliverable:
+projected completion **default ~03:30, hypothesis ~04:50-05:30** (hypothesis accelerates once
+default drains and leaves it the whole cluster), against a 06:15 hard stop. The expectation
+above ("~130-140 scenes covered by both arms") should read **all 154, both arms**, with the
+06:15 stop as insurance rather than the plan.
+
+**Where the time actually goes, re-measured.** a230 load average 67.6 on 255 cores with 18
+sessions -- an eighth of the 397 seen at 14 *prolong* cells, because the direct arms carry no
+codex/bwrap. The sandbox is not the constraint. All 8 GPUs are at 100 %, prompt throughput
+1200-2200 tok/s against generation 175-224 tok/s: still prefill/vision-bound.
+
+**Concurrency is already at the knee, so it was not raised.** Every server reports
+`Waiting: 0 reqs`, `Running: 2-5`, KV cache 3-8 %. Going 12 -> 18 in flight moved aggregate
+throughput 2.91 -> 3.26 steps/s (+12 %) for +50 % concurrency; per-step latency absorbed the
+rest. More slots would buy latency, not cells.
+
+**Prefix cache confirms the mechanism.** :8004 is a fresh server that has only ever served
+append-only traffic: **69.4 %** hit rate. :8001-:8003 read 24-31 %, diluted by 10 h of legacy
+traffic in the same cumulative counter. Against the 0.0-1.4 % measured on legacy, this is the
+whole of the speedup.
+
+**Failures: 0 unrecovered** (`Agent call failed` / `env.step failed` / `SandboxViolation`).
+One cell (0560) has a recovered retry: a `content: None` reply hit
+`UnboundLocalError: action_content` at `mc_agent/action_space.py:244` -- a latent cosmetic bug
+(an empty completion should raise a named parse error, not an unbound local); attempt 2
+succeeded and the cell continued. Not worth a fix inside a campaign; noted for after.
+
+**First result in.** `default-append-only-0306`: 4/4 milestones in 44 steps. prolong took 45
+steps for the same 4/4, so 0306 is an easy scene and carries no signal by itself.
+
+**Open question for the user (asked 23:12, unanswered):** the baseline set said to come from
+`benchmark_multihop_stratified`, n=12 scenes per hop level, exists in no ref of either repo
+(all 5 refs + stash, `git log --all -S`, filesystem `find`), and not in the paper. Need the
+source before any comparison to it. Once the arms land, slicing our 154 to their 12 scene IDs
+is a one-liner.
