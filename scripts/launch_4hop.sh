@@ -27,6 +27,10 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
 
 SCENES=${SCENES:-"0306 0726 0182 0311 0482 0603 0763"}
+# Where the one-scene benchmark dirs live, one per $SCENES entry. Built by
+# `screen_scenes.py --split-to`, which is also what defines which scenes those are:
+# bench_4hop7/_split is the strict seven, bench_4hop154/_split every 4-milestone scene.
+SPLIT_ROOT=${SPLIT_ROOT:-bench_4hop7/_split}
 # agent:channel pairs, in launch priority order (earlier arms start first).
 ARMS=${ARMS:-"default:vllm prolong:codex hypothesis:vllm default:codex"}
 CONC=${CONC:-14}
@@ -104,7 +108,7 @@ for cell in "${cells[@]}"; do
   [[ "$channel" == "codex" && "$agent" != "prolong" ]] && timeout=$PROVIDER_CODEX_TIMEOUT
   echo "[launcher] $(date '+%H:%M:%S') start $tag -> $url (model $MODEL, codex ceiling ${timeout}s)"
   MODEL="$MODEL" VLLM_URL="$url" CODEX_TIMEOUT="$timeout" \
-    bash scripts/run_cell.sh "$agent" "$channel" "bench_4hop7/_split/$scene" "$tag" "$MAX_STEPS" \
+    bash scripts/run_cell.sh "$agent" "$channel" "$SPLIT_ROOT/$scene" "$tag" "$MAX_STEPS" \
     > "outputs/log-$tag.txt" 2>&1 &
   running=$((running + 1))
   # Stagger: /create_env + reset on the shared sandbox is the contended step, and two

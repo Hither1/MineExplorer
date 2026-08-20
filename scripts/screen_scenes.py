@@ -22,6 +22,7 @@ import argparse
 import collections
 import json
 import math
+import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -129,6 +130,10 @@ def main() -> int:
                     help="drop scenes whose later hops are easier to reach than earlier ones "
                          "(satisfiable_out_of_order); only decidable when every hop is a "
                          "position rule, so mixed-tier scenes are kept and shown as '?'")
+    ap.add_argument("--split-to", default=None,
+                    help="also materialise the scenes that pass as one-scene benchmark dirs "
+                         "under DIR/<scene>/<scene>/, which is what launch_4hop.sh feeds a cell. "
+                         "Keeps the scene set defined by this filter and nothing else.")
     args = ap.parse_args()
 
     rows = []
@@ -181,6 +186,16 @@ def main() -> int:
         bwd = "?" if r["backwards"] is None else ("Y" if r["backwards"] else "N")
         print(f"{r['scene']:6s} {r['tier']:13s} {r['depth']:5d} {r['free']:4d} "
               f"{r['unscorable']:4d} {r['gui']:3d} {bwd:>3s} {r['max_dist']:6.1f}  {r['task']}")
+
+    if args.split_to:
+        dest = Path(args.split_to)
+        for r in shown:
+            out = dest / r["scene"] / r["scene"]
+            out.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(ROOT / "benchmark" / r["scene"] / "multi-agent",
+                            out / "multi-agent", dirs_exist_ok=True)
+        print(f"\nwrote {len(shown)} one-scene benchmark dirs under {dest}/")
+        print("SCENES=\"" + " ".join(r["scene"] for r in shown) + "\"")
     return 0
 
 
