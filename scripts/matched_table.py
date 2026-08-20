@@ -111,13 +111,21 @@ def main() -> int:
             print("  ".join(r[i].ljust(w[i]) for i in range(len(cols))))
 
     # Paired per-scene comparison: the same scene, so a win is a win on identical ground.
+    # Ties carry no information about direction, so the sign test conditions on the
+    # discordant pairs only -- which is also why a small matched set can still separate two
+    # arms, and why it cannot separate two that mostly tie.
+    from math import comb
     print("\npaired, per scene (milestones earned):")
     for i, a in enumerate(arms):
         for b in arms[i + 1:]:
             win = sum(1 for s in common if cells[a][s]["comp"] > cells[b][s]["comp"])
             loss = sum(1 for s in common if cells[a][s]["comp"] < cells[b][s]["comp"])
             tie = len(common) - win - loss
-            print(f"  {a} vs {b}: {win} win / {loss} loss / {tie} tie")
+            n, k = win + loss, max(win, loss)
+            p = min(1.0, 2 * sum(comb(n, j) for j in range(k, n + 1)) / 2 ** n) if n else 1.0
+            mark = "significant" if p < 0.05 else "not significant"
+            print(f"  {a} vs {b}: {win} win / {loss} loss / {tie} tie"
+                  f"  -- sign test on the {n} discordant pairs, p = {p:.3f} ({mark})")
     return 0
 
 
