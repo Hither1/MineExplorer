@@ -17,12 +17,11 @@ cd /datapool/data3/storage/ruihan/data_share/jh/Collab/MineExplorer
 STOP_EPOCH=$(date -d '2026-08-21 06:15:00' +%s)
 say() { echo "[enforcer] $(date '+%m-%d %H:%M:%S') $*"; }
 say "armed for $(date -d @$STOP_EPOCH '+%m-%d %H:%M:%S')"
-while [ "$(date +%s)" -lt "$STOP_EPOCH" ]; do
-  if ! pgrep -f '^bash scripts/launch_4hop\.sh$' >/dev/null; then
-    say "launchers already gone -- nothing to stop"; exit 0
-  fi
-  sleep 60
-done
+# Wait for the clock, NOT for the launchers. The first version exited as soon as it saw no
+# launcher, which was true during the a230 outage -- and would have left a post-outage resume
+# with no stop at all, since resume_after_a230.sh only checks the deadline while it is still
+# waiting for the host.
+while [ "$(date +%s)" -lt "$STOP_EPOCH" ]; do sleep 60; done
 h=$(find outputs -path '*q35a-hypothesis-vllm-append-only*' -name result.json | wc -l)
 d=$(find outputs -path '*q35a-default-vllm-append-only*'    -name result.json | wc -l)
 say "deadline: hypothesis $h, default $d -- killing launchers, leaving cells to land"
