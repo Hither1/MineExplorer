@@ -318,8 +318,10 @@ succeeded and the cell continued. Not worth a fix inside a campaign; noted for a
 **First result in.** `default-append-only-0306`: 4/4 milestones in 44 steps. prolong took 45
 steps for the same 4/4, so 0306 is an easy scene and carries no signal by itself.
 
-**Open question for the user (asked 23:12, unanswered):** the baseline set said to come from
-`benchmark_multihop_stratified`, n=12 scenes per hop level, exists in no ref of either repo
-(all 5 refs + stash, `git log --all -S`, filesystem `find`), and not in the paper. Need the
-source before any comparison to it. Once the arms land, slicing our 154 to their 12 scene IDs
-is a one-liner.
+**`benchmark_multihop_stratified`: closed, not a blocker.** It is in no ref of either repo
+(all 5 refs + stash, `git log --all -S`, filesystem `find`) and not in the paper because it was
+never ours: the user says a collaborator built that n=12-per-hop-level subsample to work around
+how slow the full set was. The one consequence to carry into the write-up is that their baseline
+numbers are a 12-scene subsample and ours are all 154, so the absolute figures do not sit in the
+same table. Slicing our 154 down to their scene IDs stays available if a like-for-like row is
+ever wanted.
