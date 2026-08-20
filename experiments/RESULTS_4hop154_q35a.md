@@ -82,6 +82,10 @@ agree scene-by-scene on the presatisfied count rather than assuming it.
 
 ## Results
 
+The behavioural analysis behind these numbers -- what each arm actually does, why `craft` is
+0/109, the ESC deadlock, and how little of PRO-LONG's retrieval is used -- is in
+[`ANALYSIS_4hop_three_arms.md`](ANALYSIS_4hop_three_arms.md).
+
 On the **20 scenes all three arms share**. Read this as a pilot, not the campaign: the set is a
 prefix of `screen_scenes.py --hops 4` order (sorted by spawn-free milestones ascending, depth
 descending, distance descending), so it is systematic rather than random, and biased toward the
