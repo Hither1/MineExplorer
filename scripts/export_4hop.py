@@ -9,6 +9,12 @@ outcome, and what the agent did step by step. That is what this writes.
     python scripts/export_4hop.py            # both campaigns
     python scripts/export_4hop.py --campaign q35:Qwen3.5-27B
 
+    # one arm of one campaign, named by cell tag (q35a ran `hypothesis` under two prompt
+    # layouts, which collide under the <agent>-<channel>-<scene> naming), with the raw
+    # runner log alongside. --no-csv because the CSV is rewritten from the rows seen.
+    python scripts/export_4hop.py --campaign q35a:Qwen3.5-27B --agent hypothesis \
+        --trace-name tag --with-runner-log --no-csv
+
 Outputs (all under experiments/):
 
   4hop_cells.csv                       one row per cell: settings, outcome, cost
@@ -202,8 +208,24 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--campaign", action="append", default=None,
                     help="prefix:model, repeatable (default: c4h:Qwen3.8-27B and q35:Qwen3.5-27B)")
+    ap.add_argument("--agent", action="append", default=None,
+                    help="export only these agent modes (repeatable); default all")
+    ap.add_argument("--trace-name", choices=("arm", "tag"), default="arm",
+                    help="'arm' is <agent>-<channel>-<scene>, today's names. 'tag' is the cell "
+                         "tag, which a campaign needs when it ran one agent under two prompt "
+                         "layouts -- q35a ran `hypothesis` twice, and by arm they would collide.")
+    ap.add_argument("--with-runner-log", action="store_true",
+                    help="also copy outputs/log-<tag>.txt next to the trace, as "
+                         "<name>.runner_log.txt: the unparsed replies and harness warnings")
+    ap.add_argument("--no-csv", action="store_true",
+                    help="skip 4hop_cells.csv. Required with --agent/--campaign filters: the "
+                         "CSV is rewritten from the rows this run saw, so a filtered run would "
+                         "drop every other campaign's rows. (q35a's rows come from "
+                         "scripts/export_cells_csv.py, which appends instead.)")
     args = ap.parse_args()
     campaigns = [c.split(":", 1) for c in (args.campaign or ["c4h:Qwen3.8-27B", "q35:Qwen3.5-27B"])]
+    if args.agent and not args.no_csv:
+        ap.error("--agent filters the cells but the CSV is rewritten whole; pass --no-csv")
 
     rows = []
     for prefix, model in campaigns:
@@ -213,13 +235,16 @@ def main() -> int:
             j = json.loads(result.read_text())
             tag = result.parts[-5]
             agent, channel, scene = j["agent_mode"], j["provider"], j["scene_id"]
+            if args.agent and agent not in args.agent:
+                continue
             arm = f"{agent}-{channel}"
-            log = read_cell_log(ROOT / "outputs" / f"log-{tag}.txt")
+            log_path = ROOT / "outputs" / f"log-{tag}.txt"
+            log = read_cell_log(log_path)
             reqs = tin = tout = 0
             if channel == "codex":
                 reqs, tin, tout = rollout_cost(result, tag)
 
-            name = f"{arm}-{scene}"
+            name = tag if args.trace_name == "tag" else f"{arm}-{scene}"
             traj = traj_dir / f"{name}.jsonl"
             meta = {
                 "record": "meta", "campaign": prefix, "model": model, "agent_mode": agent,
@@ -230,9 +255,14 @@ def main() -> int:
                            "termination": j["termination_reason"],
                            "steps": j["total_steps"],
                            "milestones": j["milestone_status"]},
-                "settings": {"max_steps": 300, "temperature": 0.7, "top_p": 0.8, "top_k": 20,
+                "settings": {"max_steps": j["max_steps"], "temperature": 0.7,
+                             "top_p": 0.8, "top_k": 20,
                              "output_cap_tokens": 1024, "thinking": False,
                              "milestone_hint": True, "seeds": 1,
+                             # anything but legacy/full is a different arm by this repo's
+                             # rule, so the trace has to carry which one it was
+                             "prompt_layout": j.get("prompt_layout", "legacy"),
+                             "response_style": j.get("response_style", "full"),
                              "codex_sandboxed": j.get("codex_sandboxed"),
                              "server_port": log["server"]},
                 "cost": {"wall_s": round(log["wall_s"]), "model_calls": log["calls"],
@@ -250,6 +280,9 @@ def main() -> int:
                     if n in log["step_turn"]:
                         rec["analyzer_turn"] = log["step_turn"][n]
                     f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+            if args.with_runner_log and log_path.exists():
+                shutil.copyfile(log_path, traj_dir / f"{name}.runner_log.txt")
 
             if agent == "prolong":
                 src = result.parent / "prolong_workspace" / "logs.txt"
@@ -271,7 +304,7 @@ def main() -> int:
                 "milestones_presatisfied": len(j["milestone_status"]) - j["milestones_trackable"],
                 "steps_used": j["total_steps"], "termination": j["termination_reason"],
                 "frames_completed": "|".join(str(m["frame_completed"]) for m in j["milestone_status"]),
-                "max_steps": 300, "temperature": 0.7, "output_cap": 1024, "thinking": "off",
+                "max_steps": j["max_steps"], "temperature": 0.7, "output_cap": 1024, "thinking": "off",
                 "milestone_hint": "on", "seed_count": 1,
                 "codex_sandboxed": j.get("codex_sandboxed", ""),
                 "codex_timeout_s": (900 if agent == "prolong" else 120) if channel == "codex" else "",
@@ -283,6 +316,13 @@ def main() -> int:
             })
 
     rows.sort(key=lambda r: (r["model"], r["agent_mode"], r["channel"], r["scene"]))
+    if args.no_csv:
+        print(f"{len(rows)} traces -> {(OUT / 'trajectories').relative_to(ROOT)} (4hop_cells.csv untouched)")
+        for (model, agent, channel), group in _by_arm(rows):
+            done = sum(r["milestones_done"] for r in group)
+            total = sum(r["milestones_trackable"] for r in group)
+            print(f"  {model} {agent}x{channel}: {done}/{total} over {len(group)} scenes")
+        return 0
     csv_path = OUT / "4hop_cells.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
