@@ -20,26 +20,63 @@ Prep done (see findings.md 4):
 a227 GPUs 2-7. Monitor armed; the release signal is the disappearance of the
 `VLLM::Worker` PIDs on those six GPUs (currently 5136/5138/5140/5141 and 26960/26961).
 
-## Launch commands, ready to paste
+## 2026-08-20 12:20 — plan replaced, and the frame asymmetry closed
+
+User re-planned: **three arms on Qwen3.5 only**, in order `prolong:codex` ->
+`hypothesis:vllm` -> `default:vllm`, **200 steps** (was 300). The Qwen3.8 rerun is dropped.
+Same three servers for all three arms, so no swap and no re-wire-check between them.
+
+Hyperparameter audit against `main` (user request): every shared knob already agreed —
+`FRAME_BUFFER_SIZE=20`, `MAX_STEPS`, `--temperature 0.7`, `--loading-command-steps 20`,
+`--milestone-hint` on, output cap 1024 (server, both wires verified), thinking off on both
+channels (`enable_thinking:false` / `CODEX_LOCAL_EFFORT=none`, which `effort_for()` lets
+override `--codex-effort low`), `max_images` unset for Qwen (only llama-3.2 is capped at 1),
+prolong ablations off. Our branch changed none of them relative to `main`.
+
+One knob did **not** agree and is now fixed (9fcd984, user chose to align): per-frame
+resolution. `_png` wrote 640x360 while the direct arms' frames were halved to 320x180.
+Both now go through `mc_agent.utils.downsample_pov`; `prolong_mc.selftest` asserts it at
+640x360 and at the 128x128 reset frame. ALL PASS. Consequence: the prolong arm is no longer
+byte-comparable to the recorded seven-scene campaigns, which ran at native resolution.
+
+## Cost of the 200-step cap, measured
+
+4 of the 35 milestones the recorded q35 seven-scene campaign earned were first reached
+after step 200 (default 0182@216, hypothesis 0482@246, prolong 0603@253, prolong 0763@220),
+so ~11% of earned milestones, and in that small sample it costs prolong most (2 of its 14).
+All three arms share the cap, so the arm comparison is unaffected; the comparison to the
+recorded 300-step seven is not.
+
+## Estimate, 200 steps at MTP k=3, CONC=14
+
+From the recorded q35 per-cell walls (full-300 cells): prolong 5.26, default 10.46,
+hypothesis 13.97 s/step at k=1; k=3 factors 0.67 / 0.55 / 0.72 (README, EVAL_LATENCY §7.1).
+
+| order | arm | per cell | cell-time | wall |
+|---|---|---|---|---|
+| 1 | prolong:codex | ~12 min | 30 h | ~2.1 h |
+| 2 | hypothesis:vllm | ~34 min | 86 h | ~6.2 h |
+| 3 | default:vllm | ~19 min | 50 h | ~3.5 h |
+| | | | **166 h** | **~12-14 h** |
+
+## Launch, ready to fire when GPUs 2-7 free
 
 ```bash
 # 1. sandbox — only if /list_sessions shows nothing created today
-ssh ruihan@192.168.2.22 ...   # scripts/start_minecraft_podman.sh, see README
+# 2. servers on a227 (verify remote md5 first), then wire-check all three
+ssh ruihan@192.168.2.20 'tmux new-session -d -s qwen35-s1-k3 "bash <qwen35-serve>/run/qwen35-s1-k3.sh"'   # s2, s3 likewise
 
-# 2. servers on a227 (verify remote md5 first — a stale NFS view burned wave 1 once)
-ssh ruihan@192.168.2.20 'tmux new-session -d -s qwen35-s1-k3 "bash <qwen35-serve>/run/qwen35-s1-k3.sh"'
-#   ... s2-k3, s3-k3; ~10 min to load; then wire-check: served name at 131072,
-#   a chat completion stops at 1024 with finish_reason length and no <think>,
-#   one parsed tool_calls entry.
-
-# 3. the campaign
-PREFIX=q35a MODEL=Qwen3.5-27B \
-SPLIT_ROOT=bench_4hop154/_split \
-SERVERS="http://192.168.2.20:8001/v1 http://192.168.2.20:8002/v1 http://192.168.2.20:8003/v1" \
-ARMS="prolong:codex" \
-SCENES="$(python scripts/screen_scenes.py --hops 4 --split-to bench_4hop154/_split | sed -n 's/^SCENES="\(.*\)"$/\1/p')" \
-MAX_STEPS=300 CONC=14 \
-  setsid nohup bash scripts/launch_4hop.sh > outputs/log-q35a-launcher.txt 2>&1 &
-
-# 4. same again with PREFIX=q38a MODEL=Qwen3.8-27B after swapping the servers
+# 3. the three arms, in order, one launcher each
+SC="$(python scripts/screen_scenes.py --hops 4 | awk '$1 ~ /^[0-9]{4}$/ {printf "%s ", $1}')"
+cd /datapool/data3/storage/ruihan/data_share/jh/Collab/MineExplorer
+setsid nohup bash -c '
+for arm in prolong:codex hypothesis:vllm default:vllm; do
+  PREFIX=q35a MODEL=Qwen3.5-27B SPLIT_ROOT=bench_4hop154/_split \
+  SERVERS="http://192.168.2.20:8001/v1 http://192.168.2.20:8002/v1 http://192.168.2.20:8003/v1" \
+  ARMS="$arm" SCENES="'"$SC"'" MAX_STEPS=200 CONC=14 \
+    bash scripts/launch_4hop.sh
+done' > outputs/log-q35a-chain.txt 2>&1 &
 ```
+
+Per-cell logs land in `outputs/log-q35a-<arm>-<channel>-<scene>.txt`; the launcher skips any
+cell whose `result.json` exists, so a relaunch resumes.
