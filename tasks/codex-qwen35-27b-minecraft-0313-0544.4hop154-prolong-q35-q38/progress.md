@@ -114,3 +114,42 @@ servers. Launcher log `outputs/log-q35a-launcher-prolong.txt`, cells
 `outputs/log-q35a-prolong-codex-<scene>.txt`. Two watchers armed: failure lines across all
 q35a cell logs + arm completion; and a one-shot wait for the first 20 results, to re-estimate
 per-cell wall before committing to the 6 h hypothesis arm.
+
+## 2026-08-20 15:10 — speedup investigated and declined; arms 2-3 chained unattended
+
+User asked to make the evaluation faster where quality allows, then went to sleep with
+"keep going". Two measurements decided it:
+
+**1. Where a prolong cell's time actually goes** (40 finished cells): mean wall 14.4 min =
+setup 1.5 + stepping 12.8 + teardown 0.1. Setup is 10%, so there is nothing to win in
+episode startup; the cell is dominated by codex turns (one sample cell: 91% of its
+step-to-step time sat in 25 turns of mean 17.2 s, against 44 s for all 174 queued env steps).
+Throughput is therefore CONC / mean-cell-time and the only lever is CONC.
+
+**2. a230 has no headroom to spend on CONC.** At 13-14 concurrent sessions: load average
+397 on 255 cores, 16 java processes, two of them at ~2000% CPU. Memory is fine (75/1007 GB),
+so it is CPU/IO, not RAM. The verified concurrency ceiling is 14 and the measurement says
+14 is already past comfortable. Raising it would slow every cell and risk an env.step
+timeout storm mid-campaign, which costs far more than the ~30% it might return.
+
+**Decision: CONC stays 14 for arms 2 and 3.** Recorded here rather than silently, because the
+user did approve going faster and the answer is that the measurement does not support it.
+The one speedup that *was* available — the user's own suggestion — is taken below.
+
+**Stale sessions cleared.** The 8 sessions left over from 2026-08-19 were closed via
+`close_env` under a date guard (only sessions created before today; today's 13 untouched);
+a230's java process count went 19 -> 16. This campaign is not leaking: sessions from today
+equalled in-flight cells at every check.
+
+**Arms 2 and 3 are chained**, detached, independent of this session:
+`tasks/<task>/run_remaining_arms.sh` (launched 15:07, pid 51653, log `outputs/log-q35a-chain.txt`).
+It waits for arm 1's "all cells finished" line, then runs `hypothesis:vllm` and then
+`default:vllm` at CONC=14, 200 steps, same 154 scenes, same three servers, and writes
+`outputs/q35a-summary.md` at the end. It refuses to start if the scene screen does not
+return exactly 154.
+
+**Arm 1 status at 15:00:** 76 started / 62 done / 14 in flight, 0 failure lines. Completion
+rate is flat at 0.58 cells/min over the last hour -> arm 1 ends ~17:30-18:15. Mean cell wall
+keeps climbing (4.4 -> 12.2 -> 15.6 min as more cells finish) because fast cells finish
+first; the completion-rate estimate is the one not subject to that bias.
+Score so far: 63/248 milestones (25%), 2 scenes fully done, 3 early ESC.
