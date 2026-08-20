@@ -51,6 +51,12 @@ Only **prolong > hypothesis** survives n = 20. The other two point the same way 
 separate. This is consistent with the earlier 24-scene legacy head-to-head (prolong 32.3% vs
 hypothesis 18.8%) — a different arm pairing, same direction, similar gap.
 
+**`default > hypothesis` does not survive at all.** The hypothesis agent's earlier `legacy` run of
+this campaign covers the same 20 scenes and scores 18/80 — tying `default` exactly, and beating
+its own append-only run by the same +4 that `default` beats it by. See
+[`ANALYSIS_hypothesis_vs_default.md`](ANALYSIS_hypothesis_vs_default.md), which reads the two
+direct arms' trajectories against that control.
+
 ### Milestones earned per scene
 
 | arm | 0 | 1 | 2 | 3 | 4 | ≥1 |
