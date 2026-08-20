@@ -21,18 +21,26 @@ from loguru import logger
 # Image conversion
 # ---------------------------------------------------------------------------
 
+def downsample_pov(img: Image.Image) -> Image.Image:
+    """Halve a frame wider than 256 px, to save tokens and stay within context limits.
+
+    Every arm's frames go through here, so per-frame fidelity is one setting rather than
+    a property of the arm. The direct agents send 20 frames a step and need the saving;
+    PRO-LONG sends one and does not -- but a sharper frame for one arm is an uncontrolled
+    difference in the table they share, and the arm axis is meant to be the *number* of
+    frames and what is done with them, not how many pixels each one carries.
+    """
+    if img.size[0] > 256:
+        img = img.resize((img.size[0] // 2, img.size[1] // 2), Image.Resampling.LANCZOS)
+    return img
+
+
 def convert_buffer_to_base64_images(frame_buffer: list[np.ndarray]) -> list[bytes]:
     """Encode a list of numpy RGB frames to base64-encoded PNG strings."""
     base64_images = []
     for i, pov_image in enumerate(frame_buffer):
         try:
-            img = Image.fromarray(pov_image)
-            original_size = img.size
-            # Downsample to save tokens and stay within context limits
-            if original_size[0] > 256:
-                new_width = original_size[0] // 2
-                new_height = original_size[1] // 2
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            img = downsample_pov(Image.fromarray(pov_image))
 
             buffered = io.BytesIO()
             img.save(buffered, format="PNG")

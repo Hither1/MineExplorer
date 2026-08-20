@@ -27,6 +27,7 @@ from PIL import Image
 
 from mc_agent.action_space import BaseActionSpace
 from mc_agent.llm_provider import BaseLLMProvider
+from mc_agent.utils import downsample_pov
 from prolong_mc import prompts
 from prolong_mc.actions import describe_entry, parse_actions
 from prolong_mc.codex_backend import CodexTurn
@@ -413,6 +414,11 @@ def _verified_state(milestone_hint: str) -> str | None:
 
 
 def _png(frame: np.ndarray) -> bytes:
+    # Through the same downsample the default/hypothesis agents' frames take, so the one
+    # frame this arm attaches carries the same pixels per frame as one of their twenty.
+    # Until 2026-08-20 this wrote the native 640x360 and theirs went at 320x180, which is
+    # four times the pixels for the arm the comparison is about.
     buf = io.BytesIO()
-    Image.fromarray(np.asarray(frame).astype(np.uint8), "RGB").save(buf, format="PNG")
+    img = Image.fromarray(np.asarray(frame).astype(np.uint8), "RGB")
+    downsample_pov(img).save(buf, format="PNG")
     return buf.getvalue()

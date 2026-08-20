@@ -908,6 +908,23 @@ check("serving: the output cap is overridable for a deliberate probe",
       json.loads(flag_value(serve_argv(VLLM_MAX_OUTPUT_TOKENS="256"),
                             "--override-generation-config") or "{}").get("max_new_tokens") == 256)
 
+# --- the one frame this arm attaches carries the same pixels as one of the baseline's 20 ---
+# The arm axis is how many frames and what is done with them, not how sharp each one is.
+# Until 2026-08-20 `_png` wrote the native 640x360 while `convert_buffer_to_base64_images`
+# halved the direct arms' frames to 320x180 -- four times the pixels for the arm under test.
+import base64 as _b64, io as _io
+import numpy as _np
+from PIL import Image as _Image
+from mc_agent.prolong_agent import _png as _prolong_png
+from mc_agent.utils import convert_buffer_to_base64_images as _baseline_png
+
+for _w, _h in [(640, 360), (128, 128)]:      # in-episode frame, and the reset observation
+    _frame = _np.zeros((_h, _w, 3), dtype=_np.uint8)
+    _p = _Image.open(_io.BytesIO(_prolong_png(_frame))).size
+    _d = _Image.open(_io.BytesIO(_b64.b64decode(_baseline_png([_frame])[0]))).size
+    check(f"frame fidelity: {_w}x{_h} reaches both arms at the same size",
+          _p == _d, f"prolong {_p} vs default {_d}")
+
 print()
 print(f"{'ALL PASS' if not fails else 'FAILURES: ' + ', '.join(fails)}")
 sys.exit(1 if fails else 0)
