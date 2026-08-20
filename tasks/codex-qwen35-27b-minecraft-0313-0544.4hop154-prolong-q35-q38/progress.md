@@ -230,3 +230,46 @@ Campaign total ~23 h, ending around **midday 08-21**, not the 05:00-08:00 said e
 error was discounting the direct arms for k=3 and using tail-free means from the seven-scene
 campaign. Arm 3 is a live decision for the user in the morning: 6.4 h for the third arm, or
 stop after two.
+
+## 2026-08-20 22:58 — deadline 07:00, so: append-only, four servers, both arms in parallel
+
+User set a hard deadline of 07:00 for a formal three-arm result, then chose the append-only
+layout and told me to take GPUs 0,1 as well. Both are L1/L2 calls that are theirs; what
+follows is what the numbers said and what was actually done.
+
+**Why the campaign was slow (measured, not guessed).** 785 steps across 6 hypothesis cells,
+decomposed from log timestamps: prompt build 0.36 s (2 %), **model call 13.65 s (95 %)**,
+parse + env.step + milestone check 0.29 s (3 %). The Minecraft sandbox is not the bottleneck
+and my earlier "cells wait on a230" was wrong -- it came from reading `Running: 3-5` as an
+idle server. All six GPUs were at 100 % utilisation. A direct probe on a real frame set:
+1 frame -> 0.78 s, 5 -> 1.06 s, **20 -> 4.77 s** for a 38-token answer, so ~4.5 s of each step
+is prefill+vision and ~9.5 s is decode, with decode starved because prefill competes for the
+same GPU. And the cause: **prefix cache hit rate 0.0 / 0.7 / 1.4 %**. The formal `legacy`
+layout slides a fixed 20-frame window, so the prefix changes at the first image every step
+and nothing is reused. (Prolong ran at 96 % cached input; that is why it was cheap.) This is
+also why MTP k=3 bought the direct arms nothing: it accelerates decode only.
+
+**What changed.**
+- `PROMPT_LAYOUT=append-only` for arms 2 and 3 (94-96 % reusable prefix; repo-measured
+  hypothesis 13.7 -> 7.6 s/step, default 7.3 -> 4.6). **This makes them a different arm** --
+  state after the frames, window 20-29 instead of a fixed 20 -- so they are no longer the
+  formal protocol, are not comparable to either recorded seven-scene campaign, and carry the
+  `-append-only` tag. The table must be titled
+  `prolong-legacy vs hypothesis-append-only vs default-append-only`.
+- A fourth server, `qwen35-s4-k3` on GPUs 0,1 :8004. **Nothing of the user's was killed**:
+  `qwen35-auto3` had already ended on its own (last request 22:42:49, then 12 min of zero
+  traffic, session gone). Run file is `qwen35-s1-k3.sh` with exactly two lines changed
+  (devices, port), verified by diff and by remote md5.
+- Both arms run **concurrently, 9 slots each**, over the identical scene order. A deadline
+  needs a matched scene set at an arbitrary stopping time; running them in parallel makes the
+  common prefix grow steadily instead of arm 3 starting from zero at 03:00.
+- The 28 legacy hypothesis cells are kept as a small legacy sample, outside the main table.
+- Teardown was clean: launcher and 6 in-flight cells stopped, and all 14 sandbox sessions
+  explicitly closed (a230 went to 0 sessions) so the new run starts from a quiet host.
+
+**Guard rails in `append_only_sprint.sh`:** refuses to launch unless the screen returns exactly
+154 scenes; wire-checks all four servers (1024 cap with `finish_reason: length`, no `<think>`,
+no `reasoning_content`) and refuses on any failure; hard-stops the launchers at 06:15 and
+writes the summary, so a table exists by 07:00 whatever has finished.
+
+**Expected:** ~130-140 scenes covered by both arms at 06:15, against 70 under the legacy plan.
