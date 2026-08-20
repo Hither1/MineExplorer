@@ -325,3 +325,39 @@ how slow the full set was. The one consequence to carry into the write-up is tha
 numbers are a 12-scene subsample and ours are all 154, so the absolute figures do not sit in the
 same table. Slicing our 154 down to their scene IDs stays available if a like-for-like row is
 ever wanted.
+
+### 00:20 -- hypothesis was going to miss 06:15; fixed by scheduling, not by touching the arm
+
+**The measurement.** Completion rate over four windows ending 00:15, all stable, so this is
+steady state and not the ramp artifact that fooled the 23:06 estimate:
+
+| arm | last 20 / 30 / 45 / 60 min (cells/min) | ETA |
+|---|---|---|
+| default | 0.45 / 0.40 / 0.42 / 0.47 | 04:42-05:27 |
+| hypothesis | 0.35 / 0.33 / 0.29 / 0.30 | **06:43-08:05 -- misses 06:15** |
+
+**Not a fault.** hypothesis makes 1.01 model calls per env step against default's 1.00; no
+timeouts, no `wrote no actions`, no truncation. Its requests are simply ~48 % more expensive
+to prefill because the DAG and plan ride in every prompt. There is nothing to repair.
+
+**Not fixable by restarting the launcher.** `launch_4hop.sh` decides its skip list ONCE, at
+start, from `[[ -f result.json ]]`. Relaunching at a higher CONC would re-queue the 9 cells
+then in flight and run each of them twice.
+
+**What was done instead:** a second hypothesis launcher, 3 slots, walking the same 154-scene
+screen BACKWARDS (`boost_hypothesis.sh`). The two launchers work from opposite ends and meet
+only as the arm finishes; where they do meet, `eval_benchmark.py --resume` -- checked when the
+*cell* starts, not when the launcher starts -- skips the scene that already landed. Verified
+at 00:20: 11 live hypothesis cells, 9 default, **no scene running twice**.
+
+This redistributes a fixed pie rather than adding capacity: the cluster is at its throughput
+knee, and default has ~85 min of slack to lend. Projection with hyp 12 / def 9:
+**hypothesis ~04:35-05:30, default ~05:00-05:30**. a230 is untroubled by 21 sessions
+(load 67/255 cores at 18).
+
+**Also fixed: the sprint's own clock test is broken after midnight.** `past()` compares
+`"$(date +%H%M)"` arithmetically and bash reads a leading-zero literal as octal, so `0008`
+raises `value too great for base`. It happens to still fire at 06:15 and from 06:20 on, but a
+deadline should not rest on that. The running shell already holds `past()` in memory and has
+not yet read the file's last three lines, so editing the script would be useless and unsafe --
+`deadline_enforcer.sh` now enforces 06:15 from outside (armed 00:14, pid confirmed).
