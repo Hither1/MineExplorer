@@ -11,6 +11,30 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
 LOG=outputs/log-g56a-monitor.txt
+
+# Codex trees sometimes outlive their cell (the user has seen finished tasks leave
+# processes behind). A campaign codex process is identified by cwd under our
+# outputs/; it is an orphan when no live eval_benchmark remains in its ancestor
+# chain. Interactive codex sessions live elsewhere and are never touched.
+reap_codex() {
+  local n=0 pid cwd p st
+  for pid in $(pgrep -u ruihan -f "code[x] exec|code[x]-linux|bwra[p]|sandbox_prox[y]"); do
+    st=$(ps -o stat= -p "$pid" 2>/dev/null) || continue
+    [[ "$st" == Z* ]] && continue
+    cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null) || continue
+    [[ "$cwd" == "$ROOT"/outputs/* ]] || continue
+    p=$pid
+    local live=0
+    for _ in 1 2 3 4 5 6 7 8; do
+      p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d " ") || break
+      [[ -z "$p" || "$p" -le 1 ]] && break
+      if tr "\0" " " < "/proc/$p/cmdline" 2>/dev/null | grep -q "eval_benchmark"; then live=1; break; fi
+    done
+    (( live )) && continue
+    kill "$pid" 2>/dev/null && n=$((n+1))
+  done
+  echo "$n"
+}
 A219=192.168.2.12
 hi_load=0; alive_fail=0; ssh_fail=0; prev_fails=-1
 while true; do
@@ -40,7 +64,8 @@ while true; do
   done
   fails=$(cat outputs/log-g56a-prolong-codex-*.txt outputs/log-g56a-default-codex-*.txt 2>/dev/null | grep -cE "produced no actions.json|Agent failed to provide|stream disconnected|429|rate.?limit" || true)
   dfail=0; (( prev_fails >= 0 )) && dfail=$((fails - prev_fails)); prev_fails=$fails
-  echo "$ts a219(load=$load9 mem=${mem9}G java=$java9 our=${cpu9}c sandbox=$alive) a218(load=$load8 mem=${mem8}G our=${cpu8}c codex=$ncodex) apifails=+$dfail prolong=$np/154 default=$nd/154" >> "$LOG"
+  reaped=$(reap_codex)
+  echo "$ts a219(load=$load9 mem=${mem9}G java=$java9 our=${cpu9}c sandbox=$alive) a218(load=$load8 mem=${mem8}G our=${cpu8}c codex=$ncodex) apifails=+$dfail reaped=$reaped prolong=$np/154 default=$nd/154" >> "$LOG"
   if awk -v l="$load9" 'BEGIN{exit !(l>245)}'; then hi_load=$((hi_load+1)); else hi_load=0; fi
   if (( hi_load >= 3 )); then
     if (( cpu9 > 45 )); then echo "$ts DANGER: a219 load>245 x3 AND our cpu=${cpu9}c" >> "$LOG"; exit 1; fi
