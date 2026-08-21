@@ -52,9 +52,13 @@ mkdir -p "$OUT"
 # cannot be pooled with the earlier unsandboxed ones without saying so.
 export CODEX_BIN="$ROOT/prolong_mc/codex_sandbox.sh"
 export CODEX_REAL_BIN=${CODEX_REAL_BIN:-$HOME/.nvm/versions/node/v22.18.0/bin/codex}
-export CODEX_SANDBOX_NO_AUTH=1
+# Hosted codex (CODEX_HOSTED=1) authenticates with the master eval home's account,
+# so the dummy-key switch stays off there; local serving keeps it on.
+[[ "${CODEX_HOSTED:-0}" == "1" ]] || export CODEX_SANDBOX_NO_AUTH=1
 export CODEX_SANDBOX_ALLOW=${CODEX_SANDBOX_ALLOW:-.chatgpt.com:443,.openai.com:443,chatgpt.com:443}
-CODEX_SANDBOX_ALLOW="$CODEX_SANDBOX_ALLOW,$(printf '%s' "$VLLM_URL" | sed -E 's#^https?://##; s#/.*##')"
+if [[ "${CODEX_HOSTED:-0}" != "1" ]]; then
+  CODEX_SANDBOX_ALLOW="$CODEX_SANDBOX_ALLOW,$(printf '%s' "$VLLM_URL" | sed -E 's#^https?://##; s#/.*##')"
+fi
 export CODEX_SANDBOX_ALLOW
 
 # The default/hypothesis agents drive codex through CodexProvider: one fresh `codex exec`
@@ -104,7 +108,13 @@ fi
 case "$CHANNEL" in
   vllm)  ARGS+=(--use-vllm --vllm-url "$VLLM_URL") ;;
   codex)
-    ARGS+=(--use-codex --codex-base-url "$VLLM_URL" --codex-effort low)
+    if [[ "${CODEX_HOSTED:-0}" == "1" ]]; then
+      # Hosted account model: no base_url (codex talks to its own provider), and the
+      # effort is the wire value itself -- "none" is the qwen protocol's thinking-off.
+      ARGS+=(--use-codex --codex-effort "${CODEX_EFFORT:-none}")
+    else
+      ARGS+=(--use-codex --codex-base-url "$VLLM_URL" --codex-effort low)
+    fi
     [[ "$CODEX_OUTPUT_SCHEMA" == "1" && "$AGENT_MODE" != "prolong" ]] && ARGS+=(--codex-output-schema)
     # The sandbox's own assertions, through the wrapper this cell will use, before a
     # single step is spent. Set SKIP_SANDBOX_SELFTEST=1 only for a deliberate probe.

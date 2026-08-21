@@ -475,6 +475,13 @@ class CodexTurn:
             "-c", f'model_reasoning_effort="{effort_for(self.base_url, self.reasoning_effort)}"',
             "-o", str(self.workspace / "last_message.txt"),
         ]
+        # Hosted models take no server-side generation cap (the local arms get theirs
+        # from vLLM's --override-generation-config), so the qwen protocol's 1024-token
+        # output cap has to ride the request. Opt-in via env so existing arms are
+        # byte-identical without it.
+        max_out = os.environ.get("CODEX_MAX_OUTPUT_TOKENS", "").strip()
+        if max_out:
+            args += ["-c", f"model_max_output_tokens={int(max_out)}"]
         if self.base_url:
             args += [
                 "-c", "model_provider=local",
