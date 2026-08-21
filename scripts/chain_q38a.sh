@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The q38a campaign chain: Qwen3.8-27B on the 154-scene 4-hop split at 200 steps,
 # mirroring q35a arm by arm so the two models pool cell-for-cell:
-#   arm 1  prolong:codex          CONC=14, servers :8001-:8003  (q35a arm 1 contract)
+#   arm 1  prolong:codex          CONC=10, servers :8001-:8003 (q35a ran CONC=14;
+#          lowered to 10 at the user's request -- protect a219 over speed)
 #   -- sandbox clean-slate restart on a219 (leaked-JVM zeroing, as the q35a chain did)
 #   arm 2  default:vllm append-only CONC=9, servers :8001-:8004 (q35a default-ao contract)
 # Sandbox: a219 (192.168.2.12:8000), started by ~ruihan .podman/start-mc-a219.sh,
@@ -20,7 +21,7 @@ count_results() { local arm=$1 n=0 s; for s in $SCENES; do
   [[ -f "outputs/q38a-$arm-$s/Qwen3.8-27B/4-hop/$s/result.json" ]] && n=$((n+1)); done; echo "$n"; }
 
 log "arm 1 (prolong:codex) starting; $(count_results prolong-codex)/154 already present"
-ARMS="prolong:codex" CONC=14 \
+ARMS="prolong:codex" CONC=10 \
 SERVERS="http://192.168.2.20:8001/v1 http://192.168.2.20:8002/v1 http://192.168.2.20:8003/v1" \
   bash scripts/launch_4hop.sh > outputs/log-q38a-launcher-prolong.txt 2>&1
 log "arm 1 finished; $(count_results prolong-codex)/154 results"
