@@ -76,6 +76,13 @@ export LOCAL_API_KEY=EMPTY
 export CODEX_MODEL_CONTEXT_WINDOW=131072
 export CODEX_LOCAL_EFFORT=none          # thinking off on the codex channel
 export CODEX_TIMEOUT=${CODEX_TIMEOUT:-900}
+# Hosted resumed sessions (prolong) legitimately run 800-1100s per call once the
+# session is ~25 turns deep -- the resume payload regrows every turn. 900 kills
+# calls that were about to land and the retry pays the same latency again, so
+# raise only that case; the stateless default-agent calls keep their tight cap.
+if [[ "${CODEX_HOSTED:-0}" == "1" && "$CODEX_TIMEOUT" == "900" ]]; then
+  export CODEX_TIMEOUT=1500
+fi
 export MC_RESET_TIMEOUT=${MC_RESET_TIMEOUT:-600}
 
 # PROMPT_LAYOUT (legacy | static-first | append-only) is how the default/hypothesis agents lay

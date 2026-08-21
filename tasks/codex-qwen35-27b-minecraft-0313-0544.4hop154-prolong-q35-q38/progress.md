@@ -506,3 +506,18 @@ restarts. First check on resume is
 -- a non-zero count before any cell starts is leaked state, and the fix is to restart the
 container rather than to let the next arm pay for it. This is the same leak check
 `run_remaining_arms.sh` already logs between arms.
+
+## 2026-08-22 02:40 g56a arm 1 in flight; latency diagnosis + timeout raise
+- g56a (gpt-5.6-sol, 200 steps, effort=none, cap 1024): prolong 10/154 done, 10 cells in
+  flight at CONC=10. Early mean milestones 1.6 (vs q38a-partial 1.38, q35a 1.12). Two
+  agent_esc early exits (0010 @step8 1/4, 0084 @step44 3/4) — model behavior, not infra.
+- Diagnosis: hosted resumed sessions slow linearly with turn depth (turn1-3 ~40s, turn
+  ~30 ~800-900s; payload regrows each turn). Fresh-session probe returned in 37s while
+  10 deep cells were in flight → context growth, NOT account throttling. CODEX_TIMEOUT=900
+  was killing deep calls that land at 800-1100s; retry repays the same latency.
+- Fix: run_cell.sh now raises hosted+900 → 1500 (running cells keep 900 — env frozen;
+  run_cell.sh tail is `exec python`, so live edit was safe). launch_4hop.sh.new defaults
+  PROLONG 1500 / PROVIDER 240. Default agent codex is stateless per step
+  (llm_provider.py:268) → arm 2 immune to depth slowdown.
+- Revised ETA: arm 1 ~29-36h remaining (ends ~08-23); arm 2 default 14-48h depending on
+  per-call latency at CONC 8-10 (calibration said 13s/call, probe 37s).
