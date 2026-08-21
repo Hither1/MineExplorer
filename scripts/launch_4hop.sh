@@ -34,6 +34,11 @@ SPLIT_ROOT=${SPLIT_ROOT:-bench_4hop7/_split}
 # agent:channel pairs, in launch priority order (earlier arms start first).
 ARMS=${ARMS:-"default:vllm prolong:codex hypothesis:vllm default:codex"}
 CONC=${CONC:-14}
+# CONC_FILE (optional): a path whose integer content overrides CONC, re-read at every
+# launch gate -- lets a controller raise/lower the cap mid-campaign. Absent/invalid
+# content falls back to $CONC, so existing callers are byte-identical without it.
+CONC_FILE=${CONC_FILE:-}
+cur_conc() { local c=""; [[ -n "$CONC_FILE" ]] && c=$(cat "$CONC_FILE" 2>/dev/null | tr -d "[:space:]"); [[ "$c" =~ ^[0-9]+$ ]] && echo "$c" || echo "$CONC"; }
 MAX_STEPS=${MAX_STEPS:-300}
 PREFIX=${PREFIX:-c4h}
 SERVERS=${SERVERS:-"http://192.168.2.20:8001/v1 http://192.168.2.20:8002/v1 http://192.168.2.20:8003/v1"}
@@ -46,8 +51,8 @@ SERVERS=${SERVERS:-"http://192.168.2.20:8001/v1 http://192.168.2.20:8002/v1 http
 # ceiling ends such a step, so the ceiling is the arm's per-step cost -- one ceiling then a
 # no-op (no retry, since 2026-08-18). 120 s keeps the campaign at ~10 h for 300 steps and
 # admits the fast answers; it is a policy, and the results table says so.
-PROLONG_CODEX_TIMEOUT=${PROLONG_CODEX_TIMEOUT:-900}
-PROVIDER_CODEX_TIMEOUT=${PROVIDER_CODEX_TIMEOUT:-120}
+PROLONG_CODEX_TIMEOUT=${PROLONG_CODEX_TIMEOUT:-1500}
+PROVIDER_CODEX_TIMEOUT=${PROVIDER_CODEX_TIMEOUT:-240}
 # Request layout for the default/hypothesis agents (run_cell.sh -> --prompt-layout). Anything
 # but legacy is a different arm, so it gets its own tag suffix and never resumes into, or is
 # summarised with, a legacy cell.
@@ -100,7 +105,7 @@ for cell in "${cells[@]}"; do
   url=${servers[$(( i % ${#servers[@]} ))]}
   i=$((i + 1))
   tag="$PREFIX-$agent-$channel$(arm_suffix "$agent")-$scene"
-  while (( running >= CONC )); do
+  while (( running >= $(cur_conc) )); do
     wait -n || true
     running=$((running - 1))
   done

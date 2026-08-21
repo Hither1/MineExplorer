@@ -3,7 +3,7 @@
 # Minecraft sandbox on a219). One line per 120s tick to outputs/log-g56a-monitor.txt.
 #
 # Exit 0: both arms 154/154. Exit 1 (danger, supervisor re-invoked):
-#   a219: MemAvailable<80G | ruihan java>22 (10 active + up to ~10 JVMs leaked by
+#   a219: MemAvailable<80G | ruihan java>38 (up to 20 active + ~10 JVMs leaked by
 #         the killed q38a cells, cleared at the between-arms restart) | sandbox dead
 #         3 ticks | ssh dead 5 ticks
 #         | load>245 x3 AND our a219 cpu>45 cores (pin breach)
@@ -75,7 +75,7 @@ while true; do
   fi
   (( mem9 < 80 ))       && { echo "$ts DANGER: a219 memavail<80G" >> "$LOG"; exit 1; }
   (( alive_fail >= 3 )) && { echo "$ts DANGER: sandbox dead 3 ticks" >> "$LOG"; exit 1; }
-  (( java9 > 22 ))      && { echo "$ts DANGER: a219 java=$java9 (JVM leak)" >> "$LOG"; exit 1; }
+  (( java9 > 38 ))      && { echo "$ts DANGER: a219 java=$java9 (JVM leak)" >> "$LOG"; exit 1; }
   (( mem8 < 50 ))       && { echo "$ts DANGER: a218 memavail<50G" >> "$LOG"; exit 1; }
   (( cpu8 > 80 ))       && { echo "$ts DANGER: a218 our cpu=${cpu8}c (client runaway)" >> "$LOG"; exit 1; }
   (( dfail > 40 ))      && { echo "$ts DANGER: api failure lines +$dfail in one tick" >> "$LOG"; exit 1; }
