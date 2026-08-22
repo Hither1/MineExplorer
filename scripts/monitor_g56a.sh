@@ -3,7 +3,7 @@
 # Minecraft sandbox on a219). One line per 120s tick to outputs/log-g56a-monitor.txt.
 #
 # Exit 0: both arms 154/154. Exit 1 (danger, supervisor re-invoked):
-#   a219: MemAvailable<80G | ruihan java>38 (up to 20 active + ~10 JVMs leaked by
+#   a219: MemAvailable<80G | ruihan java>60 (active fleet + JVMs leaked by killed cells; cleared by
 #         the killed q38a cells, cleared at the between-arms restart) | sandbox dead
 #         3 ticks | ssh dead 5 ticks
 #         | load>245 x3 AND our a219 cpu>45 cores (pin breach)
@@ -67,7 +67,16 @@ while true; do
   fails=$(cat outputs/log-g56a-prolong-codex-*.txt outputs/log-g56a-default-codex-*.txt 2>/dev/null | grep -cE "produced no actions.json|Agent failed to provide|stream disconnected|429|rate.?limit" || true)
   dfail=0; (( prev_fails >= 0 )) && dfail=$((fails - prev_fails)); prev_fails=$fails
   reaped=$(reap_codex)
-  echo "$ts a219(load=$load9 mem=${mem9}G java=$java9 our=${cpu9}c sandbox=$alive) a218(load=$load8 mem=${mem8}G our=${cpu8}c codex=$ncodex) apifails=+$dfail reaped=$reaped prolong=$np/154 default=$nd/154" >> "$LOG"
+  wallstuck=0
+  for cpid in $(pgrep -u ruihan -f "eval_benchmar[k]"); do
+    cl=$(tr "\0" " " < /proc/$cpid/cmdline 2>/dev/null | grep -oE "g56a-prolong-codex-[0-9]+" | head -1)
+    [[ -n "$cl" ]] || continue
+    clog="outputs/log-${cl}.txt"; [[ -f "$clog" ]] || continue
+    wto=$(( $(grep -c "timed out after 900s" "$clog") + $(grep -c "timed out after 1500s" "$clog") ))
+    wst=$(grep -oE "step [0-9]+" "$clog" | tail -1 | grep -oE "[0-9]+"); wst=${wst:-0}
+    (( wto >= 10 && wst <= 150 )) && wallstuck=$((wallstuck+1))
+  done
+  echo "$ts a219(load=$load9 mem=${mem9}G java=$java9 our=${cpu9}c sandbox=$alive) a218(load=$load8 mem=${mem8}G our=${cpu8}c codex=$ncodex) apifails=+$dfail reaped=$reaped wallstuck=$wallstuck prolong=$np/154 default=$nd/154" >> "$LOG"
   if awk -v l="$load9" 'BEGIN{exit !(l>245)}'; then hi_load=$((hi_load+1)); else hi_load=0; fi
   if (( hi_load >= 3 )); then
     if (( cpu9 > 45 )); then echo "$ts DANGER: a219 load>245 x3 AND our cpu=${cpu9}c" >> "$LOG"; exit 1; fi
@@ -75,7 +84,8 @@ while true; do
   fi
   (( mem9 < 80 ))       && { echo "$ts DANGER: a219 memavail<80G" >> "$LOG"; exit 1; }
   (( alive_fail >= 3 )) && { echo "$ts DANGER: sandbox dead 3 ticks" >> "$LOG"; exit 1; }
-  (( java9 > 38 ))      && { echo "$ts DANGER: a219 java=$java9 (JVM leak)" >> "$LOG"; exit 1; }
+  (( java9 > 60 ))      && { echo "$ts DANGER: a219 java=$java9 (JVM leak)" >> "$LOG"; exit 1; }
+  (( wallstuck >= 6 ))  && { echo "$ts DANGER: $wallstuck cells in the timeout death loop; triage needed" >> "$LOG"; exit 1; }
   (( mem8 < 50 ))       && { echo "$ts DANGER: a218 memavail<50G" >> "$LOG"; exit 1; }
   (( cpu8 > 80 ))       && { echo "$ts DANGER: a218 our cpu=${cpu8}c (client runaway)" >> "$LOG"; exit 1; }
   (( dfail > 40 ))      && { echo "$ts DANGER: api failure lines +$dfail in one tick" >> "$LOG"; exit 1; }

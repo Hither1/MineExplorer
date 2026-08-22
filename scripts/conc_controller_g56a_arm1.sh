@@ -4,7 +4,7 @@
 # before every cell launch. Bounds [6,20] inside the sandbox's 32-core pin
 # (10 leaked q38a JVMs idle there too, so cap 20 = 30 JVMs ~ 20-27 cores).
 # Down 2 on OUR pressure only -- other tenants' load is not ours to brake for:
-#   a219 java > 38 | a219 our cpu > 27c (pin saturation) | a219 memavail < 80G
+#   a219 java > 60 (killed cells leak their server JVMs until the between-arms restart) | a219 our cpu > 27c (pin saturation) | a219 memavail < 80G
 #   a218 our cpu > 80c | new api-failure lines > 10 per 120s tick
 # Up 1 after 2 consecutive healthy ticks. Exits at 154 arm-1 results, or when
 # both the launcher and all cells are gone.
@@ -36,7 +36,7 @@ while true; do
   java=999; mem=999; ourcpu=0
   [[ -n "$stats" ]] && read -r java mem ourcpu <<< "$stats"
   danger=""
-  (( java > 38 )) && danger="$danger java=$java"
+  (( java > 60 )) && danger="$danger java=$java"
   (( ourcpu > 27 )) && danger="$danger a219cpu=${ourcpu}c"
   [[ -n "$stats" ]] && (( mem < 80 )) && danger="$danger mem=${mem}G"
   (( a218cpu > 80 )) && danger="$danger a218cpu=${a218cpu}c"
