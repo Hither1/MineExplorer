@@ -192,6 +192,14 @@ class ProlongAgent:
                     # reached the model. `image_attach_failures` must be 0.
                     **self.codex.vision_audit(),
                     "overflow_resets": self.codex.overflow_resets,
+                    # Cold starts from the other unclean endings (upstream clears
+                    # the session on all of them) and from the hosted session-age
+                    # cap; nonzero age_resets means CODEX_SESSION_MAX_TURNS was in
+                    # force and names the protocol variant.
+                    "timeout_resets": self.codex.timeout_resets,
+                    "empty_resets": self.codex.empty_resets,
+                    "age_resets": self.codex.age_resets,
+                    "session_max_turns": self.codex.session_max_turns,
                     # Expected 0. Nonzero means codex compacted the conversation, which
                     # is a different memory architecture than the one being measured.
                     "compactions": self.codex.compactions,

@@ -925,6 +925,35 @@ for _w, _h in [(640, 360), (128, 128)]:      # in-episode frame, and the reset o
     check(f"frame fidelity: {_w}x{_h} reaches both arms at the same size",
           _p == _d, f"prolong {_p} vs default {_d}")
 
+# --- session hygiene: upstream discards the session on every unclean ending ---
+# (codex_agent.py: "timed out ... clearing session", "empty response ... clearing
+# session", overflow -> cold start). g56a measured the cost of missing this: a
+# resumed retry re-pays the whole transcript into the same stall, 77-100% timeout
+# rate past turn 40, 18 cells parked. The hosted backend also never emits an
+# overflow error at all, so CODEX_SESSION_MAX_TURNS synthesises the missing
+# signal from session age; 0 keeps the vLLM path exactly as it was.
+import os as _os
+from prolong_mc.codex_backend import CodexTurn as _CT, is_overflow as _iov
+
+check("overflow classifier: context window", _iov("CodexError", "context window limit exceeded"))
+check("overflow classifier: vLLM image cap",
+      _iov("BadRequestError", "At most 128 image(s) may be provided in one prompt. (parameter=image)"))
+check("overflow classifier: a refusal is not overflow", not _iov("CodexError", "I cannot help with that"))
+
+with tempfile.TemporaryDirectory() as _d:
+    _t = _CT(_d, model="selftest")
+    _t.session_id, _t.session_turns = "0" * 36, 7
+    _t._discard_session("selftest", "timeout_resets")
+    check("unclean ending drops the session", _t.session_id is None and _t.session_turns == 0)
+    check("and lands in its own counter", _t.timeout_resets == 1 and _t.overflow_resets == 0)
+
+    _os.environ["CODEX_SESSION_MAX_TURNS"] = "15"
+    try:
+        check("age cap read from the environment", _CT(_d, model="selftest").session_max_turns == 15)
+    finally:
+        _os.environ.pop("CODEX_SESSION_MAX_TURNS")
+    check("cap unset means disabled", _CT(_d, model="selftest").session_max_turns == 0)
+
 print()
 print(f"{'ALL PASS' if not fails else 'FAILURES: ' + ', '.join(fails)}")
 sys.exit(1 if fails else 0)

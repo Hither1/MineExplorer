@@ -282,6 +282,13 @@ def is_overflow(name: str, text: str) -> bool:
         or "too long" in lmsg
         or ("context" in lmsg and ("length" in lmsg or "limit" in lmsg or "window" in lmsg))
         or ("maximum" in lmsg and "tokens" in lmsg)
+        # vLLM's multimodal cap ("At most 128 image(s) may be provided in one
+        # prompt") is this visual port's context limit: the resumed conversation no
+        # longer fits the server's request shape and every later resume fails the
+        # same way. Upstream never sees it (text-only); q35a hit it from turn ~270
+        # on and burned 5+5 futile same-session retries per refill instead of the
+        # cold start this classifier exists to trigger.
+        or ("at most" in lmsg and "image" in lmsg)
     )
 
 
@@ -444,10 +451,40 @@ class CodexTurn:
         self.view_image_calls = 0
         self.image_attach_failures = 0
         self.overflow_resets = 0
+        # Upstream discards the session on ANY unclean ending -- "timed out ...
+        # clearing session", "empty response ... clearing session" -- never resuming
+        # into a suspect thread. The g56a hosted arm measured what dropping that
+        # costs: a resumed retry re-pays the whole transcript into the same stall,
+        # and 18 cells looped on full-ceiling timeouts until they were parked
+        # (experiments/PARKED_g56a_wallstuck_20260823.md).
+        self.timeout_resets = 0
+        self.empty_resets = 0
+        # The hosted backend never emits the overflow error the cold-start path
+        # listens for (overflow_resets == 0 across three campaigns); it just gets
+        # slower with session depth until every call times out -- p50 95s at turns
+        # 1-10, 918s at 11-20, 77-100% timeouts past turn 40. This cap synthesises
+        # the missing signal client-side: the same cold start, triggered by session
+        # age instead of by a server error the backend refuses to send. 0 disables
+        # (the vLLM path, whose flat latency never needed it).
+        self.session_max_turns = int(os.environ.get("CODEX_SESSION_MAX_TURNS", "0"))
+        self.session_turns = 0
+        self.age_resets = 0
         # Must stay 0. A nonzero count means codex compacted the conversation, so the
         # arm is no longer "PRO-LONG memory + a cold start on overflow" and cannot be
         # averaged with the runs that were.
         self.compactions = 0
+
+    def _discard_session(self, why: str, counter: str) -> None:
+        """Drop the thread rather than retry into it (upstream's stance for every
+        unclean ending: timeout, empty response, overflow). Everything the next
+        turn needs is in logs.txt and the workspace; only the conversation is lost."""
+        logger.warning(
+            f"[codex] turn {self.calls}: discarding session {self.session_id} "
+            f"({why}); the next call cold-starts"
+        )
+        self.session_id = None
+        self.session_turns = 0
+        setattr(self, counter, getattr(self, counter) + 1)
 
     def write_system_prompt(self, text: str) -> None:
         """Upstream puts the system prompt in AGENTS.md, which Codex discovers from
@@ -518,6 +555,15 @@ class CodexTurn:
         informed as the baseline agent it is compared against.
         """
         self.calls += 1
+        if (
+            self.session_id
+            and self.session_max_turns
+            and self.session_turns >= self.session_max_turns
+        ):
+            self._discard_session(
+                f"reached {self.session_turns} turns, cap {self.session_max_turns}",
+                "age_resets",
+            )
         for stale in ("actions.json", "last_message.txt"):
             (self.workspace / stale).unlink(missing_ok=True)
 
@@ -575,6 +621,12 @@ class CodexTurn:
                 f"[codex] turn {self.calls} timed out after {self.timeout}s; "
                 f"{len(partial.splitlines())} events kept"
             )
+            if self.session_id:
+                # Upstream: "timed out at action N — clearing session". A resumed
+                # retry replays the same payload into the same stall; the g56a arm
+                # measured that loop never terminating (77-100% timeout rate past
+                # turn 40). The retry only means anything as a cold start.
+                self._discard_session(f"timed out after {self.timeout}s", "timeout_resets")
             return {"actions_json": None, "message": "", "ok": False, "error": "timeout"}
 
         stats = request_stats(proc.stdout)
@@ -599,6 +651,8 @@ class CodexTurn:
             if match:
                 self.session_id = match.group(1)
                 logger.info(f"[codex] session {self.session_id}")
+        if self.session_id:
+            self.session_turns += 1
 
         errors = []
         overflowed = False
@@ -630,14 +684,7 @@ class CodexTurn:
                 overflowed = overflowed or is_overflow(name, text)
 
         if overflowed and self.session_id:
-            # Drop the thread rather than retry into it. Everything the next turn
-            # needs is in logs.txt and the workspace; only the conversation is lost.
-            logger.error(
-                f"[codex] turn {self.calls} overflowed the context window; "
-                f"discarding session {self.session_id} so the next turn cold-starts"
-            )
-            self.session_id = None
-            self.overflow_resets += 1
+            self._discard_session("overflowed the context window", "overflow_resets")
 
         actions_path = self.workspace / "actions.json"
         actions_json = actions_path.read_text(encoding="utf-8") if actions_path.exists() else None
@@ -649,6 +696,12 @@ class CodexTurn:
                 f"[codex] turn {self.calls} wrote no actions.json (rc={proc.returncode}); "
                 f"{errors[-1] if errors else proc.stderr.strip()[:200]}"
             )
+            if not message and self.session_id:
+                # Upstream: "empty response from codex — clearing session". No
+                # actions.json AND no agent message means the call produced nothing;
+                # the nudged same-session retry is for a model that answered badly,
+                # not for a call that never answered.
+                self._discard_session("produced no output at all", "empty_resets")
         return {
             "actions_json": actions_json,
             "message": message,
