@@ -105,9 +105,10 @@ for cell in "${cells[@]}"; do
   url=${servers[$(( i % ${#servers[@]} ))]}
   i=$((i + 1))
   tag="$PREFIX-$agent-$channel$(arm_suffix "$agent")-$scene"
-  while (( running >= $(cur_conc) )); do
-    wait -n || true
-    running=$((running - 1))
+  # Poll the real child count: bash 5.0 wait -n never returns children that were
+  # already reaped-and-notified (a mass SIGKILL left the counter stuck at cap).
+  while (( $(jobs -pr | wc -l) >= $(cur_conc) )); do
+    sleep 5
   done
   timeout=$PROLONG_CODEX_TIMEOUT
   [[ "$channel" == "codex" && "$agent" != "prolong" ]] && timeout=$PROVIDER_CODEX_TIMEOUT

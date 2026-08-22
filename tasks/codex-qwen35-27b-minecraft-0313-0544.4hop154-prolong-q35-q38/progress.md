@@ -521,3 +521,14 @@ container rather than to let the next arm pay for it. This is the same leak chec
   (llm_provider.py:268) → arm 2 immune to depth slowdown.
 - Revised ETA: arm 1 ~29-36h remaining (ends ~08-23); arm 2 default 14-48h depending on
   per-call latency at CONC 8-10 (calibration said 13s/call, probe 37s).
+
+## 2026-08-23 02:00 wall-stuck triage + launcher gate fix
+- 18 arm-1 cells were in the timeout death loop (latency grows past any ceiling
+  once the session is deep; 0058 alone burned 88 timeouts ~ 22h). Killed without
+  result.json; truncated scores in experiments/PARKED_g56a_wallstuck_20260823.md
+  (several 2-3/4). Monitor reborn with java<=60 + wallstuck census (DANGER >= 6).
+- bash 5.0 wait -n never returns already-notified children -> the mass kill left
+  the launcher counter stuck at cap and refills stopped. Gate replaced with a
+  jobs -pr poll; launcher #3 now runs the 91 never-started scenes (parked 18
+  excluded pending the protocol decision: truncate-score / stateless rerun / drop).
+- a219 box load ~870 from another tenant (ours 17c); sandbox unaffected so far.
