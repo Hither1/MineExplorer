@@ -27,3 +27,7 @@ truncate-and-score / stateless rerun / drop.
 | 0106 | 22 | 105 | 0/4 | 40 |
 | 0168 | 18 | 132 | 1/4 | 19 |
 | 0280 | 13 | 110 | 1/4 | 12 |
+
+2026-08-23 06:10: decision -- the 18 scenes rerun fresh under PROLONG-CS15
+(57118c1: unclean endings discard the session; CODEX_SESSION_MAX_TURNS=15 on hosted)
+with the rest of the rerun arm. No truncate-and-score: the partials mix protocols.

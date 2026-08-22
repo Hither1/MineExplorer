@@ -203,3 +203,22 @@
 20260816-171156-w1-qwen38-hypothesis-vllm-0694-58ab  CANCELLED: main-axis cell, cancelled while queued; never started, no artifacts
 20260816-171157-w1-qwen38-hypothesis-vllm-0182-3e4d  CANCELLED: main-axis cell, cancelled while queued; never started, no artifacts
 20260816-171157-w1-qwen38-hypothesis-vllm-0311-2bd7  CANCELLED: main-axis cell, cancelled while queued; never started, no artifacts
+
+# The g56a prolong arm (arm 1) was stopped 2026-08-23 ~05:50 at 44/154, 29 cells killed
+# mid-episode. Cause, measured across the arm's logs: hosted resumed-session latency
+# grows with session depth (turn p50 95s at 1-10, 918s at 11-20, 77-100% timeouts past
+# turn 40) and nothing ever discards the session -- the port kept the thread on timeout
+# where upstream clears it ("timed out ... clearing session"), and the hosted backend
+# never emits the overflow error the cold-start path listens for (overflow_resets == 0
+# across g56a/q35a/q38a). Fixed in 57118c1: discard on timeout/empty/overflow, plus
+# CODEX_SESSION_MAX_TURNS to cap hosted session age. The arm reruns as PROLONG-CS15
+# (cap 15 turns, ceiling 900s) once the cs15 3-scene smoke passes. Finished cells with
+# <=15 analyzer turns and 0 timeouts are byte-equivalent under the new protocol and may
+# be kept; the rest rerun. Killed cells left no result.json and count as not run.
+20260823-055000-g56a-prolong-arm1-stop      STOPPED: 44/154 under the pre-CS15 protocol; rerun pending as PROLONG-CS15
+# Two arm-2 cells died in a sandbox-restart race (the arm-2 starter's restart and a
+# second manual clean-slate restart overlapped their first minute) and wrote result.json
+# with 0/0 milestones and no environment. Deleted rather than excluded: nothing was
+# measured. The scenes rerun in the end-of-arm mop-up pass.
+20260823-055300-g56a-default-codex-0010     DELETED: restart race, env lost after creation, 0/0-milestone garbage; mop-up rerun
+20260823-055300-g56a-default-codex-0016     DELETED: restart race, env never created; mop-up rerun
