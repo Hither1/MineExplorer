@@ -62,14 +62,17 @@ while true; do
       echo "$(date '+%m-%d %H:%M:%S') trimmed cell $yscene (pid $ypid, youngest) to enforce cells<=$MAX" >> "$LOG"
       cells=$((cells-1)); sleep 2
     done
-  elif (( dto > 0 )); then
+  elif (( dto >= 4 )); then
+    # Sustained dirt (>=~7% of the window's calls): step down one.
     clean=0
     (( cap > MIN )) && { cap=$((cap-1)); echo "$cap" > "$CONC_FILE"; }
   else
+    # dto 1-3 is the protocol's tolerated trickle (c4h defines a ceiling hit as
+    # "one ceiling then a default action"); reacting to it walked the cap to 3
+    # while 6 cells ran clean-ish all afternoon. No climb branch: the day's
+    # evidence is fixed (5 clean, 6 trickle, 7 burns), adaptivity only bought
+    # oscillation, and a raise is a human decision now.
     clean=$((clean+1))
-    if (( clean >= 6 && cap < MAX && cells >= cap )); then
-      cap=$((cap+1)); echo "$cap" > "$CONC_FILE"; clean=0
-    fi
   fi
   echo "$(date '+%m-%d %H:%M:%S') tick cap=$cap max=$MAX cells=$cells new_timeouts=$dto clean_windows=$clean" >> "$LOG"
   n=0; for s in $(ls bench_4hop154/_split); do [[ -f "outputs/g56a-default-codex-$s/gpt-5.6-sol/4-hop/$s/result.json" ]] && n=$((n+1)); done
