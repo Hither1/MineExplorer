@@ -68,11 +68,17 @@ while true; do
     (( cap > MIN )) && { cap=$((cap-1)); echo "$cap" > "$CONC_FILE"; }
   else
     # dto 1-3 is the protocol's tolerated trickle (c4h defines a ceiling hit as
-    # "one ceiling then a default action"); reacting to it walked the cap to 3
-    # while 6 cells ran clean-ish all afternoon. No climb branch: the day's
-    # evidence is fixed (5 clean, 6 trickle, 7 burns), adaptivity only bought
-    # oscillation, and a raise is a human decision now.
+    # "one ceiling then a default action"). Climb is slow and earns back the
+    # ratchet one level per 2h of fully-clean windows, ceiling 6: the morning's
+    # "5-6 clean" was ramp-in optimism (cells at early steps carry few frames),
+    # so capacity is a function of how many FULL-WINDOW cells run and the honest
+    # steady-state sits near 4-5; asymmetric control (instant down, 2h up) probes
+    # that boundary at ~one bad window per 2h worst case.
     clean=$((clean+1))
+    if (( clean >= 12 && cap < 6 )); then
+      cap=$((cap+1)); (( MAX < cap )) && MAX=$cap
+      echo "$cap" > "$CONC_FILE"; clean=0
+    fi
   fi
   echo "$(date '+%m-%d %H:%M:%S') tick cap=$cap max=$MAX cells=$cells new_timeouts=$dto clean_windows=$clean" >> "$LOG"
   n=0; for s in $(ls bench_4hop154/_split); do [[ -f "outputs/g56a-default-codex-$s/gpt-5.6-sol/4-hop/$s/result.json" ]] && n=$((n+1)); done
