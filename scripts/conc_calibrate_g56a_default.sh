@@ -18,7 +18,7 @@ cd "$ROOT"
 CONC_FILE=${CONC_FILE:-outputs/g56a-conc-default.txt}
 LOG=outputs/log-g56a-conc-default.txt
 STATE=outputs/.conc-calib-state
-MIN=2; MAX=8
+MIN=2; MAX=6   # 6 measured clean for an hour on 08-23; 7 burned twice (30/33 timeouts per window)
 mkdir -p "$STATE"
 cap=$(cat "$CONC_FILE" 2>/dev/null | tr -d '[:space:]'); [[ "$cap" =~ ^[0-9]+$ ]] || cap=4
 echo "$cap" > "$CONC_FILE"
@@ -41,9 +41,27 @@ while true; do
   dto=$(count_new)
   cells=$(pgrep -u ruihan -f "eval_benchmar[k]" | while read -r p; do tr '\0' ' ' < /proc/$p/cmdline 2>/dev/null; echo; done | grep -c "g56a-default-codex" || true)
   if (( dto >= 10 )); then
-    clean=0; MAX=$((cap - 1)); (( MAX < MIN )) && MAX=$MIN
-    cap=$((cap - 2)); (( cap < MIN )) && cap=$MIN
+    # The causal variable is concurrent CELLS, not the cap: the cap only gates
+    # new launches, so after a burn the excess cells would otherwise keep
+    # burning ~30 timeouts per window for the hours they take to drain
+    # (measured 10:25-10:42). Ratchet below the burning cell count and trim
+    # the youngest cells (least sunk work; their scenes rerun in the mop-up).
+    clean=0; MAX=$((cells - 1)); (( MAX < MIN )) && MAX=$MIN
+    cap=$MAX; (( cap < MIN )) && cap=$MIN
     echo "$cap" > "$CONC_FILE"
+    while (( cells > MAX )); do
+      young=$(for pid in $(pgrep -u ruihan -f "eval_benchmar[k]"); do
+        cmd=$(tr "\0" " " < /proc/$pid/cmdline 2>/dev/null)
+        [[ "$cmd" == *g56a-default-codex* ]] || continue
+        et=$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d " "); echo "${et:-0} $pid $cmd"
+      done | sort -n | head -1)
+      [[ -z "$young" ]] && break
+      ypid=$(echo "$young" | awk "{print \$2}")
+      yscene=$(echo "$young" | grep -oE "_split/[0-9]+" | cut -d/ -f2)
+      kill "$ypid" 2>/dev/null
+      echo "$(date '+%m-%d %H:%M:%S') trimmed cell $yscene (pid $ypid, youngest) to enforce cells<=$MAX" >> "$LOG"
+      cells=$((cells-1)); sleep 2
+    done
   elif (( dto > 0 )); then
     clean=0
     (( cap > MIN )) && { cap=$((cap-1)); echo "$cap" > "$CONC_FILE"; }
