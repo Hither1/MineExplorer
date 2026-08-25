@@ -37,7 +37,8 @@ from mc_agent.worldmodel.discipline import Discipline
 from mc_agent.worldmodel.hypotheses import CycleError, HypothesisGraph
 from mc_agent.worldmodel.memory import MultimodalMemory
 from mc_agent.worldmodel.milestones import (
-    MilestoneLedger, hotbar_line, inventory_counts, location, vitals,
+    MilestoneLedger, gui_open, held_line, hotbar_line, inventory_counts, location,
+    vitals,
 )
 from mc_agent.worldmodel.procedures import act as mk_act, bearing, noop
 
@@ -104,6 +105,7 @@ class WorldModelCore:
         self._cur_inv: dict[str, int] = {}
         self._entry_start_inv: dict[str, int] = {}
         self._last_health: float | None = None
+        self._gui_open = False
         self._log_breaks = 0.0
         self._other_breaks = 0.0
         self._last_break_item = ""
@@ -208,6 +210,7 @@ class WorldModelCore:
                     self._last_break_item = s["item"]
 
         pos = location(info)
+        self._gui_open = gui_open(info)
         hp_raw = info.get("health")
         try:
             hp = float(hp_raw) if hp_raw is not None else None
@@ -609,7 +612,9 @@ class WorldModelCore:
             f"[STATE] {pos_line}\n"
             f"Vitals: {vitals(info)}\n"
             f"Inventory: {inv_line}\n"
-            f"Hotbar: {hotbar_line(info)}\n\n"
+            f"Hotbar: {hotbar_line(info)}\n"
+            f"Held: {held_line(info)}\n"
+            f"GUI open: {gui_open(info)}\n\n"
             f"Your compiled world model:\n{wm}\n\n"
             f"Your hypothesis graph (a view):\n"
             f"{self.graph.to_prompt_summary(12, self.discipline.flags(self.step)) or '(empty)'}\n\n"
@@ -632,6 +637,10 @@ class WorldModelCore:
             verified=f"{len(self.ledger.achieved)}/{len(self.ledger.cfg)} verified",
             events=self._pending_events,
             inventory_delta=self._inventory_delta(),
+            # The [GUI] feedback line, present on this sandbox (isGuiOpen verified by
+            # probe): a grep over the log can tell whether a toggle actually opened a
+            # screen, without which every GUI attempt is re-tested by hand.
+            gui_open=self._gui_open,
         )
         self._pending_events = []
 

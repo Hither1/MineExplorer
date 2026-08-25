@@ -224,6 +224,39 @@ def hotbar_line(info: dict) -> str:
     return ", ".join(parts) or "empty"
 
 
+def held_line(info: dict) -> str:
+    """The mainhand item with its remaining durability, from `equipped_items`.
+
+    Verified present on this sandbox (probe 2026-08-26). MCU's lesson: a tool that
+    breaks mid-task with no reserve is a post-mortem; "N uses left" is a deadline a
+    replacement can be planned against."""
+    eq = info.get("equipped_items")
+    hand = eq.get("mainhand") if isinstance(eq, dict) else None
+    if not isinstance(hand, dict):
+        return "unknown"
+    name = str(hand.get("type") or "none")
+    if name in ("none", "air"):
+        return "empty hand"
+
+    def _int(v):
+        try:
+            return int(_num(v))
+        except (TypeError, ValueError):
+            return None
+
+    dmg, mx = _int(hand.get("damage")), _int(hand.get("maxDamage"))
+    if dmg is None or mx is None or mx <= 0:
+        return name
+    left = mx - dmg
+    warn = " -- NEARLY BROKEN" if left <= 12 else ""
+    return f"{name} ({left}/{mx} uses left{warn})"
+
+
+def gui_open(info: dict) -> bool:
+    """The server reports both spellings; either one set means a screen is up."""
+    return bool(info.get("isGuiOpen", info.get("is_gui_open", False)))
+
+
 def vitals(info: dict) -> str:
     """Health and food, when the server reports them; silent degradation otherwise."""
     bits = []
