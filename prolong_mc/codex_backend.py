@@ -309,11 +309,29 @@ def is_overflow(name: str, text: str) -> bool:
 #                           vision-on-demand instead of the forced-vision arm it claims.
 _ROLLOUT_VIEW_IMAGE = re.compile(r"view_image")
 _ROLLOUT_ATTACH_FAIL = re.compile(r"could not read the local image", re.I)
+# Broken out by kind, because the aggregate is actively misleading: on MCU's dm4_wm the
+# two `apply_patch verification failed` variants were 4 and 135 occurrences and have
+# nothing to do with each other, and counting them together turned a 4-event induction
+# bug into a claimed "67% of act turns". Whatever is added here, keep it separated.
+#
+#   patch_stale_target   an *update* for a file the harness unlinked at the start of the
+#                        turn -- `actions.json` in almost every case. The model retries as
+#                        a create and succeeds, so nothing is lost but ~9 s a turn.
+#   patch_dup_target     two operations on one path in one patch; codex rejects the lot.
+#   attach_miss          the model asked to view an image that is not there.
+_ROLLOUT_TOOL_ERROR = re.compile(r"Script error:")
+_ROLLOUT_PATCH_STALE = re.compile(r"apply_patch verification failed: Failed to read")
+_ROLLOUT_PATCH_DUP = re.compile(r"apply_patch verification failed: invalid patch: "
+                                r"multiple operations target")
+_ROLLOUT_ATTACH_MISS = re.compile(r"unable to locate image at")
 
 
 def scan_rollout(path: Path) -> dict[str, int]:
-    """Count what the transcripts cannot show: nested vision calls and failed attachments."""
-    out = {"view_image_calls": 0, "image_attach_failures": 0}
+    """Count what the transcripts cannot show: nested vision calls, failed attachments,
+    and tool errors the model absorbed inside its turn."""
+    out = {"view_image_calls": 0, "image_attach_failures": 0, "tool_errors": 0,
+           "patch_stale_target": 0, "patch_dup_target": 0, "attach_miss": 0,
+           "turns_with_tool_error": 0}
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -330,6 +348,13 @@ def scan_rollout(path: Path) -> dict[str, int]:
             out["view_image_calls"] += 1
         if _ROLLOUT_ATTACH_FAIL.search(line):
             out["image_attach_failures"] += 1
+        out["tool_errors"] += len(_ROLLOUT_TOOL_ERROR.findall(line))
+        out["patch_stale_target"] += len(_ROLLOUT_PATCH_STALE.findall(line))
+        out["patch_dup_target"] += len(_ROLLOUT_PATCH_DUP.findall(line))
+        out["attach_miss"] += len(_ROLLOUT_ATTACH_MISS.findall(line))
+    # One rollout is one turn under CODEX_SESSION_MAX_TURNS=1, so this is the rate that
+    # matters: a turn that lost an attempt, however often the text echoes inside it.
+    out["turns_with_tool_error"] = 1 if out["tool_errors"] else 0
     return out
 
 
@@ -450,6 +475,18 @@ class CodexTurn:
         # carry them. See scan_rollout.
         self.view_image_calls = 0
         self.image_attach_failures = 0
+        # Per-rollout scan results, refreshed only when a file's mtime moves. Under
+        # CODEX_SESSION_MAX_TURNS=1 an episode leaves one rollout per turn, so rescanning
+        # every file on each audit would re-read the whole session store every time.
+        self._rollout_counts: dict[Path, dict[str, int]] = {}
+        self._rollout_mtimes: dict[Path, int] = {}
+        # Fixed once the first rollout is located, so the audit can never wander into
+        # another arm's home partway through an episode.
+        self._sessions_root: Path | None = None
+        self._rollouts_scanned = 0
+        self._tool_error_counts = {
+            "tool_errors": 0, "patch_stale_target": 0, "patch_dup_target": 0,
+            "attach_miss": 0, "turns_with_tool_error": 0}
         self.overflow_resets = 0
         # Upstream discards the session on ANY unclean ending -- "timed out ...
         # clearing session", "empty response ... clearing session" -- never resuming
@@ -760,15 +797,40 @@ class CodexTurn:
         reporting itself as the forced-vision arm.
         """
         rollout = find_rollout(self.codex_home, self.workspace, self.session_id)
-        if rollout is not None:
-            counts = scan_rollout(rollout)
+        if rollout is not None and self._sessions_root is None:
+            # .../sessions/YYYY/MM/DD/rollout-*.jsonl
+            self._sessions_root = rollout.parents[3]
+        # Every rollout this arm has written, not just the current session's. A session
+        # used to be the whole episode, so one file was the whole audit; under
+        # CODEX_SESSION_MAX_TURNS=1 it is one turn out of dozens, and the single-file
+        # read reported `view_image_calls=0` against rollouts holding the calls while
+        # `image_attach_failures` -- the check that the arm really ran forced vision --
+        # covered a single turn (MCU dab9698, the same break under `--session-turns 1`).
+        found = (sorted(self._sessions_root.glob("*/*/*/rollout-*.jsonl"))
+                 if self._sessions_root else ([rollout] if rollout else []))
+        for path in found:
+            try:
+                mtime = path.stat().st_mtime_ns
+            except OSError:
+                continue
+            if self._rollout_mtimes.get(path) != mtime:
+                self._rollout_counts[path] = scan_rollout(path)
+                self._rollout_mtimes[path] = mtime
+        if found:
+            counts = {k: sum(c.get(k, 0) for c in self._rollout_counts.values())
+                      for k in ("view_image_calls", "image_attach_failures",
+                                "tool_errors", "patch_stale_target", "patch_dup_target",
+                                "attach_miss", "turns_with_tool_error")}
             self.view_image_calls = counts["view_image_calls"]
             self.image_attach_failures = counts["image_attach_failures"]
+            self._tool_error_counts = counts
+            self._rollouts_scanned = len(found)
             if self.image_attach_failures:
                 logger.error(
                     f"[codex] {self.image_attach_failures} attachment(s) never reached "
-                    f"the model (\"could not read the local image\" in {rollout}); this "
-                    f"episode ran vision-on-demand, not forced vision"
+                    f"the model (\"could not read the local image\" under "
+                    f"{self._sessions_root or rollout}); this episode ran "
+                    f"vision-on-demand, not forced vision"
                 )
         elif self.images_attached:
             logger.warning(
@@ -779,7 +841,19 @@ class CodexTurn:
             "frames_attached": self.images_attached,
             "view_image_calls": self.view_image_calls,
             "image_attach_failures": self.image_attach_failures,
-            "vision_audit_source": str(rollout) if rollout else None,
+            "vision_audit_source": str(self._sessions_root or rollout)
+                                   if (self._sessions_root or rollout) else None,
+            "rollouts_scanned": self._rollouts_scanned,
+            # Tool calls the model got an error back from and recovered inside its turn.
+            # Invisible to the event stream and therefore to every other counter here.
+            # Compare `turns_with_tool_error / rollouts_scanned` between arms: on MCU's
+            # dm4 it was 5% for PRO-LONG against 77% for the world model, ~9 s a turn,
+            # which a comparison would otherwise charge to the method.
+            "tool_errors": self._tool_error_counts["tool_errors"],
+            "patch_stale_target": self._tool_error_counts["patch_stale_target"],
+            "patch_dup_target": self._tool_error_counts["patch_dup_target"],
+            "attach_miss": self._tool_error_counts["attach_miss"],
+            "turns_with_tool_error": self._tool_error_counts["turns_with_tool_error"],
         }
 
     @staticmethod
