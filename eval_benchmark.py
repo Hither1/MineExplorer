@@ -27,7 +27,7 @@ from mc_agent import (
 )
 from mc_agent.context import PROMPT_LAYOUTS, RESPONSE_STYLES, default_reply_schema
 
-AGENT_MODES = ("default", "hypothesis", "prolong")
+AGENT_MODES = ("default", "hypothesis", "prolong", "worldmodel")
 
 FRAME_BUFFER_SIZE = 20
 # --prompt-layout append-only: the frame buffer grows by one frame per step and is rebased
@@ -49,12 +49,17 @@ app = typer.Typer(help="Evaluate benchmark scenarios")
 class MineRLBenchmarkEnv(MineRLSandboxEnv):
     """MineRLSandboxEnv that builds the scene from a benchmark metadata.json."""
 
-    def __init__(self, metadata_path: str, use_friday: bool = False):
+    def __init__(self, metadata_path: str, use_friday: bool = False,
+                 obs_size: list[int] | None = None):
         meta_path = Path(metadata_path)
         if not meta_path.exists():
             raise FileNotFoundError(f"Metadata not found: {meta_path}")
         with open(meta_path, "r", encoding="utf-8") as f:
             self._metadata = json.load(f)
+        # The screenshot resolution the server renders observations at. 128x128 is the
+        # protocol every existing arm ran under; the worldmodel arm asks for the full
+        # 640x360 render because its memory mechanism files frames away to be re-read.
+        self._obs_size = list(obs_size) if obs_size else [128, 128]
         self._parse_metadata()
         super().__init__(env_id=self._scene_name, use_friday=use_friday)
 
@@ -66,10 +71,11 @@ class MineRLBenchmarkEnv(MineRLSandboxEnv):
         logger.info(f"[BenchmarkEnv] task: {self._task_text[:100]}")
 
     def _init_remote_env(self) -> None:
-        logger.info(f"Sending /create_env with {len(self._commands_list)} commands...")
+        logger.info(f"Sending /create_env with {len(self._commands_list)} commands "
+                    f"(obs_size={self._obs_size})...")
         response = self.create_env(
             env='MinecraftSim',
-            obs_size=[128, 128],
+            obs_size=self._obs_size,
             render_size=[640, 360],
             seed=0,
             record=False,
@@ -261,22 +267,22 @@ def _run_benchmark(
         raise ValueError(f"agent_mode must be one of {AGENT_MODES}, got {agent_mode!r}")
     if prompt_layout not in PROMPT_LAYOUTS:
         raise ValueError(f"prompt_layout must be one of {PROMPT_LAYOUTS}, got {prompt_layout!r}")
-    if agent_mode == "prolong" and prompt_layout != "legacy":
+    if agent_mode in ("prolong", "worldmodel") and prompt_layout != "legacy":
         # PRO-LONG builds its own prompt (prolong_mc); the layouts describe the default and
         # hypothesis agents' request only.
-        raise ValueError("--prompt-layout applies to --agent-mode default/hypothesis, not prolong")
+        raise ValueError(f"--prompt-layout applies to --agent-mode default/hypothesis, not {agent_mode}")
     if response_style not in RESPONSE_STYLES:
         raise ValueError(f"response_style must be one of {RESPONSE_STYLES}, got {response_style!r}")
-    if agent_mode == "prolong" and response_style != "full":
-        raise ValueError("--response-style applies to --agent-mode default/hypothesis, not prolong")
+    if agent_mode in ("prolong", "worldmodel") and response_style != "full":
+        raise ValueError(f"--response-style applies to --agent-mode default/hypothesis, not {agent_mode}")
     if codex_output_schema and not use_codex:
         # It is a codex CLI flag; the direct channel already gets valid JSON every time.
         raise ValueError("--codex-output-schema applies to --use-codex runs only")
-    if codex_output_schema and agent_mode == "prolong":
+    if codex_output_schema and agent_mode in ("prolong", "worldmodel"):
         # PRO-LONG's reply is its own contract (prolong_mc writes the analyzer's format and
         # parses it), and it logged zero parse failures on the c4h campaign. Constraining it
         # would change the method's output surface for no measured gain.
-        raise ValueError("--codex-output-schema applies to --agent-mode default/hypothesis, not prolong")
+        raise ValueError(f"--codex-output-schema applies to --agent-mode default/hypothesis, not {agent_mode}")
 
     meta_path = Path(metadata_path)
     with open(meta_path, "r", encoding="utf-8") as f:
@@ -296,7 +302,19 @@ def _run_benchmark(
     else:
         checker = MilestoneChecker([])
 
-    _base_env = MineRLBenchmarkEnv(metadata_path=metadata_path, use_friday=use_friday)
+    # The worldmodel arm's memory files frames away to be re-read, so it asks the server
+    # for the full 640x360 render as its observation; every other arm keeps the 128x128
+    # protocol its finished runs were produced under. WM_OBS_SIZE=WxH overrides.
+    _wm_obs: Optional[list] = None
+    if agent_mode == "worldmodel":
+        try:
+            _wm_obs = [int(v) for v in os.environ.get("WM_OBS_SIZE", "640x360").split("x")]
+            assert len(_wm_obs) == 2
+        except (ValueError, AssertionError):
+            logger.warning(f"bad WM_OBS_SIZE={os.environ.get('WM_OBS_SIZE')!r}; using 640x360")
+            _wm_obs = [640, 360]
+    _base_env = MineRLBenchmarkEnv(metadata_path=metadata_path, use_friday=use_friday,
+                                   obs_size=_wm_obs)
     if use_codex:
         # Every call's prompt and event stream lands under the scene's own output
         # directory, so a Codex run is inspectable the same way episode.mp4 is.
@@ -342,6 +360,26 @@ def _run_benchmark(
             # arm C, not a differently worded arm B.
             log_window=prolong_log_window,
             stateless=prolong_stateless,
+        )
+    elif agent_mode == "worldmodel":
+        # Same env, same loop, same scorer as the baseline; the memory architecture is
+        # the dual-turn act/induction loop ported from MCU-AgentBeats. Codex is the
+        # model channel (the mechanism is a workspace the model greps and writes).
+        from mc_agent.worldmodel_agent import WorldModelAgent
+        agent = WorldModelAgent(
+            action_space=MinerRLActionSpace(),
+            provider=_provider,
+            model=model,
+            workspace=output_dir / "worldmodel_workspace",
+            # The scene's milestone spec, for the checklist the prompt renders; the
+            # per-step verification bits arrive via _agent_extra["milestones"].
+            milestones_spec=list(getattr(checker, "_milestones", [])),
+            transcript_dir=output_dir / "codex_turns",
+            reasoning_effort=codex_effort,
+            base_url=codex_base_url or None,
+            codex_home=os.environ.get("CODEX_HOME"),
+            induction_every=int(os.environ.get("WM_INDUCTION_EVERY", "60")),
+            max_steps=max_steps,
         )
     elif agent_mode == "hypothesis":
         agent = HypothesisAgent(
@@ -469,6 +507,10 @@ def _run_benchmark(
 
         step_error: Optional[str] = None
         step = -1
+        # The checker's latest verdicts, handed to the worldmodel agent each step as its
+        # ledger's only verification source. Empty until the first post-step check runs
+        # (nothing is verified at step 0 by construction).
+        milestone_status: List[dict] = []
 
         for step in range(max_steps):
             if _shutdown_requested:
@@ -482,7 +524,14 @@ def _run_benchmark(
             try:
                 # ProlongAgent writes its own [STATE] lines, so it needs the raw
                 # info the hints are derived from; the other agents do not accept it.
-                _agent_extra = {"info": info} if agent_mode == "prolong" else {}
+                # WorldModelAgent additionally receives the checker's status list --
+                # its ledger never re-scores the scene itself.
+                if agent_mode == "prolong":
+                    _agent_extra = {"info": info}
+                elif agent_mode == "worldmodel":
+                    _agent_extra = {"info": info, "milestones": milestone_status}
+                else:
+                    _agent_extra = {}
                 thought, action, memory_update = agent.get_action(
                     list(frame_buffer), list(thought_history), list(action_history), step + 1,
                     long_term_memory=long_term_memory,
