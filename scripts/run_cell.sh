@@ -72,6 +72,15 @@ if [[ "$CHANNEL" == "codex" && "$AGENT_MODE" != "prolong" ]]; then
   export CODEX_EPISODE_HOME="$ROOT/$OUT/codex_home"
 fi
 
+# Outer isolation layer, ported from MCU-AgentBeats: a per-arm stub home so that any
+# codex call that does fall back to the PATH wrapper (CODEX_BIN unset in a subprocess,
+# an ad-hoc probe run from this environment) lands in an isolated home with empty
+# AGENTS.md/skills stubs and its own sqlite thread store, instead of the account
+# runtime-home. The sandboxed calls above bypass the wrapper and are not affected;
+# this closes the paths around them. See scripts/codex-home.sh for the four measured
+# failure modes it prevents.
+eval "$(scripts/codex-home.sh "$AGENT_MODE-$CHANNEL")"
+
 export LOCAL_API_KEY=EMPTY
 export CODEX_MODEL_CONTEXT_WINDOW=131072
 export CODEX_LOCAL_EFFORT=none          # thinking off on the codex channel
