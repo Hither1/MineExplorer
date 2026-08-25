@@ -545,7 +545,15 @@ class CodexTurn:
             args.append("-")
         return args
 
-    def run(self, prompt: str, images: Sequence[Path] = ()) -> dict[str, Any]:
+    #: Files a turn may produce, cleared before it starts so a stale one is never read
+    #: as this turn's output. The last two are the world-model agent's optional side
+    #: channels (mc_agent/worldmodel); the prolong arm never writes them, and clearing
+    #: a file that is never there does not change that arm.
+    TURN_ARTEFACTS = ("actions.json", "last_message.txt",
+                      "hypotheses_ops.json", "claim.json")
+
+    def run(self, prompt: str, images: Sequence[Path] = (), *,
+            expect_actions: bool = True) -> dict[str, Any]:
         """Execute one turn. Returns {"actions_json", "message", "ok", "error"}.
 
         `images` are attached to this turn's prompt unconditionally -- on the resume
@@ -553,6 +561,12 @@ class CodexTurn:
         full observation as text; here the observation is pixels, so attaching the
         current frame is what keeps the analyzer as informed as upstream's is, and as
         informed as the baseline agent it is compared against.
+
+        `expect_actions=False` is the world-model induction pass: it rewrites documents
+        and by design writes no actions.json, so the missing file is not warned about.
+        A call that produced neither actions nor a message is still treated as silence
+        (and cold-starts the session) -- a pass that emitted nothing at all failed the
+        same way whichever kind of turn it was.
         """
         self.calls += 1
         if (
@@ -564,7 +578,7 @@ class CodexTurn:
                 f"reached {self.session_turns} turns, cap {self.session_max_turns}",
                 "age_resets",
             )
-        for stale in ("actions.json", "last_message.txt"):
+        for stale in self.TURN_ARTEFACTS:
             (self.workspace / stale).unlink(missing_ok=True)
 
         env = os.environ.copy()
@@ -692,10 +706,11 @@ class CodexTurn:
         message = message_path.read_text(encoding="utf-8").strip() if message_path.exists() else ""
 
         if actions_json is None:
-            logger.warning(
-                f"[codex] turn {self.calls} wrote no actions.json (rc={proc.returncode}); "
-                f"{errors[-1] if errors else proc.stderr.strip()[:200]}"
-            )
+            if expect_actions:
+                logger.warning(
+                    f"[codex] turn {self.calls} wrote no actions.json (rc={proc.returncode}); "
+                    f"{errors[-1] if errors else proc.stderr.strip()[:200]}"
+                )
             if not message and self.session_id:
                 # Upstream: "empty response from codex — clearing session". No
                 # actions.json AND no agent message means the call produced nothing;
@@ -709,6 +724,33 @@ class CodexTurn:
             "error": errors[-1] if errors else None,
             "overflow": overflowed,
         }
+
+    def read_outputs(self) -> dict[str, Any]:
+        """Collect the optional per-turn side channels the world-model agent reads.
+
+        `hypotheses_ops.json` (belief-graph mutations) and `claim.json` (completion
+        assertions) are parsed and CONSUMED -- deleted once read, so a file that fails
+        to parse this turn cannot be silently re-read as next turn's output. Parse
+        failures are returned as errors for the agent to surface as [NOTE]s rather than
+        raised: a malformed belief op must not cost the turn's actions.
+        """
+        out: dict[str, Any] = {"hypotheses_ops": None, "claim": None, "errors": []}
+        for key, fname in (("hypotheses_ops", "hypotheses_ops.json"),
+                           ("claim", "claim.json")):
+            path = self.workspace / fname
+            if not path.exists():
+                continue
+            try:
+                parsed = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(parsed, dict):
+                    out[key] = parsed
+                else:
+                    out["errors"].append(f"{fname} must be a JSON object, got "
+                                         f"{type(parsed).__name__}; ignored")
+            except Exception as e:
+                out["errors"].append(f"{fname} did not parse and was ignored: {e}")
+            path.unlink(missing_ok=True)
+        return out
 
     def vision_audit(self) -> dict[str, Any]:
         """What the model actually saw, read from the rollout rather than the events.
