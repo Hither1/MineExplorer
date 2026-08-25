@@ -290,6 +290,50 @@ def test_induction_cadence():
         check("queue survives induction (walk resumed)", core.step == 25)
 
 
+def test_dead_channel_breaker():
+    print("[dead-channel circuit breaker]")
+    with tempfile.TemporaryDirectory() as td:
+        core, codex = make_core(Path(td), induction_every=10)
+        codex.script = []          # every call fails: the dead-credential shape
+        core.start(_info(), None)
+        for s in range(1, 61):
+            core.observe(_info(), s, None)
+            a = core.next_action(_info())
+            check_quiet = a  # noop expected; not asserted per-step
+        # Unbounded, 60 dead steps would cost 60 steps x 2 turns x 3 retries = 360
+        # calls (run 1 measured 1,162 over ~160 steps). The breaker caps it near
+        # one probe burst per 20-step cooldown.
+        check("dead channel calls bounded", codex.calls < 40, codex.calls)
+        check("cooldowns engaged", core.stats.get("model_cooldowns", 0) >= 2,
+              core.stats.get("model_cooldowns"))
+        check("inductions suppressed while cooling", codex.induction_calls <= 2,
+              codex.induction_calls)
+
+
+def test_presatisfied():
+    print("[presatisfied milestones]")
+    from mc_agent.worldmodel.milestones import MilestoneLedger
+    led = MilestoneLedger(SPEC)
+    led.reset({})
+    led.set_presatisfied({"m1"})
+    fired = led.update({"milestones": {"m1": 1, "m2": 0}}, step=2)
+    check("presatisfied never banked", not fired and not led.is_verified("m1"))
+    check("all_done ignores presatisfied", not led.all_done()
+          and led.num_trackable() == 1)
+    led.update({"milestones": {"m1": 1, "m2": 1}}, step=5)
+    check("creditable set alone completes", led.all_done())
+    check("checklist marks no-credit", "[~] m1" in led.progress_block()
+          and "NO credit" in led.progress_block())
+    # Late blocklist rescinds an already-banked milestone (bits can arrive one
+    # step before the harness hands the set over).
+    led2 = MilestoneLedger(SPEC)
+    led2.reset({})
+    led2.update({"milestones": {"m1": 1, "m2": 0}}, step=1)
+    check("banked before blocklist", led2.is_verified("m1"))
+    led2.set_presatisfied({"m1"})
+    check("blocklist rescinds it", not led2.is_verified("m1"))
+
+
 def test_memory_layout():
     print("[memory layout]")
     with tempfile.TemporaryDirectory() as td:
@@ -348,6 +392,8 @@ def main() -> int:
     test_milestone_flush_and_esc()
     test_claim_and_ops_channels()
     test_induction_cadence()
+    test_dead_channel_breaker()
+    test_presatisfied()
     test_memory_layout()
     test_adapter()
     print(f"\n{CHECKS} checks, {len(FAILS)} failures")

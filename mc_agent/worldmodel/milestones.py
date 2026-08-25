@@ -49,9 +49,25 @@ class MilestoneLedger:
         # the ESC gate would hold an episode open the harness would happily end.
         self.trackable = {ident: bool(c.get("rules"))
                           for ident, c in zip(self.order, self.cfg)}
+        # Milestones already satisfied at spawn. The harness blocklists them from the
+        # final score ("will NOT be counted as completed") while the checker's own
+        # completed bit keeps latching True -- so without this set the ledger would
+        # tell the agent a hop is banked that the scorer will never credit (measured:
+        # smoke run 1 prompted "2/4 verified" against a final score of 1). They are
+        # excluded from verification and from all_done, exactly like no-rule entries.
+        self.presatisfied: set[str] = set()
         self.achieved: dict[str, int] = {}       # identity -> step first achieved
         self._prev_stats: dict[tuple[str, str], float] = {}
         self._warned_unpublished = False
+
+    def set_presatisfied(self, idents) -> None:
+        self.presatisfied = {str(i) for i in (idents or [])} & set(self.order)
+        # Anything already credited before the blocklist arrived is rescinded --
+        # the first get_action can see a verified bit one step before the harness
+        # hands the blocklist over.
+        for ident in list(self.achieved):
+            if ident in self.presatisfied:
+                del self.achieved[ident]
 
     def reset(self, info: dict) -> None:
         self.achieved = {}
@@ -71,7 +87,8 @@ class MilestoneLedger:
             return []
         fired = []
         for ident in self.order:
-            if ident in self.achieved or ident not in published:
+            if ident in self.achieved or ident not in published \
+                    or ident in self.presatisfied:
                 continue
             try:
                 hit = int(published[ident]) == 1
@@ -122,19 +139,23 @@ class MilestoneLedger:
     def is_verified(self, identity: str) -> bool:
         return identity in self.achieved
 
+    def _creditable(self, ident: str) -> bool:
+        return bool(self.trackable.get(ident)) and ident not in self.presatisfied
+
     def num_trackable(self) -> int:
-        return sum(1 for v in self.trackable.values() if v)
+        return sum(1 for i in self.order if self._creditable(i))
 
     def all_done(self) -> bool:
-        """All *trackable* milestones verified -- the checker's own definition."""
+        """All *creditable* milestones verified -- trackable, not presatisfied: the
+        same set the harness scores and gates ESC on."""
         n = self.num_trackable()
         return n > 0 and len(self.achieved) == n
 
     def next_target(self) -> dict[str, Any] | None:
-        """The first unachieved trackable milestone in list order -- the hops are a
+        """The first unachieved creditable milestone in list order -- the hops are a
         dependency chain in these scenes, so the first gap is the working target."""
         for ident in self.order:
-            if self.trackable.get(ident) and ident not in self.achieved:
+            if self._creditable(ident) and ident not in self.achieved:
                 return {"identity": ident, "task": self._task.get(ident, "")}
         return None
 
@@ -157,6 +178,9 @@ class MilestoneLedger:
             if not self.trackable.get(ident):
                 lines.append(f"  [?] {ident} (not machine-verifiable; do it, but it "
                              f"cannot be checked) {task}")
+            elif ident in self.presatisfied:
+                lines.append(f"  [~] {ident} (already satisfied at spawn -- carries "
+                             f"NO credit; spend no steps on it) {task}")
             elif ident in self.achieved:
                 lines.append(f"  [x] {ident} (step {self.achieved[ident]}) {task}")
             else:

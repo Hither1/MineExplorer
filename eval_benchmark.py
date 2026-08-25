@@ -529,7 +529,11 @@ def _run_benchmark(
                 if agent_mode == "prolong":
                     _agent_extra = {"info": info}
                 elif agent_mode == "worldmodel":
-                    _agent_extra = {"info": info, "milestones": milestone_status}
+                    # presatisfied rides along because the checker's completed bit
+                    # keeps latching True for spawn-satisfied milestones the final
+                    # score will never credit; the agent's ledger must not bank them.
+                    _agent_extra = {"info": info, "milestones": milestone_status,
+                                    "presatisfied": _presatisfied_ids}
                 else:
                     _agent_extra = {}
                 thought, action, memory_update = agent.get_action(

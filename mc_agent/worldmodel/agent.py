@@ -117,6 +117,14 @@ class WorldModelCore:
         # trigger below fires on a stall.
         self._stall_turns = 0
         self._progress_marker: tuple | None = None
+        # Circuit breaker for a dead model channel. Smoke run 1 measured the failure
+        # mode: the hosted credential vanished mid-run and the loop fired 1,162 codex
+        # invocations in the ~160 dead steps that followed (2 turns x 3 retries per
+        # step, each failing in ~0.2s). Three consecutive failed act turns now buy a
+        # 20-step cooldown in which no model turn (act or induction) is attempted; one
+        # probe per cooldown re-tests the channel.
+        self._consec_act_failures = 0
+        self._act_cooldown_until = 0
         self.turns = {"act": 0, "induction": 0, "act_failed": 0, "induction_silent": 0}
         self.stats: dict[str, Any] = {
             "goto_arrived": 0, "chop_early_stops": 0, "esc_blocked": 0,
@@ -292,9 +300,11 @@ class WorldModelCore:
                     action, _ = self.queue.popleft()
                 action = self._gate_esc(action)
                 return action
+            if self.step < self._act_cooldown_until:
+                break               # channel cooling down: no model turn this step
             self._act_turn(info)
-        # Two turns in a row produced nothing usable. A no-op costs one tick and the
-        # next turn sees the [NOTE].
+        # Two turns in a row produced nothing usable (or the channel is cooling
+        # down). A no-op costs one tick and the next turn sees the [NOTE].
         self._entry_index = None
         return noop()
 
@@ -573,8 +583,16 @@ class WorldModelCore:
 
         if not result.get("ok"):
             self.turns["act_failed"] += 1
+            self._consec_act_failures += 1
+            if self._consec_act_failures >= 3:
+                self._act_cooldown_until = self.step + 20
+                self.stats["model_cooldowns"] = self.stats.get("model_cooldowns", 0) + 1
+                logger.warning(
+                    f"[wm] {self._consec_act_failures} consecutive act turns produced "
+                    f"nothing; pausing model turns until step {self._act_cooldown_until}")
             self.memory.add_note("no valid actions.json this turn; one no-op was executed")
             return
+        self._consec_act_failures = 0
         plan = parse_actions(result["actions_json"], entry_cap=self.entry_cap,
                              repeat_cap=self.repeat_cap, step_cap=self.step_cap,
                              info=info)
@@ -707,6 +725,11 @@ class WorldModelCore:
 
     def _due_for_induction(self) -> bool:
         if self.induction_every <= 0:
+            return False
+        if self.step < self._act_cooldown_until:
+            # A dead channel fails induction passes exactly as fast as act turns --
+            # run 1 burned six silent inductions in its dead tail. Postponed, not
+            # skipped: the cadence check below re-fires once the cooldown lifts.
             return False
         if self.step - self._last_induction >= self.induction_every:
             return True

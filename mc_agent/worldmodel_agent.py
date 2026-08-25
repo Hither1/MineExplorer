@@ -172,9 +172,14 @@ class WorldModelAgent:
         movement_hint: str = "",
         info: dict | None = None,
         milestones: list[dict] | None = None,
+        presatisfied: set | None = None,
     ) -> tuple[Any, ...]:
         step = current_step or 0
         info = dict(info or {})
+        if presatisfied:
+            # Constant for the episode; applied before observe so this step's bits
+            # cannot bank a milestone the harness has blocklisted.
+            self.ledger.set_presatisfied(presatisfied)
         bits = _published_bits(milestones)
         if bits is not None:
             # The checker's verdicts, in the shape the ledger consumes. Injected into
