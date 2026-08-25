@@ -78,7 +78,7 @@ LAYOUT_SUFFIX=""
 # and it must keep the bare tag -- otherwise a layout campaign would re-run the arm from
 # scratch (4-54 min a cell) instead of resuming the prolong cells it already has, and would
 # file them under a name saying they ran a layout they cannot run.
-arm_suffix() { [[ "$1" == "prolong" ]] && echo "" || echo "$LAYOUT_SUFFIX"; }
+arm_suffix() { [[ "$1" == "prolong" || "$1" == "worldmodel" ]] && echo "" || echo "$LAYOUT_SUFFIX"; }
 export PROMPT_LAYOUT RESPONSE_STYLE CODEX_OUTPUT_SCHEMA MODEL
 read -r -a servers <<< "$SERVERS"
 
@@ -111,7 +111,10 @@ for cell in "${cells[@]}"; do
     sleep 5
   done
   timeout=$PROLONG_CODEX_TIMEOUT
-  [[ "$channel" == "codex" && "$agent" != "prolong" ]] && timeout=$PROVIDER_CODEX_TIMEOUT
+  # worldmodel owns its prompt and queue like prolong does, and its induction turns are
+  # its longest calls -- it takes the planning-arm ceiling, not the provider policy cap.
+  [[ "$channel" == "codex" && "$agent" != "prolong" && "$agent" != "worldmodel" ]] \
+    && timeout=$PROVIDER_CODEX_TIMEOUT
   echo "[launcher] $(date '+%H:%M:%S') start $tag -> $url (model $MODEL, codex ceiling ${timeout}s)"
   MODEL="$MODEL" VLLM_URL="$url" CODEX_TIMEOUT="$timeout" \
     bash scripts/run_cell.sh "$agent" "$channel" "$SPLIT_ROOT/$scene" "$tag" "$MAX_STEPS" \
