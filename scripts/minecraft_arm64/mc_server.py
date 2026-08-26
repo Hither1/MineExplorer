@@ -7,6 +7,9 @@ to the one `env/minerl_sandbox.py` and `benchmark_gen/sandbox_client.py` speak.
 """
 import base64
 import io
+import os
+import signal
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Tuple
@@ -41,6 +44,69 @@ class EnvSession:
 _sessions: Dict[str, EnvSession] = {}
 
 DEFAULT_SESSION_ID = "default"
+
+#: Reap sessions older than this many seconds. A legitimate episode is
+#: create + reset + 300 steps + close, ~75 min at the worst measured load; a
+#: session past two hours is debris (an errored cell that never closed, or a
+#: close that failed), and its sim object + JVM are what wears this server out.
+SESSION_TTL_S = int(os.getenv("MC_SESSION_TTL", "7200"))
+
+
+def _force_kill_instances(session_id: str, env) -> None:
+    """Best-effort SIGKILL of a session's Minecraft JVM process groups.
+
+    MinecraftInstance._destruct asks the mod to quit over the wire
+    (`_kill_minecraft_via_malmoenv`); a busy JVM ignores it and keeps burning
+    ~2 cores on the server tick loop -- 40 of those wedged this server twice on
+    2026-08-26 (leak measured client-side: 53 javas for 14 live cells). The
+    Popen handle on each instance is authoritative, so kill by pid, process
+    group first (the xvfb-run wrapper tree shares it)."""
+    inner = getattr(env, "env", None)
+    instances = list(getattr(inner, "instances", None) or [])
+    for inst in instances:
+        pid = getattr(getattr(inst, "minecraft_process", None), "pid", None)
+        if not pid:
+            continue
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+            logger.info(f"[{session_id}] force-killed instance pgid of pid={pid}")
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                os.kill(pid, signal.SIGKILL)
+                logger.info(f"[{session_id}] force-killed instance pid={pid}")
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+
+
+def _close_and_reap(session_id: str, session: "EnvSession") -> None:
+    """Graceful close, then make sure the JVMs are actually gone."""
+    try:
+        session.env.close()
+    except Exception as e:
+        logger.warning(f"[{session_id}] env.close() raised ({e}); force-killing")
+    _force_kill_instances(session_id, session.env)
+
+
+def _janitor_loop() -> None:
+    """Reap sessions past SESSION_TTL_S. Leaked sessions -- errored cells that
+    never called close, or closes that failed -- accumulate sim objects, stuck
+    handler threads and JVMs until the server wedges (three times on
+    2026-08-26: fresh at 17:40, alive-endpoint starving by 20:55)."""
+    while True:
+        time.sleep(300)
+        now = time.time()
+        for sid in list(_sessions.keys()):
+            s = _sessions.get(sid)
+            if s is None or now - s.created_at <= SESSION_TTL_S:
+                continue
+            _sessions.pop(sid, None)
+            age_min = int((now - s.created_at) / 60)
+            logger.warning(f"[janitor] session {sid} is {age_min} min old "
+                           f"(TTL {SESSION_TTL_S // 60} min); reaping")
+            _close_and_reap(sid, s)
+
+
+threading.Thread(target=_janitor_loop, daemon=True, name="session-janitor").start()
 
 
 # =========================
@@ -187,10 +253,7 @@ def create_env(req: CreateEnvRequest):
         # 如果 session 已存在，先关闭旧环境
         old_session = _sessions.pop(session_id, None)
         if old_session is not None:
-            try:
-                old_session.env.close()
-            except Exception:
-                pass
+            _close_and_reap(session_id, old_session)
             logger.info(f"[{session_id}] Closed existing env")
 
         callbacks = []
@@ -333,8 +396,8 @@ def close_env(req: SessionRequest = SessionRequest()):
         return ok({"msg": f"session '{session_id}' not found or already closed"})
 
     try:
-        session.env.close()
-        logger.info(f"[{session_id}] env closed")
+        _close_and_reap(session_id, session)
+        logger.info(f"[{session_id}] env closed and reaped")
         return ok({"session_id": session_id})
     except Exception as e:
         logger.exception(f"[{session_id}] close error")
