@@ -7,14 +7,11 @@
   the file to re-enable cells), mineexplorer container stopped, Minecraft JVMs 0, reaper
   stopped (flag + kill). Full mechanism and verification in RUN_LEDGER
   20260827-022200-g56l154-user-stop.
-- **a218 (192.168.2.11), the campaign control host, has sshd DOWN** (verified from a219
-  and by the sibling session; user side reports a218 掉线). Its leftover processes —
-  chain_g56l154, the SIGSTOPped prolong launcher (pid 19205), the default-solo watcher —
-  are INERT (the wm launcher drains against the kill switch; the chain then blocks
-  forever on the frozen prolong launcher; any future watcher launch dies on the switch).
-  When a218's sshd returns, finish the cleanup with one process-group kill each:
-  `kill -- -$(ps -o pgid= -p $(pgrep -f chain_g56l154.sh) | tr -d ' ')` (CONT+KILL the
-  stopped member too) and the same for `g56l_default_solo_after154`.
+- **a218 leftovers CLEANED (02:5x, by the resident session — its Claude runs ON a218 and
+  needed no sshd)**: chain_g56l154, both launchers (SIGCONT+kill for the frozen 19205),
+  the default-solo watcher, and 3 draining eval cells all killed; the session's three
+  monitors (health v4, hang guard, chain watch) stopped. a218's sshd being down remains
+  a host issue for the user, but no campaign process survives anywhere.
 - Background task (this session) parks tonight's error results into
   `outputs/g56l154-failed-20260827/` once the a218 launcher drains.
 - **State at stop**: strict-7 wm 16/28, prolong 15/28, default never ran; g56l154 wm 50
