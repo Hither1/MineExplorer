@@ -23,6 +23,8 @@ whole leg of a hop while the agent still looks at the world several times per ep
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -106,9 +108,47 @@ def _clean_action(raw: dict[str, Any], notes: list[str]) -> dict[str, Any]:
     return a
 
 
+def _expand_custom(name: str, custom_dir: Path | None,
+                   repeat_cap: int) -> tuple[list[dict[str, Any]], str]:
+    """A procedure the model wrote itself: `<custom_dir>/<name>.json`, a list of raw
+    `{"action": {...}, "repeat": N}` entries under key "entries". Built-in names win
+    (this is only consulted when the registry misses); nesting is rejected so a skill
+    cannot recurse. The cap arithmetic downstream is unchanged -- a custom skill pays
+    for its ticks like any hand-written plan, it just does not cost a turn to restate."""
+    if custom_dir is None or not re.fullmatch(r"[A-Za-z0-9_\-]{1,48}", name or ""):
+        return [], ""
+    path = custom_dir / f"{name}.json"
+    if not path.is_file():
+        return [], ""
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        return [], f"custom procedure {name!r} unreadable: {e}"
+    entries = obj.get("entries") if isinstance(obj, dict) else obj
+    if not isinstance(entries, list) or not entries:
+        return [], f"custom procedure {name!r}: expected a non-empty list under 'entries'"
+    out: list[dict[str, Any]] = []
+    for e in entries[:12]:
+        if not isinstance(e, dict) or not isinstance(e.get("action"), dict):
+            return [], (f"custom procedure {name!r}: every entry must be a raw "
+                        f"{{'action': ..., 'repeat': N}} object (no nested procedures)")
+        try:
+            rep = max(1, min(repeat_cap, int(e.get("repeat", 1))))
+        except (TypeError, ValueError):
+            rep = 1
+        notes: list[str] = []
+        cleaned = _clean_action(e["action"], notes)
+        for _ in range(rep):
+            out.append(dict(cleaned))
+    if len(entries) > 12:
+        return out, f"custom procedure {name!r} truncated to its first 12 entries"
+    return out, ""
+
+
 def parse_actions(raw_text: str, *, entry_cap: int = ENTRY_CAP,
                   repeat_cap: int = REPEAT_CAP, step_cap: int = STEP_CAP,
-                  info: dict[str, Any] | None = None) -> ActionPlan:
+                  info: dict[str, Any] | None = None,
+                  custom_dir: Path | None = None) -> ActionPlan:
     """Return the validated plan. An empty plan means the turn produced nothing usable.
 
     The budget is charged in *ticks*, not list entries: a closed-loop marker (`_goto`,
@@ -146,6 +186,10 @@ def parse_actions(raw_text: str, *, entry_cap: int = ENTRY_CAP,
                 notes.append(f"`args` for {name!r} must be an object; ignored")
                 args = {}
             expanded, note = P.expand(name, info=info, **args)
+            if not expanded and note.startswith("unknown procedure"):
+                custom, cnote = _expand_custom(name, custom_dir, repeat_cap)
+                if custom or cnote:
+                    expanded, note = custom, cnote
             if note:
                 # A procedure's own note is the most useful thing the turn produces
                 # when it produces nothing else, so it reaches the log either way.

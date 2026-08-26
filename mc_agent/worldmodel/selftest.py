@@ -140,6 +140,68 @@ def test_actions_contract():
           and any("truncated" in n for n in plan.notes), plan.notes)
 
 
+def test_skills_gui_and_brain():
+    """The post-g56l154 mechanisms: model-written skills execute, GUI toggles flush the
+    stale plan and tighten the caps, and the brain carries induced docs but never
+    templates."""
+    print("[skills, GUI regime, brain]")
+    from mc_agent.worldmodel import actions
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        # -- custom skill: parses, expands, pays ticks; junk is noted, nesting refused
+        pdir = tmp / "procedures"
+        pdir.mkdir()
+        (pdir / "open_and_book.json").write_text(json.dumps({"entries": [
+            {"action": {"use": 1}}, {"action": {"camera": [0, 10]}, "repeat": 2},
+        ]}), encoding="utf-8")
+        plan = actions.parse_actions(json.dumps({"actions": [
+            {"procedure": "open_and_book"}]}), custom_dir=pdir)
+        check("custom skill expands to its ticks", len(plan.steps) == 3,
+              [len(plan.steps), plan.notes])
+        check("custom skill charged as one entry",
+              plan.entries and plan.entries[0].get("steps") == 3, plan.entries)
+        (pdir / "nested.json").write_text(json.dumps({"entries": [
+            {"procedure": "open_and_book"}]}), encoding="utf-8")
+        plan = actions.parse_actions(json.dumps({"actions": [
+            {"procedure": "nested"}]}), custom_dir=pdir)
+        check("nested skill refused with note", not plan.steps
+              and any("raw" in n for n in plan.notes), plan.notes)
+        (pdir / "go_to.json").write_text(json.dumps({"entries": [
+            {"action": {"jump": 1}}]}), encoding="utf-8")
+        plan = actions.parse_actions(json.dumps({"actions": [
+            {"procedure": "go_to", "args": {"x": 1.0, "z": 1.0, "n": 20}}]}),
+            custom_dir=pdir)
+        check("builtin wins over same-named custom",
+              len(plan.steps) == 1 and "_goto" in plan.steps[0], plan.steps[:1])
+
+        # -- GUI toggle: queued plan flushed, forcing a fresh look at the new regime
+        core, codex = make_core(tmp)
+        codex.script = [{"actions": [{"action": {"forward": 1}, "repeat": 10}]}]
+        core.start(_info(), None)
+        core.observe(_info(), 1, None)
+        core.next_action(_info())
+        check("plan queued before toggle", len(core.queue) > 0, len(core.queue))
+        core.observe(_info(isGuiOpen=True), 2, None)
+        check("GUI open flushed the queue", len(core.queue) == 0, len(core.queue))
+        check("flush counted", core.stats.get("gui_plan_flushes") == 1, core.stats)
+
+        # -- brain: induced docs travel, untouched templates do not
+        from mc_agent.worldmodel_agent import _brain_copy
+        ws, brain = tmp / "bws", tmp / "brain"
+        (ws / "world_model").mkdir(parents=True)
+        (ws / "world_model" / "dynamics.md").write_text(
+            "# Dynamics model\n\nGUI cursor drifts.", encoding="utf-8")
+        (ws / "world_model" / "semantic.md").write_text(
+            "# Semantic model\n\n_..._\n\n> Nothing induced yet. ...", encoding="utf-8")
+        (ws / "procedures").mkdir()
+        (ws / "procedures" / "s.json").write_text('{"entries": []}', encoding="utf-8")
+        n = _brain_copy(ws, brain)
+        check("induced doc + skill exported, template filtered", n == 2
+              and (brain / "world_model" / "dynamics.md").exists()
+              and not (brain / "world_model" / "semantic.md").exists()
+              and (brain / "procedures" / "s.json").exists(), n)
+
+
 def test_mining_feedback_loop():
     """The g56l fixes: mine_forward collects its drop, the act prompt carries the last
     ground-truth events, and the revert note tells a misfiled goal where to go."""
@@ -413,6 +475,7 @@ def test_adapter():
 
 def main() -> int:
     test_actions_contract()
+    test_skills_gui_and_brain()
     test_mining_feedback_loop()
     test_goto_marker()
     test_stuck_note()

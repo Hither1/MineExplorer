@@ -28,6 +28,38 @@ from mc_agent.worldmodel.milestones import MilestoneLedger
 from prolong_mc.codex_backend import CodexTurn
 
 
+_BRAIN_DOCS = ("dynamics.md", "semantic.md", "procedural.md")
+
+
+def _brain_copy(src_root: Path, dst_root: Path) -> int:
+    """Carry environment-level knowledge between a workspace and a cross-episode brain
+    directory: the three environment-level world_model docs plus every executable skill
+    in procedures/*.json. spatial/causal (scene-bound) and hypotheses never travel.
+    Writes are tmp+replace so a reader never sees a torn file; the brain is still meant
+    for SERIAL campaigns -- concurrent episodes would race last-writer-wins."""
+    copied = 0
+
+    def _put(src: Path, dst: Path) -> None:
+        nonlocal copied
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dst.with_name(dst.name + ".tmp")
+        tmp.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        tmp.replace(dst)
+        copied += 1
+
+    for name in _BRAIN_DOCS:
+        s = src_root / "world_model" / name
+        # An untouched seed template must not overwrite induced knowledge: a
+        # zero-induction episode exporting its templates would wipe the brain.
+        if s.is_file() and "Nothing induced yet" not in s.read_text(encoding="utf-8"):
+            _put(s, dst_root / "world_model" / name)
+    sdir = src_root / "procedures"
+    if sdir.is_dir():
+        for f in sorted(sdir.glob("*.json")):
+            _put(f, dst_root / "procedures" / f.name)
+    return copied
+
+
 def _published_bits(milestones: list[dict] | None) -> dict[str, int] | None:
     """MilestoneChecker.check's status list as the {milestone_id: 0|1} dict the ledger
     consumes. None (not {}) when the harness sent nothing, so the ledger can tell "no
@@ -64,6 +96,7 @@ class WorldModelAgent:
         per_doc_chars: int = 1200,
         analyzer_retries: int = 3,
         max_steps: int = 300,
+        brain_dir: str | Path | None = None,
     ) -> None:
         self.action_space = action_space
         self.provider = provider          # unused: Codex is the model channel here
@@ -87,6 +120,16 @@ class WorldModelAgent:
             self.workspace.rename(dest)
             logger.warning(f"[wm] found a stale workspace; moved it to {dest}")
         self.workspace.mkdir(parents=True, exist_ok=True)
+
+        # Cross-episode brain: seed the workspace from it BEFORE the core exists, so
+        # the core's seed_world_model only fills the docs the brain did not provide.
+        self.brain_dir = Path(brain_dir).resolve() if brain_dir else None
+        if self.brain_dir:
+            try:
+                n = _brain_copy(self.brain_dir, self.workspace)
+                logger.info(f"[wm] brain seeded from {self.brain_dir}: {n} files")
+            except Exception as e:
+                logger.warning(f"[wm] brain seeding failed (fresh start): {e}")
 
         self.codex = CodexTurn(
             self.workspace,
@@ -140,6 +183,16 @@ class WorldModelAgent:
         """The workspace *is* the state; record what the agent built in it."""
         if self.core is None:
             return
+        # Environment-level knowledge survives the episode whatever its outcome -- a
+        # failed episode's induced dynamics are still true tomorrow. Template docs are
+        # filtered inside _brain_copy, so an episode that never ran induction exports
+        # nothing and cannot regress the brain.
+        if self.brain_dir:
+            try:
+                n = _brain_copy(self.workspace, self.brain_dir)
+                logger.info(f"[wm] brain export to {self.brain_dir}: {n} files")
+            except Exception as e:
+                logger.warning(f"[wm] brain export failed: {e}")
         out = Path(output_dir)
         report = self.core.report()
         # The report must land even when the audit cannot: this runs at episode end,

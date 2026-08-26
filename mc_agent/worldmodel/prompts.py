@@ -37,10 +37,13 @@ A list of at most {entry_cap} entries, totalling at most {step_cap} environment 
 - "forward" / "back", "left" / "right": "left"/"right" STRAFE, they do not turn you.
 - "jump", "sneak", "sprint" (sprint only helps with forward).
 - "inventory": toggle the inventory screen. While ANY screen is open, camera deltas move
-  the MOUSE CURSOR instead of your view and "attack" is a click. There is no cursor
-  measurement in this harness, so screen work is blind and expensive -- prefer acting in
-  the world, and check first whether the item a milestone wants exists in the scene to
-  collect directly.
+  the MOUSE CURSOR instead of your view and "attack" is a click. The cursor mapping is
+  approximate and drifts, so screen work only lands as a closed loop: 1-2 small cursor
+  moves, at most one click, then LOOK at the next frame (the harness tightens your
+  per-turn caps while a GUI is open to force exactly this). For crafting, the recipe
+  book (green toggle left of the grid) is one click on the recipe icon plus one on the
+  output -- always prefer it over placing materials by hand. Still check first whether
+  the item a milestone wants exists in the scene to collect directly.
 - "hotbar.1".."hotbar.9": select a slot (at most one). Select the right tool BEFORE
   attack/use -- "I have it somewhere" does not mine.
 - "drop", "pickItem", "swapHands": exist and are rarely what you want.
@@ -57,6 +60,13 @@ A list of at most {entry_cap} entries, totalling at most {step_cap} environment 
 **Procedures** (prefer these -- they close the loop against ground truth and cover many
 ticks; a plan mixing procedures and raw actions is normal):
 {procedures}
+
+**Your own skills**: a sequence you have gotten to WORK can be saved as
+`procedures/<name>.json` -- `{{"entries": [{{"action": {{...}}, "repeat": N}}, ...]}}`
+(raw actions only, max 12 entries) -- and then called from actions.json like a built-in:
+`{{"procedure": "<name>"}}`. Built-in names win on collision. Save a skill only after
+ground truth confirmed the sequence (an events.jsonl line, an [INV] gain); a saved guess
+replays the guess.
 
 **Milestone shapes in this benchmark**, and the move for each. No shape comes with
 coordinates -- the checklist names things, the world holds them:
@@ -114,8 +124,11 @@ by eye, and reading it by eye is exactly the error this design exists to avoid.
                           compare then with now.
     world_model/          the five documents below -- your compiled understanding.
     hypotheses/           one .md per belief, plus graph.json. Grep before proposing.
-    procedures/           one .md per action sequence you got to work, in enough detail
-                          to replay it. Grep here before solving anything twice.
+    procedures/           your skill library. A .md per sequence you got to work is
+                          notes; a `<name>.json` ({"entries": [...]}, raw actions
+                          only) is EXECUTABLE -- callable from actions.json as
+                          {"procedure": "<name>"}. Grep here before solving anything
+                          twice.
     entities/ locations/  yours to write and organise.
     tools/zoom.py         ./tools/zoom.py <frame.png> <x> <y> <w> <h> [out.png] crops
                           that region and magnifies it 4x into out.png (default
@@ -251,7 +264,18 @@ log lines.
   the most common reason a plan does nothing.
 - `world_model/procedural.md` -- ordered recipes that actually worked, with
   preconditions and the evidence they worked (an events.jsonl line). A procedure that
-  failed belongs here too, marked as failed, with what happened instead.
+  failed belongs here too, marked as failed, with what happened instead. A sequence
+  proven by ground truth should ALSO be saved executable, as `procedures/<name>.json`
+  ("entries" of raw actions, max 12) -- the act turns can then replay it as one entry
+  instead of re-deriving it.
+
+Write for two audiences: `dynamics.md`, `semantic.md`, `procedural.md` and
+`procedures/*.json` hold ENVIRONMENT regularities (physics, GUI mechanics, what tools
+break what, recipes, timings) -- knowledge that would be true in any scene, phrased
+without this scene's coordinates or goals. Scene-bound facts (where things are, this
+task's dependencies) belong in `spatial.md` and `causal.md`. Under a cross-scene brain,
+the environment-level files carry over to future episodes verbatim; a coordinate written
+into dynamics.md is tomorrow's misinformation.
 - `world_model/causal.md` -- dependencies: what must be true before what. The milestone
   list is the spine; add what you have learned about why a hop blocked.
 
@@ -279,6 +303,13 @@ the remaining budget, and the single cheapest unmet milestone to finish first if
 budget is tighter than the plan. If the recent stretch pursued something this arithmetic
 says is wrong, say so plainly and redirect: flawless execution of a stale goal scores
 zero.
+
+Triage is binding, not advisory: a milestone whose estimated cost exceeds the remaining
+budget is ABANDONED -- name it in the Goal check and spend nothing more on it. When a
+cheaper unmet milestone exists, it comes first. An approach that has failed twice is
+retired for this episode: a different route or a different milestone, never a third
+identical attempt. The score counts milestones, so 60 steps rescued from a hopeless hop
+and spent on a reachable one is worth exactly one point.
 
 **Also revise the beliefs.** Write `./hypotheses_ops.json` with ops for hypotheses that
 the accumulated evidence confirms, refutes, or that should be retired as stale. This is

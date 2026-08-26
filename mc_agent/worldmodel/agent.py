@@ -228,7 +228,22 @@ class WorldModelCore:
                     self._last_break_item = s["item"]
 
         pos = location(info)
+        prev_gui = self._gui_open
         self._gui_open = gui_open(info)
+        # A GUI toggle switches the control regime -- camera drives a pixel cursor, not
+        # the view (g56l 0106: 16 queued cursor entries planned blind against the wrong
+        # mapping accomplished nothing). A plan written for the other regime is stale
+        # from the toggle on: drop it and let the next tick fall through to a fresh act
+        # turn that can see the screen it is now operating in.
+        if prev_gui != self._gui_open and self.queue:
+            dropped = len(self.queue)
+            self.queue.clear()
+            self._entry_index = None
+            self.stats["gui_plan_flushes"] = self.stats.get("gui_plan_flushes", 0) + 1
+            self.memory.add_note(
+                f"plan flushed at step {self.step}: GUI "
+                f"{'opened' if self._gui_open else 'closed'} with {dropped} queued "
+                f"entries written for the other control regime")
         hp_raw = info.get("health")
         try:
             hp = float(hp_raw) if hp_raw is not None else None
@@ -603,9 +618,18 @@ class WorldModelCore:
             self.memory.add_note("no valid actions.json this turn; one no-op was executed")
             return
         self._consec_act_failures = 0
-        plan = parse_actions(result["actions_json"], entry_cap=self.entry_cap,
-                             repeat_cap=self.repeat_cap, step_cap=self.step_cap,
-                             info=info)
+        # Cursor regime: with a GUI open, every entry is a pixel-level cursor move or a
+        # click, and blind chains compound mapping drift (0106). Tight caps force the
+        # move-click-look cycle the successful manual traces used.
+        if self._gui_open:
+            caps = dict(entry_cap=min(4, self.entry_cap),
+                        repeat_cap=min(4, self.repeat_cap),
+                        step_cap=min(8, self.step_cap))
+        else:
+            caps = dict(entry_cap=self.entry_cap, repeat_cap=self.repeat_cap,
+                        step_cap=self.step_cap)
+        plan = parse_actions(result["actions_json"], info=info,
+                             custom_dir=self.memory.root / "procedures", **caps)
         for n in plan.notes:
             self.memory.add_note(n)
         # Rebuild the (action, entry index) pairing that parse_actions flattened away.
@@ -642,8 +666,16 @@ class WorldModelCore:
             f"Inventory: {inv_line}\n"
             f"Hotbar: {hotbar_line(info)}\n"
             f"Held: {held_line(info)}\n"
-            f"GUI open: {gui_open(info)}\n"
-            f"Recent ground truth: "
+            + ("GUI open: True -- CURSOR REGIME: camera=[dy,dx] now moves the white "
+               "cursor in screen pixels (mapping is approximate and drifts; never "
+               "assume it landed). attack = left-click at the cursor, use = "
+               "right-click. Submit only 1-2 cursor moves and at most one click per "
+               "turn, then look at the next frame before continuing. Prefer the "
+               "recipe book toggle (green button, left of the grid): it fills a "
+               "recipe with ONE click on its icon plus one on the output slot. "
+               "inventory=1 closes the screen.\n"
+               if self._gui_open else f"GUI open: {gui_open(info)}\n")
+            + f"Recent ground truth: "
             f"{'; '.join(self._recent_events) if self._recent_events else '(no events yet)'}"
             f" -- a mine_block here with no Inventory gain means the drop was never "
             f"collected: walk over it.\n\n"

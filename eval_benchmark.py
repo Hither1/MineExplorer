@@ -380,6 +380,9 @@ def _run_benchmark(
             codex_home=os.environ.get("CODEX_HOME"),
             induction_every=int(os.environ.get("WM_INDUCTION_EVERY", "60")),
             max_steps=max_steps,
+            # Cross-episode brain: environment-level docs + skills carried between
+            # scenes when set. Serial campaigns only; see _brain_copy.
+            brain_dir=os.environ.get("WM_BRAIN_DIR") or None,
         )
     elif agent_mode == "hypothesis":
         agent = HypothesisAgent(
