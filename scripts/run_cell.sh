@@ -21,6 +21,15 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
 
+# Campaign kill switch (2026-08-27): while outputs/.campaign-stop exists on the shared
+# fs, every new cell exits before touching the account or the sandbox. This is the stop
+# lever for launchers running on hosts we cannot reach (a218's sshd was down when the
+# user ordered the g56l154 stop). Remove the flag to launch cells again.
+if [[ -f "outputs/.campaign-stop" ]]; then
+  echo "[run_cell] outputs/.campaign-stop present -- refusing to start (user-ordered stop)"
+  exit 0
+fi
+
 AGENT_MODE=${1:?agent-mode}
 CHANNEL=${2:?channel}
 BENCH_DIR=${3:?benchmark-dir}
