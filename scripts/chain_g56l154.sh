@@ -35,8 +35,14 @@ export WM_INDUCTION_EVERY=60 WM_STRATEGY=1 WM_OBS_SIZE=640x360
 count_results() { local arm=$1 n=0 s; for s in $SCENES; do
   [[ -f "outputs/g56l154-$arm-$s/gpt-5.6-sol/4-hop/$s/result.json" ]] && n=$((n+1)); done; echo "$n"; }
 
-log "worldmodel:codex x154 starting (CONC=7); $(count_results worldmodel-codex)/154 already present"
-ARMS="worldmodel:codex" CONC=7 SERVERS="hosted://account" \
+# Overridable since the 12:34-16:24 incident: at 7+7 (19 cells with the default arm)
+# the mc_server starved -- step/reset calls past its 60-120s client timeouts turned
+# ~300 scenes into error results while both launchers marched on. 6+6 is the highest
+# level with a healthy precedent (12 cells, morning of 08-26).
+WM_CONC=${WM_CONC:-7}
+PL_CONC=${PL_CONC:-7}
+log "worldmodel:codex x154 starting (CONC=$WM_CONC); $(count_results worldmodel-codex)/154 already present"
+ARMS="worldmodel:codex" CONC=$WM_CONC SERVERS="hosted://account" \
   bash scripts/launch_4hop.sh > outputs/log-g56l154-launcher-worldmodel.txt 2>&1 &
 WM_PID=$!
 
@@ -44,8 +50,8 @@ WM_PID=$!
 # resets in the same second (measured collision mode on the shared sandbox).
 sleep 25
 
-log "prolong:codex x154 starting (CONC=7); $(count_results prolong-codex)/154 already present"
-ARMS="prolong:codex" CONC=7 SERVERS="hosted://account" \
+log "prolong:codex x154 starting (CONC=$PL_CONC); $(count_results prolong-codex)/154 already present"
+ARMS="prolong:codex" CONC=$PL_CONC SERVERS="hosted://account" \
   bash scripts/launch_4hop.sh > outputs/log-g56l154-launcher-prolong.txt 2>&1 &
 PL_PID=$!
 
