@@ -197,7 +197,11 @@ class MineRLSandboxEnv(gym.Env):
     def _init_remote_env(self):
         try:
             logger.info(f"Creating environment '{self.env_id}' on server {self.server_address} ...")
-            response = self._post("create_env", {"env": self.env_id}, timeout=6000)
+            slot = _acquire_reset_slot(self.session_id)
+            try:
+                response = self._post("create_env", {"env": self.env_id}, timeout=6000)
+            finally:
+                _release_reset_slot(slot)
             self.task = response.get("task_text", "")
             if response.get("status") != 0:
                 raise RuntimeError(response.get("msg", "create_env failed"))
@@ -233,7 +237,15 @@ class MineRLSandboxEnv(gym.Env):
             "task_text": task_text,
         }
         # session_id 由 self._post 统一注入
-        return self._post("create_env", body, timeout=timeout)
+        # Slot-gated like reset: create_env is the JVM boot + world gen, the single
+        # heaviest server op, and an abandoned create leaves its handler thread stuck
+        # server-side -- ~40 of those and even /monitor/alive starves (the 17:38 wedge:
+        # host load 92, pool dead). Serialising creates keeps the pool bounded.
+        slot = _acquire_reset_slot(self.session_id)
+        try:
+            return self._post("create_env", body, timeout=timeout)
+        finally:
+            _release_reset_slot(slot)
 
     def _get_obs_from_response(self, response_data: dict) -> dict:
         try:
