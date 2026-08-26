@@ -95,6 +95,11 @@ if [[ "${CODEX_HOSTED:-0}" == "1" && "$CODEX_TIMEOUT" == "900" ]]; then
   export CODEX_TIMEOUT=1500
 fi
 export MC_RESET_TIMEOUT=${MC_RESET_TIMEOUT:-600}
+# Cluster-wide reset serialisation (see env/minerl_sandbox.py): resets are the
+# sandbox's expensive op and the 154-campaign's short episodes clustered them until
+# none finished inside 600s x 3. Three slots by default; 0 disables.
+export MC_RESET_SLOTS=${MC_RESET_SLOTS:-3}
+export MC_RESET_SLOT_DIR=${MC_RESET_SLOT_DIR:-$ROOT/outputs/.reset-slots}
 
 # PROMPT_LAYOUT (legacy | static-first | append-only) is how the default/hypothesis agents lay
 # out each request for the server's prefix cache -- see PROMPT_LAYOUTS in mc_agent/context.py.

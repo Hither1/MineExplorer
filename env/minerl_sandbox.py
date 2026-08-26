@@ -3,6 +3,7 @@ import io
 import os
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import gymnasium as gym
@@ -21,6 +22,63 @@ DOCKER_SANDBOX_DEFAULT_URL = "http://localhost:8000"
 # timed out, so a too-short ceiling degrades the sandbox instead of recovering it.
 MC_RESET_TIMEOUT = int(os.getenv("MC_RESET_TIMEOUT", 600))
 MC_STEP_TIMEOUT = int(os.getenv("MC_STEP_TIMEOUT", 120))
+
+# Cluster-wide cap on concurrent resets. A reset is the server's expensive operation
+# (JVM boot + world gen + first-obs encode, all GIL-contended with every session's
+# steps); the 154-scene campaign's short episodes made resets cluster until none
+# finished inside 600s x 3 -- 7 episodes died that way in the first 40 minutes of the
+# g56l154 rerun while /monitor/alive answered in 0.0s. Slots serialise the expensive
+# op and leave stepping alone. mkdir is the atomic primitive (works on the shared
+# pool); a crashed holder's slot is stolen after the TTL; the holder refreshes its
+# timestamp before each attempt so a legitimate 600s attempt is never stolen.
+# 0 slots = off, byte-identical behaviour.
+MC_RESET_SLOTS = int(os.getenv("MC_RESET_SLOTS", "0"))
+MC_RESET_SLOT_DIR = os.getenv("MC_RESET_SLOT_DIR", "")
+_RESET_SLOT_TTL = 900
+
+
+def _acquire_reset_slot(session_id: str):
+    """Take one of the MC_RESET_SLOTS mkdir-slots, or None when disabled/timed out.
+    Waiting longer than the episode can afford is worse than contending: after 15
+    minutes the reset proceeds slotless rather than deadlocking the cell."""
+    if not MC_RESET_SLOTS or not MC_RESET_SLOT_DIR:
+        return None
+    import random, shutil as _sh
+    base = Path(MC_RESET_SLOT_DIR)
+    base.mkdir(parents=True, exist_ok=True)
+    deadline = time.time() + 900
+    while time.time() < deadline:
+        for i in range(MC_RESET_SLOTS):
+            d = base / f"slot{i}.d"
+            try:
+                d.mkdir()
+                (d / "owner").write_text(f"{os.getpid()} {session_id} {time.time()}")
+                return d
+            except FileExistsError:
+                try:
+                    ts = float((d / "owner").read_text().split()[-1])
+                    if time.time() - ts > _RESET_SLOT_TTL:
+                        _sh.rmtree(d, ignore_errors=True)
+                except Exception:
+                    pass
+        time.sleep(3 + random.random() * 3)
+    logger.warning(f"[reset-slot] none free after 15 min; resetting without one "
+                   f"session_id={session_id}")
+    return None
+
+
+def _refresh_reset_slot(slot, session_id: str) -> None:
+    if slot is not None:
+        try:
+            (slot / "owner").write_text(f"{os.getpid()} {session_id} {time.time()}")
+        except OSError:
+            pass
+
+
+def _release_reset_slot(slot) -> None:
+    if slot is not None:
+        import shutil as _sh
+        _sh.rmtree(slot, ignore_errors=True)
 
 
 def _get_server_address() -> str:
@@ -198,22 +256,27 @@ class MineRLSandboxEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                logger.info(f"Resetting environment (attempt {attempt + 1}/{max_retries}) session_id={self.session_id}...")
-                response = self._post("reset_env", timeout=MC_RESET_TIMEOUT)
-                if response.get("status") != 0:
-                    raise RuntimeError(f"Server error during reset: {response.get('msg')}")
-                return self._get_obs_from_response(response), {}
-            except Exception as e:
-                logger.warning(f"Error during reset (attempt {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2)
-                    continue
-                logger.error("Reset failed after all retries.")
-                if os.getenv("MINE_RL_DEBUG_BREAKPOINT") == "1":
-                    import pdb; pdb.set_trace()
-                raise RuntimeError(f"Failed to reset environment after {max_retries} attempts: {e}")
+        slot = _acquire_reset_slot(self.session_id)
+        try:
+            for attempt in range(max_retries):
+                try:
+                    _refresh_reset_slot(slot, self.session_id)
+                    logger.info(f"Resetting environment (attempt {attempt + 1}/{max_retries}) session_id={self.session_id}...")
+                    response = self._post("reset_env", timeout=MC_RESET_TIMEOUT)
+                    if response.get("status") != 0:
+                        raise RuntimeError(f"Server error during reset: {response.get('msg')}")
+                    return self._get_obs_from_response(response), {}
+                except Exception as e:
+                    logger.warning(f"Error during reset (attempt {attempt + 1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(2)
+                        continue
+                    logger.error("Reset failed after all retries.")
+                    if os.getenv("MINE_RL_DEBUG_BREAKPOINT") == "1":
+                        import pdb; pdb.set_trace()
+                    raise RuntimeError(f"Failed to reset environment after {max_retries} attempts: {e}")
+        finally:
+            _release_reset_slot(slot)
 
     def step(self, action):
         serializable_action: Dict[str, Any] = {}
