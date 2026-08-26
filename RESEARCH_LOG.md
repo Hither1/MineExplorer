@@ -37,3 +37,7 @@
 - 08-27: user-ordered full stop 02:21-02:23 (kill switch + container stop + reaper off);
   a218 sshd down, its chain/launcher/watcher leftovers inert against the switch. Ledger
   20260827-022200. wm 154-set frozen at 50 valid (93/181 creditable).
+- 08-27: four wm method fixes landed (2a18d8d, from the 77-scene post-fix analysis):
+  GUI cursor regime (plan flush + tight caps + prompt line), binding goal-check triage,
+  model-written executable skills (procedures/*.json), WM_BRAIN_DIR cross-episode brain.
+  selftest 72/72; real-episode smoke pending sandbox restart.
