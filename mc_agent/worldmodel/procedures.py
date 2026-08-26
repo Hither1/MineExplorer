@@ -155,8 +155,12 @@ def _mine_seq(steps: list[dict[str, Any]], watch: bool = False) -> list[dict[str
 
 def mine_forward(n: int = 60) -> list[dict[str, Any]]:
     """Hold attack on whatever the crosshair is on, as a sequence (not a raw hold, so it
-    runs its aim through multiple blocks instead of being cut at the first break)."""
-    return _mine_seq(repeat(act(attack=1), n))
+    runs its aim through multiple blocks instead of being cut at the first break), then
+    step into the mined spot. The walk is the collection: a broken block's drop lies
+    where the block was, and pickup needs the player within ~1 block of it. g56l scene
+    0763 broke purple_concrete three times with the right pickaxe held and banked zero,
+    because the macro ended at the break and nothing ever walked over the drops."""
+    return _mine_seq(repeat(act(attack=1), n)) + repeat(act(forward=1), 8)
 
 
 def dig_down(n: int = 40, until_y: float | None = None) -> list[dict[str, Any]]:
@@ -251,7 +255,8 @@ for _p in [
               "early with a [NOTE] when the aim is wrong",
               chop_tree, preconditions="crosshair on a trunk face, within ~3 blocks",
               params={"n": "max ticks, default 80", "until_logs": "default 1"}),
-    Procedure("mine_forward", "mine whatever the crosshair is on, n ticks",
+    Procedure("mine_forward", "mine whatever the crosshair is on, n ticks, then walk "
+              "into the mined spot to collect the drop",
               mine_forward, params={"n": "ticks, default 60"}),
     Procedure("dig_down", "look down 60 and dig; stops at until_y if given",
               dig_down, params={"n": "max ticks, default 40", "until_y": "target y or null"}),

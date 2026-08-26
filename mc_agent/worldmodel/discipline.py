@@ -221,7 +221,11 @@ class Discipline:
         c = self.counters
         if c["goal_confirm_reverted"]:
             bits.append(f"{c['goal_confirm_reverted']} goal confirmation(s) reverted: only "
-                        f"the environment confirms a goal.")
+                        f"the environment confirms a goal. If a reverted hypothesis is "
+                        f"not literally a checklist milestone, it is misfiled -- rewrite "
+                        f"it as kind 'spatial'/'semantic', which you may confirm "
+                        f"yourself (measured: 13 reverts in one run were misfiled "
+                        f"landmark beliefs, each a wasted op).")
         if c["claim_rejected"]:
             bits.append(f"{c['claim_rejected']} completion claim(s) rejected as unverified.")
         if c["stale_by_budget"]:

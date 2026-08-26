@@ -58,16 +58,29 @@ A list of at most {entry_cap} entries, totalling at most {step_cap} environment 
 ticks; a plan mixing procedures and raw actions is normal):
 {procedures}
 
-**Milestone shapes in this benchmark**, and the move for each:
-- "stand near X and face it": `go_to(x, z, within=1.5)` then `face_point(x, y, z)`. The
-  radius is small -- arrive first, then aim.
-- "have item X": the scene usually contains X as a placed block or a drop. Mine it with
-  the right tool selected (`chop_tree` for wood, `mine_forward` otherwise) and walk over
-  the drop to collect it.
-- "place/break blocks in a region": get inside the region (`go_to`), select the block in
-  the hotbar, `place_block` -- or mine within it.
-- The hops usually chain: what hop 2 needs is often produced by hop 1. Read the
-  checklist order before improvising.{strategy_bullets}
+**Milestone shapes in this benchmark**, and the move for each. No shape comes with
+coordinates -- the checklist names things, the world holds them:
+- "find X" / "stand near X": verified by STANDING CLOSE (a few blocks) while FACING it.
+  Seeing X from afar verifies nothing -- walk toward what you see (`go_to(x, z,
+  within=1.5)` once spatial.md has its coordinates) and `face_point` its block center
+  from 2-3 blocks out. If aiming at a VISIBLE target has failed 3 times, you are almost
+  certainly too FAR: close distance and re-aim from adjacent, do not re-aim from where
+  you stand.
+- "have item X": the item must END UP IN YOUR INVENTORY. Break the block with the right
+  tool CLASS selected (stone/concrete/ore families drop NOTHING without a pickaxe;
+  `chop_tree` for wood, `mine_forward` otherwise), then walk into the mined spot -- the
+  drop lies where the block was. Then CHECK the Inventory line: a break that left the
+  Inventory unchanged means wrong tool or an uncollected drop, and re-mining without
+  collecting fixes nothing. One item may not be enough -- keep collecting until the
+  checklist flips.
+- "build/place in a region": placements count inside an area, usually near spawn and
+  usually of the material an earlier hop had you collect. Stand IN the area, select the
+  material, `place_block`, repeat; if the milestone does not flip, place MORE and spread
+  them before concluding the area is wrong.
+- Hops chain ONLY when one PRODUCES what the next needs (mined blocks feed a build).
+  find/mine hops over different materials are independent: when one has stalled twice,
+  switch to the cheapest other unmet milestone, and come back with a NEW approach (a
+  different face, entrance, or distance) -- never the same aim a third time.{strategy_bullets}
 
 **Movement doctrine**:
 - **Turn, then move.** A yaw change and "forward" in the same tick curve your path into
@@ -129,13 +142,18 @@ act turn):
 # an ablation arm can measure exactly that: WM_STRATEGY=0 removes the advice while
 # keeping every harness-mechanics line constant.
 _STRATEGY_BULLETS = """
-- **Navigate by arithmetic, not by eye.** Targets come with coordinates; `go_to`
-  computes the heading from [STATE]. Visually scanning for a heading was the measured
-  way runs lost their hops.
+- **Targets carry no coordinates; only [STATE] is numeric.** Find things by LOOKING:
+  sweep the yaw in 45-degree slices, zoom on candidates, and confirm a block's identity
+  BEFORE mining it -- attacking look-alike grass instead of the target was a measured
+  way runs lost their hops. Record every discovered coordinate in spatial.md, so the
+  second visit is `go_to` arithmetic instead of a fresh search.
 - **One hypothesis per hop**, opened early at low confidence, `depends_on` the previous
   hop. The checklist is the map; your graph is what you have learned about it.
 - **Verify, then claim.** ESC before the checklist shows ALL verified costs you: the
   press is refused and the goals you believed done are locked at 0.5.
+- **A stale goal is a verdict.** When the warden stales a target or a location guess
+  fails twice, replan around the cheapest other unmet milestone NOW and return only
+  with a new approach. Flawless repetition of a failing plan scores zero.
 - **Budget the endgame**: when steps-remaining is under ~60, stop exploring and finish
   the cheapest unmet milestone."""
 
@@ -194,7 +212,11 @@ Then write these files:
 - `./actions.json` -- REQUIRED. `{{"actions": [...]}}`, see below.
 - `./hypotheses_ops.json` -- optional. `{{"hypotheses": [{{"id": ..., "statement": ...,
   "confidence": ..., "status": ..., "kind": ..., "depends_on": [...],
-  "evidence": "..."}}], "testing": "<id or null>"}}`
+  "evidence": "..."}}], "testing": "<id or null>"}}`. `"kind": "goal"` is ONLY for
+  checklist milestones -- the warden holds goals to environment verification, so a
+  location or structure belief filed as a goal gets reverted forever. What you learn
+  about places, things and mechanics files as `spatial`/`semantic`/`dynamics`, which
+  you may confirm yourself.
 - `./claim.json` -- optional, only when you believe a milestone is now done:
   `{{"completed": ["milestone_2"]}}`. A false claim locks those goals.
 

@@ -140,6 +140,33 @@ def test_actions_contract():
           and any("truncated" in n for n in plan.notes), plan.notes)
 
 
+def test_mining_feedback_loop():
+    """The g56l fixes: mine_forward collects its drop, the act prompt carries the last
+    ground-truth events, and the revert note tells a misfiled goal where to go."""
+    print("[mining feedback loop]")
+    from mc_agent.worldmodel import procedures, prompts
+    acts, _ = procedures.expand("mine_forward", n=20)
+    check("mine_forward ends walking into the mined spot",
+          acts[-1].get("forward") == 1 and not acts[-1].get("attack"), acts[-1])
+    check("mine_forward still attacks first",
+          acts[0].get("_seq", {}).get("steps", [{}])[0].get("attack") == 1)
+    check("shapes teach the inventory criterion",
+          "END UP IN YOUR INVENTORY" in prompts.ACTION_REFERENCE)
+    check("no false coordinates promise",
+          "Targets come with coordinates" not in prompts._STRATEGY_BULLETS
+          and "carry no coordinates" in prompts._STRATEGY_BULLETS)
+    check("ops schema fences the goal kind",
+          'kind": "goal"` is ONLY for' in prompts.ACT_PROMPT)
+    with tempfile.TemporaryDirectory() as td:
+        core, _stub = make_core(Path(td))
+        core.observe(_info(inv={"0": {"type": "diamond_pickaxe", "quantity": 1}},
+                           mine_block={"purple_concrete": 2}), 5, None)
+        prompt = core._turn_prompt(_info())
+        check("recent ground truth line in the act prompt",
+              "Recent ground truth:" in prompt and "mine_block purple_concrete" in prompt,
+              prompt[prompt.find("Recent ground truth"):][:120])
+
+
 def test_goto_marker():
     print("[go_to marker]")
     with tempfile.TemporaryDirectory() as td:
@@ -386,6 +413,7 @@ def test_adapter():
 
 def main() -> int:
     test_actions_contract()
+    test_mining_feedback_loop()
     test_goto_marker()
     test_stuck_note()
     test_chop_and_hold_cut()

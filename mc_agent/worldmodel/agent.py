@@ -99,6 +99,12 @@ class WorldModelCore:
         self._cur_pos: dict | None = None
         self._last_frame: str | None = None
         self._pending_events: list[str] = []
+        # The last few ground-truth events, rendered into every act prompt. Measured gap
+        # (g56l 0763): three mine_block events landed in events.jsonl and the model only
+        # met them at the next induction, ~60 steps later -- it re-mined instead of
+        # collecting. logs.txt already holds them; this line puts them where the plan is
+        # written.
+        self._recent_events: deque[str] = deque(maxlen=4)
         self._plan_entries: list[dict[str, Any]] = []
         self._entry_index: int | None = None
         self._entry_start_pos: dict | None = None
@@ -193,6 +199,8 @@ class WorldModelCore:
         if fired:
             self.memory.append_events(step, fired)
             self._pending_events += [f"MILESTONE {f['identity']} verified" for f in fired]
+            self._recent_events += [f"step {step}: MILESTONE {f['identity']} verified"
+                                    for f in fired]
             if self.queue:
                 # Ground truth that a milestone just fired changes what the right next
                 # action is. Without this the rest of a plan runs to the end first --
@@ -205,6 +213,8 @@ class WorldModelCore:
             self.memory.append_events(step, stats)
             self._pending_events += [f"{s['event']} {s['item']} +{s['delta']:g}"
                                      for s in stats]
+            self._recent_events += [f"step {step}: {s['event']} {s['item']} "
+                                    f"+{s['delta']:g}" for s in stats]
             # Running counts of blocks BROKEN, which is what the chop macro and the
             # attack-hold refund key on. Wood breaking proves the aim; anything else
             # breaking names what the crosshair is actually on.
@@ -632,7 +642,11 @@ class WorldModelCore:
             f"Inventory: {inv_line}\n"
             f"Hotbar: {hotbar_line(info)}\n"
             f"Held: {held_line(info)}\n"
-            f"GUI open: {gui_open(info)}\n\n"
+            f"GUI open: {gui_open(info)}\n"
+            f"Recent ground truth: "
+            f"{'; '.join(self._recent_events) if self._recent_events else '(no events yet)'}"
+            f" -- a mine_block here with no Inventory gain means the drop was never "
+            f"collected: walk over it.\n\n"
             f"Your compiled world model:\n{wm}\n\n"
             f"Your hypothesis graph (a view):\n"
             f"{self.graph.to_prompt_summary(12, self.discipline.flags(self.step)) or '(empty)'}\n\n"
