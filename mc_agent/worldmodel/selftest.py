@@ -473,6 +473,191 @@ def test_adapter():
             check("report written", rep["milestones"]["milestones_achieved"] == 1, rep["milestones"])
 
 
+def test_face_pixel():
+    """Pixel-referenced aiming: the pinhole mapping, the macro shapes, and the
+    put-it-first note."""
+    print("[face_pixel]")
+    from mc_agent.worldmodel import actions, procedures as P
+    dp, dy = P.pixel_deltas(320, 180)
+    check("centre pixel -> zero deltas", abs(dp) < 1e-9 and abs(dy) < 1e-9, (dp, dy))
+    dp, dy = P.pixel_deltas(640, 180)
+    check("right edge -> ~+51 yaw, 0 pitch", abs(dy - 51.21) < 0.3 and abs(dp) < 1e-9,
+          (dp, dy))
+    dp, dy = P.pixel_deltas(320, 360)
+    check("bottom edge -> +fov/2 pitch (down)", abs(dp - 35.0) < 0.05, dp)
+    dp2, dy2 = P.pixel_deltas(-50, 9999)
+    check("out-of-frame pixels clamped", abs(dy2 + 51.21) < 0.3 and abs(dp2 - 35.0) < 0.05,
+          (dp2, dy2))
+    steps = P.face_pixel(640, 360)
+    tp = sum(s["camera"][0] for s in steps)
+    ty = sum(s["camera"][1] for s in steps)
+    check("face_pixel deltas sum to the mapping", abs(tp - 35.0) < 0.1
+          and abs(ty - 51.21) < 0.35, (tp, ty))
+    check("face_pixel chunks at 30 deg/tick",
+          all(abs(s["camera"][0]) <= 30.0 and abs(s["camera"][1]) <= 30.0 for s in steps))
+    ap = P.approach(600, 200, n=10)
+    walk = [s for s in ap if s.get("forward")]
+    check("approach = aim then walk (jump held)", len(walk) == 10
+          and all(s["jump"] for s in walk) and ap[0]["camera"] != [0.0, 0.0], len(walk))
+    plan = actions.parse_actions(json.dumps({"actions": [
+        {"procedure": "approach", "args": {"u": 600, "v": 200, "n": 10}}]}))
+    check("approach parses as a procedure entry", plan.steps
+          and plan.entries[0]["procedure"] == "approach", plan.notes)
+    with tempfile.TemporaryDirectory() as td:
+        core, codex = make_core(Path(td))
+        codex.script = [{"actions": [
+            {"action": {"forward": 1}, "repeat": 4},
+            {"procedure": "face_pixel", "args": {"u": 100, "v": 100}}]}]
+        core.start(_info(), None)
+        core.observe(_info(), 1, None)
+        core.next_action(_info())
+        check("face_pixel not first -> note",
+              any("Put it FIRST" in n for n in core.memory._pending_notes),
+              core.memory._pending_notes)
+
+
+def test_goal_check_binding():
+    """The induction's triage as machine state: parsed, rendered, enforced, revived."""
+    print("[goal check]")
+    with tempfile.TemporaryDirectory() as td:
+        core, codex = make_core(Path(td), induction_every=10)
+        codex.script = [
+            {"actions": [{"action": {"forward": 1}, "repeat": 30}]},
+            {"files": {"goal_check.json": json.dumps({"abandon": ["m2", "bogus"],
+                                                      "focus": "m1"}),
+                       "world_model/spatial.md": "# seen"},
+             "message": "triage"},                                   # induction @10
+        ]
+        core.start(_info(), None)
+        for s in range(1, 11):
+            core.observe(_info(x=float(s)), s, None)
+            core.next_action(_info())
+        check("abandon parsed (bogus id dropped)", core.abandoned == {"m2": 10},
+              core.abandoned)
+        check("focus parsed", core.focus == "m1", core.focus)
+        block = core.ledger.progress_block(abandoned=core.abandoned, focus=core.focus)
+        check("checklist renders ABANDONED + FOCUS",
+              "ABANDONED" in block and "FOCUS" in block, block)
+        # Enforcement, driven turn by turn: a plan testing the abandoned milestone is
+        # refused; the next, testing the open one, runs.
+        core.queue.clear()
+        codex.script = [
+            {"hypotheses_ops": {"hypotheses": [
+                {"id": "h_m2", "statement": "mine the m2 oak_log", "kind": "goal",
+                 "confidence": 0.4}], "testing": "h_m2"},
+             "actions": [{"action": {"attack": 1}, "repeat": 4}]},
+            {"hypotheses_ops": {"hypotheses": [
+                {"id": "h_m1", "statement": "reach m1 chest", "kind": "goal",
+                 "confidence": 0.4}], "testing": "h_m1"},
+             "actions": [{"action": {"forward": 1}, "repeat": 4}]},
+        ]
+        core._act_turn(_info())
+        check("plan testing an abandoned milestone refused",
+              core.stats.get("abandoned_plan_refusals", 0) == 1 and not core.queue,
+              core.stats)
+        core._act_turn(_info())
+        check("plan testing an open milestone ran", len(core.queue) > 0,
+              len(core.queue))
+        check("skip= names the open milestone first",
+              "`m1`" in core.ledger.progress_line(skip=set(core.abandoned)))
+        # An act turn cannot write the goal check; an induction replacing it revives.
+        core.queue.clear()
+        codex.script = [
+            {"files": {"goal_check.json": json.dumps({"abandon": ["m1"]})},
+             "actions": [{"action": {"forward": 1}, "repeat": 2}]}]
+        core._act_turn(_info())
+        check("act-turn goal_check ignored+deleted",
+              core.abandoned == {"m2": 10}
+              and not (core.memory.root / "goal_check.json").exists(),
+              core.abandoned)
+        (core.memory.root / "goal_check.json").write_text(
+            json.dumps({"abandon": []}), encoding="utf-8")
+        core._read_goal_check()
+        check("induction's replacement revives", core.abandoned == {}, core.abandoned)
+        # Abandon-everything guard: the first listed id stays open.
+        core.abandoned = {}
+        (core.memory.root / "goal_check.json").write_text(
+            json.dumps({"abandon": ["m1", "m2"]}), encoding="utf-8")
+        core._read_goal_check()
+        check("abandoning every open milestone keeps one live",
+              list(core.abandoned) == ["m2"], core.abandoned)
+
+
+def test_plan_identity_guard():
+    """The third identical plan against zero progress is refused and buys an
+    induction."""
+    print("[plan identity]")
+    with tempfile.TemporaryDirectory() as td:
+        core, codex = make_core(Path(td), induction_every=200)
+        same = {"actions": [{"action": {"attack": 1}, "repeat": 4}],
+                "message": "same again"}
+        codex.script = [dict(same), dict(same), dict(same), dict(same),
+                        {"files": {"world_model/dynamics.md": "# compiled"},
+                         "message": "induced"},
+                        {"actions": [{"action": {"forward": 1}, "repeat": 6}]}]
+        core.start(_info(), None)
+        for s in range(1, 20):
+            core.observe(_info(), s, None)     # never moves: zero progress
+            core.next_action(_info())
+            if core.stats.get("identical_plan_refusals"):
+                break
+        check("third identical plan refused",
+              core.stats.get("identical_plan_refusals", 0) >= 1, core.stats)
+        check("refusal forces the induction", codex.induction_calls == 0)
+        core.observe(_info(), 19, None)
+        core.next_action(_info())
+        check("induction ran on the forced trigger", codex.induction_calls == 1,
+              codex.induction_calls)
+        check("fresh plan accepted after induction",
+              len(core.queue) > 0 or core.stats.get("identical_plan_refusals", 0) >= 2)
+
+
+def test_stale_binding():
+    """Stale is a verdict: no re-test, no evidence-less revival."""
+    print("[stale binding]")
+    with tempfile.TemporaryDirectory() as td:
+        core, _ = make_core(Path(td))
+        core.graph.add_or_update(id="h1", statement="the door opens", step=0)
+        d = core.discipline
+        check("test starts clean", d.track_testing("h1", 0) is None)
+        note = d.track_testing("h1", 25)
+        check("budget stales the belief", note is not None
+              and core.graph.nodes["h1"].status == "stale", note)
+        note = d.track_testing("h1", 26)
+        check("stale re-test refused", note is not None and "stale" in note
+              and d.counters.get("stale_retest_refused") == 1, note)
+        core._apply_ops({"hypotheses": [{"id": "h1", "status": "active"}]})
+        check("evidence-less revival kept stale",
+              core.graph.nodes["h1"].status == "stale",
+              core.graph.nodes["h1"].status)
+        core._apply_ops({"hypotheses": [{"id": "h1", "status": "active",
+                                         "evidence": "events.jsonl step 40: door"}]})
+        check("revival with evidence goes through",
+              core.graph.nodes["h1"].status == "active")
+
+
+def test_endgame_induction():
+    """One guaranteed goal check inside the last ~70 steps, and only one."""
+    print("[endgame induction]")
+    with tempfile.TemporaryDirectory() as td:
+        core, codex = make_core(Path(td), induction_every=1000)
+        act = {"actions": [{"action": {"forward": 1}, "repeat": 50}]}
+        codex.script = [dict(act) for _ in range(6)]
+        codex.script.insert(4, {"files": {"world_model/causal.md": "# goal check"},
+                                "message": "endgame triage"})
+        core.start(_info(), None)
+        fired_at = None
+        for s in range(1, 261):
+            core.observe(_info(x=float(s)), s, None)
+            core.next_action(_info())
+            if codex.induction_calls and fired_at is None:
+                fired_at = s
+        check("endgame induction fired once in the window",
+              codex.induction_calls == 1 and fired_at is not None
+              and 230 <= fired_at <= 240, (codex.induction_calls, fired_at))
+        check("window flag set", core._endgame_induction_done)
+
+
 def main() -> int:
     test_actions_contract()
     test_skills_gui_and_brain()
@@ -487,6 +672,11 @@ def main() -> int:
     test_presatisfied()
     test_memory_layout()
     test_adapter()
+    test_face_pixel()
+    test_goal_check_binding()
+    test_plan_identity_guard()
+    test_stale_binding()
+    test_endgame_induction()
     print(f"\n{CHECKS} checks, {len(FAILS)} failures")
     if FAILS:
         for f in FAILS:

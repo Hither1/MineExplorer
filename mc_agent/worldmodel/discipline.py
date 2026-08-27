@@ -146,6 +146,17 @@ class Discipline:
             return None
 
         node = self.graph.nodes[hid]
+        if node.status == "stale":
+            # Stale means the budget already retired this belief. Re-declaring it under
+            # test without new grounds was the tail signature of g56l154 (0393: marked
+            # stale at step 191, resumed at 205, burned 95 steps). Reviving takes an op:
+            # status active plus an evidence line citing a NEW ground-truth fact.
+            self.testing = None
+            self.counters["stale_retest_refused"] = (
+                self.counters.get("stale_retest_refused", 0) + 1)
+            return (f"'{hid}' is stale and will not be tracked under test again. Revive "
+                    f"it only with NEW evidence (op: status active + an evidence line "
+                    f"citing a new events.jsonl/[STATE] fact), or test something else.")
         sig = (node.statement.strip(), node.status)
         if self.testing is None or self.testing[0] != hid:
             self.testing = (hid, step, node.confidence, sig)

@@ -118,6 +118,52 @@ def bearing(pos: dict[str, float], x: float, z: float) -> float:
     return math.degrees(math.atan2(-(x - pos["x"]), z - pos["z"]))
 
 
+# -- pixel-referenced aiming ----------------------------------------------
+
+#: The frame geometry every act turn sees: eval_benchmark asks create_env for 640x360
+#: on the worldmodel arm, and zoom.py documents its coordinates against the same grid.
+FRAME_W, FRAME_H = 640, 360
+#: Minecraft's default vertical FOV. The g56l154 failure mass this serves: 38 of 40
+#: unmet mine hops never broke their target, and the aim path was "guess a world
+#: coordinate from the view, then face_point it" -- the guess, not the steering, is
+#: where the misses came from. A pixel in the attached frame is something the model can
+#: actually point at.
+FOV_V_DEG = 70.0
+
+
+def pixel_deltas(u: float, v: float, w: float = FRAME_W, h: float = FRAME_H,
+                 fov_v: float = FOV_V_DEG) -> tuple[float, float]:
+    """(pitch_delta, yaw_delta) in degrees that centre the crosshair on frame pixel
+    (u, v), via the pinhole model: focal = (h/2)/tan(fov_v/2), angle = atan(offset/f).
+    +v (below centre) pitches down, +u (right of centre) turns right -- both match the
+    env's camera sign convention."""
+    f = (h / 2.0) / math.tan(math.radians(fov_v / 2.0))
+    u = max(0.0, min(float(w), float(u)))
+    v = max(0.0, min(float(h), float(v)))
+    dpitch = math.degrees(math.atan2(v - h / 2.0, f))
+    dyaw = math.degrees(math.atan2(u - w / 2.0, f))
+    return dpitch, dyaw
+
+
+def face_pixel(u: float = 320, v: float = 180) -> list[dict[str, Any]]:
+    """Turn the crosshair onto pixel (u, v) OF THE FRAME ATTACHED TO THIS TURN.
+
+    One-shot and open-loop by construction: the pixel is a fact about one frame, so the
+    reference is valid only while the view has not moved -- which is why this must be
+    the FIRST entry of the plan (the harness notes a violation) and why the next frame,
+    not this macro, says whether the aim landed. For a target whose WORLD coordinate is
+    already in spatial.md, prefer face_point: it re-derives from [STATE] every tick."""
+    dp, dy = pixel_deltas(u, v)
+    return look(pitch=dp, yaw=dy)
+
+
+def approach(u: float = 320, v: float = 180, n: int = 24) -> list[dict[str, Any]]:
+    """face_pixel, then walk straight at what it aimed at (jump held). The find/mine
+    opener for a VISIBLE target: aim from its pixel, close the distance, then verify on
+    the next frame and mine/face from adjacent."""
+    return face_pixel(u, v) + travel(n)
+
+
 def travel(n: int = 40, sprint: bool = True) -> list[dict[str, Any]]:
     """Straight-line travel in the direction currently faced. Jump is held with forward
     so a one-block rise does not silently stop the traverse -- `moved=0.00` for 40 ticks
@@ -242,6 +288,16 @@ for _p in [
               "use after go_to for stand-near-AND-face targets",
               face_point, params={"x": "x", "y": "y", "z": "z",
                                   "ticks": "budget, default 20"}),
+    Procedure("face_pixel", "turn the crosshair onto pixel (u, v) of the CURRENT "
+              "attached frame (640x360, zoom.py's grid). One-shot: must be the FIRST "
+              "entry of the plan, and the NEXT frame is what verifies the aim",
+              face_pixel, preconditions="target visible in the attached frame; "
+              "u,v are FULL-frame pixels, not zoom-crop pixels",
+              params={"u": "px 0-640", "v": "px 0-360"}),
+    Procedure("approach", "face_pixel(u, v), then walk straight at it n ticks -- the "
+              "opener for a visible find/mine target; re-aim from adjacent once close",
+              approach, preconditions="target visible in the attached frame",
+              params={"u": "px 0-640", "v": "px 0-360", "n": "ticks, default 24"}),
     Procedure("look", "turn BY a relative (pitch, yaw) in degrees; +pitch looks down, "
               "+yaw turns right", look,
               params={"pitch": "deg", "yaw": "deg"}),

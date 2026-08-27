@@ -151,17 +151,25 @@ class MilestoneLedger:
         n = self.num_trackable()
         return n > 0 and len(self.achieved) == n
 
-    def next_target(self) -> dict[str, Any] | None:
+    def next_target(self, skip: set[str] | None = None) -> dict[str, Any] | None:
         """The first unachieved creditable milestone in list order -- the hops are a
-        dependency chain in these scenes, so the first gap is the working target."""
+        dependency chain in these scenes, so the first gap is the working target.
+        `skip` (the abandoned set) excludes milestones the goal check has closed."""
+        fallback = None
         for ident in self.order:
             if self._creditable(ident) and ident not in self.achieved:
+                if skip and ident in skip:
+                    fallback = fallback or {"identity": ident,
+                                            "task": self._task.get(ident, "")}
+                    continue
                 return {"identity": ident, "task": self._task.get(ident, "")}
-        return None
+        # Everything unmet is abandoned: name the first anyway rather than reading
+        # as ALL VERIFIED, which only all_done() may claim.
+        return fallback
 
-    def progress_line(self) -> str:
+    def progress_line(self, skip: set[str] | None = None) -> str:
         """One line of scored truth. The score is the COUNT of verified milestones."""
-        nxt = self.next_target()
+        nxt = self.next_target(skip)
         head = (f"Environment-verified progress: {len(self.achieved)}/"
                 f"{self.num_trackable()} milestones. Score = COUNT verified; only the "
                 f"environment verifies one.")
@@ -169,9 +177,15 @@ class MilestoneLedger:
             return head + " ALL MILESTONES VERIFIED."
         return head + f" First unmet: `{nxt['identity']}` ({nxt['task'][:90]})."
 
-    def progress_block(self) -> str:
+    def progress_block(self, abandoned: dict[str, int] | None = None,
+                       focus: str | None = None) -> str:
         """The full ordered checklist for the prompt. Showing the unmet ones is what
-        stops the agent re-deriving the task from scratch every turn."""
+        stops the agent re-deriving the task from scratch every turn.
+
+        `abandoned` ({milestone_id: step}) and `focus` render the induction pass's own
+        goal-check verdict INTO the checklist -- the measured failure this closes: the
+        verdict used to live only in causal.md prose, and 6 of 8 audited tails re-ran
+        plans their own goal check had condemned (g56l154 tail autopsy)."""
         lines = []
         for ident in self.order:
             task = self._task.get(ident, "")
@@ -183,6 +197,13 @@ class MilestoneLedger:
                              f"NO credit; spend no steps on it) {task}")
             elif ident in self.achieved:
                 lines.append(f"  [x] {ident} (step {self.achieved[ident]}) {task}")
+            elif abandoned and ident in abandoned:
+                lines.append(f"  [--] {ident} (ABANDONED by your own goal check at "
+                             f"step {abandoned[ident]} -- spend nothing on it; only a "
+                             f"later goal check revives it) {task}")
+            elif focus == ident:
+                lines.append(f"  [ ] {ident} <- FOCUS (your goal check named this "
+                             f"the current target) {task}")
             else:
                 lines.append(f"  [ ] {ident} <- {task}")
         return "\n".join(lines)

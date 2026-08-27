@@ -71,18 +71,19 @@ replays the guess.
 **Milestone shapes in this benchmark**, and the move for each. No shape comes with
 coordinates -- the checklist names things, the world holds them:
 - "find X" / "stand near X": verified by STANDING CLOSE (a few blocks) while FACING it.
-  Seeing X from afar verifies nothing -- walk toward what you see (`go_to(x, z,
-  within=1.5)` once spatial.md has its coordinates) and `face_point` its block center
-  from 2-3 blocks out. If aiming at a VISIBLE target has failed 3 times, you are almost
-  certainly too FAR: close distance and re-aim from adjacent, do not re-aim from where
-  you stand.
-- "have item X": the item must END UP IN YOUR INVENTORY. Break the block with the right
-  tool CLASS selected (stone/concrete/ore families drop NOTHING without a pickaxe;
-  `chop_tree` for wood, `mine_forward` otherwise), then walk into the mined spot -- the
-  drop lies where the block was. Then CHECK the Inventory line: a break that left the
-  Inventory unchanged means wrong tool or an uncollected drop, and re-mining without
-  collecting fixes nothing. One item may not be enough -- keep collecting until the
-  checklist flips.
+  Seeing X from afar verifies nothing. If the target is VISIBLE in the attached frame,
+  open with `approach(u, v)` -- point at its PIXEL, no coordinates needed -- then
+  re-aim from 2-3 blocks with `face_pixel` on the next frame. Once spatial.md has its
+  world coordinates, `go_to(x, z, within=1.5)` + `face_point` its block center. If
+  aiming at a VISIBLE target has failed 3 times, you are almost certainly too FAR:
+  close distance and re-aim from adjacent, do not re-aim from where you stand.
+- "have item X": the item must END UP IN YOUR INVENTORY. Get adjacent first
+  (`approach(u, v)` on the visible block), break it with the right tool CLASS selected
+  (stone/concrete/ore families drop NOTHING without a pickaxe; `chop_tree` for wood,
+  `mine_forward` otherwise), then walk into the mined spot -- the drop lies where the
+  block was. Then CHECK the Inventory line: a break that left the Inventory unchanged
+  means wrong tool or an uncollected drop, and re-mining without collecting fixes
+  nothing. One item may not be enough -- keep collecting until the checklist flips.
 - "build/place in a region": placements count inside an area, usually near spawn and
   usually of the material an earlier hop had you collect. Stand IN the area, select the
   material, `place_block`, repeat; if the milestone does not flip, place MORE and spread
@@ -121,7 +122,10 @@ by eye, and reading it by eye is exactly the error this design exists to avoid.
     maps/visited.csv      every position you have occupied, with the step number.
     episodes/*/frames/    the first-person view at each step, as PNG. The newest is
                           attached to this call; open older ones when you want to
-                          compare then with now.
+                          compare then with now. The frame for step N is
+                          `episodes/ep_0000/frames/step_NNNN.png` (zero-padded to 4),
+                          so any visited.csv row or `Step M` log header dereferences
+                          to what you saw there.
     world_model/          the five documents below -- your compiled understanding.
     hypotheses/           one .md per belief, plus graph.json. Grep before proposing.
     procedures/           your skill library. A .md per sequence you got to work is
@@ -166,7 +170,11 @@ _STRATEGY_BULLETS = """
   press is refused and the goals you believed done are locked at 0.5.
 - **A stale goal is a verdict.** When the warden stales a target or a location guess
   fails twice, replan around the cheapest other unmet milestone NOW and return only
-  with a new approach. Flawless repetition of a failing plan scores zero.
+  with a new approach. Flawless repetition of a failing plan scores zero -- and the
+  harness refuses the third identical plan outright.
+- **Your own goal check binds.** A milestone marked ABANDONED in the checklist is
+  closed: plans that test it are refused, and only a later induction's
+  goal_check.json revives it. Work the FOCUS milestone when one is named.
 - **Budget the endgame**: when steps-remaining is under ~60, stop exploring and finish
   the cheapest unmet milestone."""
 
@@ -255,7 +263,10 @@ log lines.
 - `world_model/spatial.md` -- entities and structures with coordinates; the topology of
   what connects to what; routes that worked; regions already searched (cite
   `maps/visited.csv` -- "covered x in [-20,50], z in [0,30]" is worth more than "explored
-  a lot"). Include a coordinate for anything you may need to walk back to.
+  a lot"). Include a coordinate for anything you may need to walk back to, and give
+  each sighting its evidence frame -- `purple bed at (12, 71, -33)
+  [frame: episodes/ep_0000/frames/step_0142.png]` -- so a later turn can re-open
+  exactly what was seen instead of re-deriving the step number from logs.txt.
 - `world_model/semantic.md` -- what kinds of thing exist here and what they afford. An
   entity's attributes, what it drops, what it takes to break, what tool it needs.
 - `world_model/dynamics.md` -- action -> consequence with *numbers*: how many attack
@@ -310,6 +321,16 @@ cheaper unmet milestone exists, it comes first. An approach that has failed twic
 retired for this episode: a different route or a different milestone, never a third
 identical attempt. The score counts milestones, so 60 steps rescued from a hopeless hop
 and spent on a reachable one is worth exactly one point.
+
+Then write the same verdict machine-readably as `./goal_check.json`:
+
+    {{"abandon": ["<milestone_id>", ...], "focus": "<milestone_id>"}}
+
+`abandon` = unmet milestones whose cost exceeds what remains (the harness marks them
+ABANDONED in every checklist and refuses plans that pursue them); `focus` = the single
+milestone the next stretch works. The file REPLACES your previous goal check: omit a
+previously abandoned id to revive it, and never abandon everything -- zero live targets
+scores zero.
 
 **Also revise the beliefs.** Write `./hypotheses_ops.json` with ops for hypotheses that
 the accumulated evidence confirms, refutes, or that should be retired as stale. This is

@@ -21,7 +21,9 @@ heading is arithmetic rather than a belief the graph has to carry.
 """
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import math
 from collections import deque
 from pathlib import Path
@@ -131,6 +133,25 @@ class WorldModelCore:
         # probe per cooldown re-tests the channel.
         self._consec_act_failures = 0
         self._act_cooldown_until = 0
+        # The goal check, held as machine state. `abandoned` maps milestone_id -> the
+        # step its induction closed it; `focus` is the single target that check named.
+        # Written only by run_induction (from ./goal_check.json), cleared per-id the
+        # moment the environment verifies the milestone anyway.
+        self.abandoned: dict[str, int] = {}
+        self.focus: str | None = None
+        # Plan-identity guard. g56l154's audited tails show the same [PLAN] resubmitted
+        # 3-6 times against zero ground-truth movement; the third identical submission
+        # with no progress is refused and buys an induction instead.
+        self._plan_hash: str | None = None
+        self._plan_repeat = 0
+        self._force_induction = False
+        # One guaranteed goal-check inside the endgame window: the sampled tails wrote
+        # their full triage at 0 steps remaining -- a post-mortem, not a redirect.
+        self._endgame_induction_done = False
+        # Refusal notices that must reach the NEXT prompt directly. [NOTE] lines land in
+        # logs.txt, which the model may not grep this turn; these render under Harness
+        # notices where the refusal can change the very next plan.
+        self._prompt_notes: deque[str] = deque(maxlen=3)
         self.turns = {"act": 0, "induction": 0, "act_failed": 0, "induction_silent": 0}
         self.stats: dict[str, Any] = {
             "goto_arrived": 0, "chop_early_stops": 0, "esc_blocked": 0,
@@ -201,6 +222,11 @@ class WorldModelCore:
             self._pending_events += [f"MILESTONE {f['identity']} verified" for f in fired]
             self._recent_events += [f"step {step}: MILESTONE {f['identity']} verified"
                                     for f in fired]
+            for f in fired:
+                # A verified milestone outranks any standing verdict about it.
+                self.abandoned.pop(f["identity"], None)
+                if self.focus == f["identity"]:
+                    self.focus = None
             if self.queue:
                 # Ground truth that a milestone just fired changes what the right next
                 # action is. Without this the rest of a plan runs to the end first --
@@ -601,6 +627,13 @@ class WorldModelCore:
         outs = self.codex.read_outputs()
         for err in outs["errors"]:
             self.memory.add_note(err)
+        gc_path = self.memory.root / "goal_check.json"
+        if gc_path.exists():
+            # Induction's channel only: an act turn re-triaging on the fly is exactly
+            # the layer confusion the dual-turn split exists to prevent.
+            gc_path.unlink(missing_ok=True)
+            self.memory.add_note("goal_check.json is written by the induction pass, "
+                                 "not an act turn; ignored.")
         self._apply_ops(outs.get("hypotheses_ops"))
         note = self.discipline.check_claim(outs.get("claim"), self.step)
         if note:
@@ -618,6 +651,14 @@ class WorldModelCore:
             self.memory.add_note("no valid actions.json this turn; one no-op was executed")
             return
         self._consec_act_failures = 0
+        refusal = self._goal_check_refusal(outs)
+        if refusal:
+            self.stats["abandoned_plan_refusals"] = (
+                self.stats.get("abandoned_plan_refusals", 0) + 1)
+            self._prompt_notes.append(refusal)
+            self.memory.add_note(refusal)
+            logger.warning(f"[wm] {refusal}")
+            return
         # Cursor regime: with a GUI open, every entry is a pixel-level cursor move or a
         # click, and blind chains compound mapping drift (0106). Tight caps force the
         # move-click-look cycle the successful manual traces used.
@@ -632,6 +673,36 @@ class WorldModelCore:
                              custom_dir=self.memory.root / "procedures", **caps)
         for n in plan.notes:
             self.memory.add_note(n)
+        for i, entry in enumerate(plan.entries):
+            if i > 0 and entry.get("procedure") in ("face_pixel", "approach"):
+                self.memory.add_note(
+                    f"{entry['procedure']} is entry {i + 1} of this plan: its pixel "
+                    f"refers to the frame attached to THIS turn, and earlier entries "
+                    f"that move or turn invalidate the aim. Put it FIRST.")
+                break
+        # Plan-identity guard: the same entries resubmitted a third time with zero
+        # ground-truth progress in between is refused, and the refusal buys the
+        # induction the repetition proves is due. Semantic identity, not text identity:
+        # the parsed entries are hashed, so whitespace cannot dodge it.
+        sig = hashlib.sha1(json.dumps(plan.entries, sort_keys=True, default=str)
+                           .encode()).hexdigest() if plan.entries else None
+        if sig is not None and sig == self._plan_hash and self._stall_turns >= 1:
+            self._plan_repeat += 1
+        else:
+            self._plan_repeat = 1
+        self._plan_hash = sig
+        if sig is not None and self._plan_repeat >= 3:
+            note = (f"plan refused: identical to your previous {self._plan_repeat - 1} "
+                    f"plans with zero ground-truth progress between them (no milestone, "
+                    f"no inventory change, no displacement). Change the approach or the "
+                    f"target -- an induction pass runs before your next plan.")
+            self.stats["identical_plan_refusals"] = (
+                self.stats.get("identical_plan_refusals", 0) + 1)
+            self._prompt_notes.append(note)
+            self.memory.add_note(note)
+            self._force_induction = True
+            logger.warning(f"[wm] {note}")
+            return
         # Rebuild the (action, entry index) pairing that parse_actions flattened away.
         self._plan_entries = list(plan.entries)
         pairs: list[tuple[dict[str, Any], int]] = []
@@ -656,11 +727,16 @@ class WorldModelCore:
                     f"pitch={pos['pitch']:.0f} yaw={pos['yaw']:.0f}") if pos else "unknown"
         wm = self.memory.world_model_summary(self.per_doc_chars)
         notices = self.discipline.summary()
+        if self._prompt_notes:
+            extra = "\n".join(f"- {n}" for n in self._prompt_notes)
+            notices = (notices + "\n" + extra).strip() if notices else extra
+            self._prompt_notes.clear()
         return (
             f"Step {self.step}/{self.max_steps} -- "
             f"{max(0, self.max_steps - self.step)} steps remain. "
-            f"{self.ledger.progress_line()}\n\n"
-            f"Milestones:\n{self.ledger.progress_block()}\n\n"
+            f"{self.ledger.progress_line(skip=set(self.abandoned))}\n\n"
+            f"Milestones:\n"
+            f"{self.ledger.progress_block(abandoned=self.abandoned, focus=self.focus)}\n\n"
             f"[STATE] {pos_line}\n"
             f"Vitals: {vitals(info)}\n"
             f"Inventory: {inv_line}\n"
@@ -720,6 +796,81 @@ class WorldModelCore:
 
     # -- belief ops --------------------------------------------------------
 
+    def _goal_check_refusal(self, outs: dict[str, Any]) -> str | None:
+        """A turn that declares it is testing an abandoned milestone loses its plan.
+
+        This is the enforcement half of the goal check: the verdict already renders in
+        the checklist, and 6 of 8 audited g56l154 tails show the act layer overriding
+        the rendered verdict anyway. The linkage runs through the same
+        `_linked_milestone` matching the goal discipline uses, so what the warden can
+        revert, the goal check can close."""
+        if not self.abandoned:
+            return None
+        ops = outs.get("hypotheses_ops")
+        testing = ops.get("testing") if isinstance(ops, dict) else None
+        hid = str(testing) if testing else None
+        if not hid or hid not in self.graph.nodes:
+            return None
+        ident = self.discipline._linked_milestone(self.graph.nodes[hid])
+        if ident and ident in self.abandoned:
+            return (f"plan refused: '{hid}' targets `{ident}`, which your own goal "
+                    f"check ABANDONED at step {self.abandoned[ident]}. Pursue "
+                    + (f"`{self.focus}`" if self.focus else "the cheapest open "
+                       f"milestone")
+                    + "; only a later goal_check.json revives an abandoned one.")
+        return None
+
+    def _read_goal_check(self) -> None:
+        """Parse and consume ./goal_check.json -- the induction's triage, machine-read.
+
+        The file REPLACES the standing verdict each induction: `abandon` closes unmet
+        creditable milestones for this episode (checklist renders them [--], plans
+        testing them are refused), `focus` names the single next target. Ids that are
+        unknown, already verified or presatisfied are dropped with a note. Absent file
+        = verdict unchanged."""
+        path = self.memory.root / "goal_check.json"
+        if not path.exists():
+            return
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:
+            self.memory.add_note(f"goal_check.json did not parse and was ignored: {e}")
+            parsed = None
+        path.unlink(missing_ok=True)
+        if not isinstance(parsed, dict):
+            if parsed is not None:
+                self.memory.add_note("goal_check.json must be a JSON object; ignored")
+            return
+        raw = parsed.get("abandon")
+        raw = raw if isinstance(raw, list) else []
+        open_ids = {i for i in self.ledger.order
+                    if self.ledger._creditable(i) and i not in self.ledger.achieved}
+        kept = {str(a): self.step for a in raw if str(a) in open_ids}
+        dropped = sorted({str(a) for a in raw} - set(kept))
+        if kept and len(kept) == len(open_ids):
+            # Abandoning every open milestone is surrender, not triage: the score
+            # counts milestones, and zero live targets scores zero. The first listed
+            # stays open.
+            first = next(i for i in self.ledger.order if i in kept)
+            del kept[first]
+            self.memory.add_note(
+                f"goal check abandoned every unmet milestone; `{first}` was kept open "
+                f"-- zero live targets scores zero.")
+        self.abandoned = kept
+        focus = parsed.get("focus")
+        focus = str(focus) if isinstance(focus, str) else None
+        self.focus = focus if focus in open_ids and focus not in kept else None
+        if dropped:
+            self.memory.add_note(f"goal_check.json named {dropped}: not open "
+                                 f"creditable milestones; dropped.")
+        if kept or self.focus:
+            self.stats["goal_checks_applied"] = (
+                self.stats.get("goal_checks_applied", 0) + 1)
+            self.memory.add_note(
+                "goal check applied: "
+                + (f"abandoned {sorted(kept)}" if kept else "no abandonments")
+                + (f"; focus `{self.focus}`" if self.focus else ""))
+
     def _apply_ops(self, parsed: dict[str, Any] | None) -> None:
         """Fold one turn's hypothesis ops into the graph, then let the warden run.
 
@@ -735,10 +886,23 @@ class WorldModelCore:
                 continue
             hid = str(op["id"])
             ev = op.get("evidence")
+            has_ev = bool((isinstance(ev, str) and ev.strip())
+                          or (isinstance(ev, list)
+                              and any(str(x).strip() for x in ev)))
+            status = op.get("status")
+            prev = self.graph.nodes.get(hid)
+            if (prev is not None and prev.status == "stale"
+                    and status in ("active", "confirmed") and not has_ev):
+                # Stale is the budget's verdict; lifting it costs a new fact. An
+                # evidence-less revival keeps the status and says so.
+                status = None
+                self.memory.add_note(
+                    f"'{hid}' stays stale: reviving it needs an evidence line citing "
+                    f"a NEW ground-truth fact (events.jsonl or [STATE]).")
             try:
                 self.graph.add_or_update(
                     id=hid, statement=op.get("statement"),
-                    confidence=op.get("confidence"), status=op.get("status"),
+                    confidence=op.get("confidence"), status=status,
                     kind=op.get("kind"),
                     evidence=[ev] if isinstance(ev, str) and ev.strip()
                              else (ev if isinstance(ev, list) else None),
@@ -777,7 +941,18 @@ class WorldModelCore:
             # run 1 burned six silent inductions in its dead tail. Postponed, not
             # skipped: the cadence check below re-fires once the cooldown lifts.
             return False
+        if self._force_induction:
+            # A refused identical plan bought this pass: the repetition is the proof
+            # the compiled model no longer explains the world.
+            return True
         if self.step - self._last_induction >= self.induction_every:
+            return True
+        # Endgame anchor: one guaranteed goal check while there is still budget to act
+        # on it. The audited tails wrote their full triage at 0 steps remaining -- a
+        # post-mortem; this fires it at ~70 so the redirect can still be executed.
+        if (not self._endgame_induction_done
+                and self.max_steps - self.step <= 70
+                and self.step - self._last_induction >= 20):
             return True
         # Early trigger on a stall: three act turns with no milestone, no inventory
         # change and no displacement is this benchmark's spinning-in-place signature
@@ -795,6 +970,9 @@ class WorldModelCore:
         self.turns["induction"] += 1
         self._last_induction = self.step
         self._stall_turns = 0
+        self._force_induction = False
+        if self.max_steps - self.step <= 70:
+            self._endgame_induction_done = True
         logger.info(f"[wm] induction turn {self.turns['induction']} at step {self.step}")
 
         prompt = prompts.induction_prompt(
@@ -831,6 +1009,7 @@ class WorldModelCore:
 
         outs = self.codex.read_outputs()
         self._apply_ops(outs.get("hypotheses_ops"))
+        self._read_goal_check()
         summary = (result.get("message") or "").strip()
         if summary:
             self.memory.set_plan(self.memory._plan or "", f"[INDUCTION] {summary[:1200]}")
@@ -852,5 +1031,6 @@ class WorldModelCore:
                 "noop_updates": self.graph.noop_updates,
             },
             "discipline": dict(self.discipline.counters),
+            "goal_check": {"abandoned": dict(self.abandoned), "focus": self.focus},
             "stats": {k: v for k, v in self.stats.items() if v},
         }
