@@ -83,7 +83,13 @@ class MineRLBenchmarkEnv(MineRLSandboxEnv):
             yaml_config=None,
             commands=self._commands_list,
             task_text=self._task_text,
-            call_timeout=120,
+            # The sandbox serialises create_env (one world-gen at a time), so under any
+            # concurrency the later creates WAIT in queue -- measured 2026-08-27: a
+            # fresh-restart sandbox at CONC=4 killed 2 of the first 5 cells through
+            # this timeout at 120 (g56m 0726/0182, "Read timed out"). 600 covers a
+            # cold world-gen plus a several-deep queue; the env layer's own default
+            # for this call is 6000.
+            call_timeout=int(os.environ.get("MC_CREATE_TIMEOUT", "600")),
         )
         if response.get("status") != 0:
             raise RuntimeError(f"create_env failed: {response.get('msg')}")
