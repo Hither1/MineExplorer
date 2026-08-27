@@ -1,6 +1,41 @@
 # RESEARCH_LOG
 
-## Now (2026-08-27 02:3x)
+## Now (2026-08-27 11:1x)
+
+- **worldmodel v2 landed (cddc4a8)**, from the 77-scene autopsy (4 subagent tracks +
+  direct transcript counts over all 80 workspaces / 1750 turns): face_pixel/approach
+  pixel aiming (38/40 unmet mine hops never broke their target), goal_check.json with
+  real enforcement (ABANDONED render + testing-refusal + keep-one-live), plan-identity
+  guard (3rd identical no-progress plan refused -> forced induction), stale binding
+  (no re-test, no evidence-less revival), endgame induction anchor (<=70 steps),
+  spatial.md frame pointers. selftest 101/0.
+- **User-approved plan**: smoke 0106 -> strict-7 v2 (7 scenes ONLY, low CONC, resource
+  monitoring per user order) -> compare vs g56l strict-7 v1. Full-154 resume and
+  rule-shape rendering stay user decisions.
+- Sandbox restarted 10:59 (boot ~10 min: MineStudio copy on fuse-overlayfs), reap
+  patch verified present after restart. Kill switch removed 11:09 after confirming no
+  surviving campaign processes. Smoke g56m-smoke-worldmodel-codex-0106 launched 11:09
+  with WM_BRAIN_DIR=<scratch> (brain write-path test). Monitors: cell log + a219
+  load/mem/JVM/alive (alert thresholds 160 load / 100G / 12 JVMs).
+- **Smoke PASSED on mechanisms** (11:45): 17 act + 6 induction, 0 failed/silent, all
+  6 inductions wrote goal_check.json (final: 3 craft hops abandoned @284, focus
+  mine_crafting_table), endgame anchor fired at 230, spatial.md carries frame
+  pointers IN THE WILD (even for a retired false candidate), brain exported 3 docs.
+  Score 0/4 (v1: 1/4) -- loss = pressed under the crafting table, attacks could not
+  land (1 mine_block in 300 steps); GUI never opened because the mine hop gated it.
+- **g56m strict-7: concurrency is NOT viable at tonight's ambient load** (box load
+  71 -> 240 from other users; our slice stays 48 cores nice 10). The sandbox
+  serialises create/reset; at CONC=4 the queue blew the 120s create timeout (0726,
+  0182 dead 11:49-50 -- fix 708dc86: create timeout 600, MC_CREATE_TIMEOUT), then at
+  load ~240 even 600s x3 reset attempts died (0306/0603/0726 second wave 12:17-25).
+  Error results quarantined under outputs/g56m-failed-quarantine/. **Serial tail
+  driver armed** (scratchpad/serial_tail.sh -> outputs/log-g56m-serial-tail.txt):
+  waits for in-flight evals to drain, quarantines error schemas, clean-restarts the
+  sandbox when sessions>2, then runs every missing scene at CONC=1. The smoke (one
+  cell, load 130-180) worked end-to-end, so serial is the reliable regime tonight.
+  4 cells (0311/0482/0182/0763) still fighting when the driver was armed 12:29.
+
+## Previous (2026-08-27 02:3x)
 
 - **ALL CAMPAIGNS STOPPED by user order** ("先都停掉", executed 02:21-02:23 from a219):
   kill switch `outputs/.campaign-stop` (run_cell.sh exits before account/sandbox — remove
