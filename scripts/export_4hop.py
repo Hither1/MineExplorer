@@ -82,6 +82,13 @@ def read_cell_log(path: Path) -> dict:
     calls = 0
     server = ""
 
+    # A cell can outlive its runner log (6 of g56l154's 84 did). Degrade to a trace with
+    # meta and cost but no per-step records, the way summarize_4hop.wall_and_server does,
+    # rather than aborting the whole campaign's export on one missing file.
+    if not path.exists():
+        return {"steps": steps, "completed": completed, "turns": turns, "step_turn": step_turn,
+                "ceilings": 0, "calls": 0, "server": "", "wall_s": 0, "log_missing": True}
+
     for line in path.read_text(errors="replace").splitlines():
         m = TS.match(line)
         if m:
@@ -161,10 +168,23 @@ def rollout_cost(result: Path, tag: str) -> tuple[int, int, int]:
     audit = result.parent / "prolong_vision_audit.json"
     if audit.exists():
         src = json.loads(audit.read_text()).get("vision_audit_source")
-        if src and Path(src).exists():
-            srcs = [Path(src)]
+        p = Path(src) if src else None
+        # The auditor's schema changed mid-campaign: q35a/c4h name the one thread it read,
+        # g56l onward name the sessions DIRECTORY and report `rollouts_scanned` over all of
+        # it. Reading a directory as text is what an unhandled newer cell used to crash on.
+        if p and p.is_dir():
+            srcs = sorted(p.rglob("rollout-*.jsonl"))
+        elif p and p.is_file():
+            srcs = [p]
     else:
         srcs = sorted((ROOT / "outputs" / tag / "codex_home" / "sessions").rglob("rollout-*.jsonl"))
+        if not srcs:
+            # WORLDMODEL: no vision audit and no run-level codex_home. run_cell.sh routes
+            # this arm through the sandbox, which gives each episode its own
+            # <workspace>.codexhome, so the cell's own sessions are the only rollouts it
+            # has. Without this the arm exports zero tokens and reads as free.
+            srcs = sorted(p for home in result.parent.glob("*.codexhome")
+                          for p in (home / "sessions").rglob("rollout-*.jsonl"))
     reqs = tin = tout = 0
     for src in srcs:
         for line in src.read_text(errors="replace").splitlines():
