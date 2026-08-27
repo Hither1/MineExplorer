@@ -1,6 +1,36 @@
 # RESEARCH_LOG
 
-## Now (2026-08-27 11:1x)
+## Now (2026-08-27 12:5x) -- STOPPED by user order ("先不跑了")
+
+- **All g56m activity stopped and cleaned 12:50-12:55**: serial driver, launchers,
+  eval cells, both in-flight sandbox restarts killed; mineexplorer container
+  force-killed (Exited 137, host java back to baseline); campaign kill switch
+  RESTORED (outputs/.campaign-stop). Campaign-era leftover codex processes from
+  08-20/08-25 (app-server + 2 children) killed on user order. The one surviving
+  matched process is another session's tail (log-s0306-*), left untouched.
+- **strict-7 v2 state at stop: 0/7 valid results** (only the smoke
+  g56m-smoke-0106 exists, mechanisms all verified). Two failure waves under
+  other-users' load burst (71 -> 240-320): create_env 120s timeouts (fixed,
+  708dc86: 600s + MC_CREATE_TIMEOUT), then 600s x3 reset timeouts. 7 error
+  results quarantined under outputs/g56m-failed-quarantine/; 4 partial
+  workspaces (0311/0482/0182/0763, no result.json) left as debris -- the
+  adapter archives them as .crashed on any rerun.
+- **Node survey (user asked to migrate off a219 under load)**: full 192.168.2.x
+  scan -- a219 is STILL the only node with podman+fuse-overlayfs. a234
+  (192.168.2.10) is idle (load 9.8/256) and migration-viable by binary copy:
+  /dev/fuse present, same Ubuntu 20.04 glibc 2.31, data3 mounted; missing libs
+  vs the a219 stack: libcriu.so.2 (crun optional), libfuse3.so.3
+  (fuse-overlayfs NEEDS it -> copy alongside), libprotobuf-c.so.1. DNS gotcha:
+  a2xx FQDNs resolve to 192.168.1.64 (the protected a214) -- use raw IPs only.
+- **Resume protocol (when the user says go)**: rm outputs/.campaign-stop; either
+  (a) a219 when calm: restart-mc-a219.sh, then scratchpad serial_tail.sh
+  (load-gated <=180, CONC=1, quarantine+retry, two passes), or (b) finish the
+  a234 bootstrap: copy podman/conmon/crun/slirp4netns/fuse-overlayfs + the 3
+  libs to a per-host root, CONTAINERS_STORAGE_CONF with graphroot
+  storage-a234, --runroot on local tmp, podman save|load the image (~25 min),
+  inject tools/mc_server_patched.py, MC_SANDBOX_URL=http://192.168.2.10:8000.
+
+## Previous (2026-08-27 11:1x)
 
 - **worldmodel v2 landed (cddc4a8)**, from the 77-scene autopsy (4 subagent tracks +
   direct transcript counts over all 80 workspaces / 1750 turns): face_pixel/approach
